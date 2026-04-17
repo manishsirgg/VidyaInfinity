@@ -44,6 +44,8 @@ export function UnifiedRegisterForm() {
     router.refresh();
   }
 
+  const showStudentBase = role === "student" || role === "institute";
+
   return (
     <form onSubmit={onSubmit} className="mt-6 grid gap-3 rounded-xl border bg-white p-4">
       <label className="text-sm font-medium text-slate-700">Register as</label>
@@ -57,33 +59,42 @@ export function UnifiedRegisterForm() {
       <input required type="email" name="email" placeholder="Email" className="rounded border px-3 py-2" />
       <input required type="password" name="password" minLength={8} placeholder="Password (min 8 chars)" className="rounded border px-3 py-2" />
       <input required name="phone" placeholder="Phone number" className="rounded border px-3 py-2" />
-      <input name="alternatePhone" placeholder="Alternate phone (optional)" className="rounded border px-3 py-2" />
-      <input type="date" name="dateOfBirth" className="rounded border px-3 py-2" />
 
-      <select required name="gender" className="rounded border px-3 py-2">
-        <option value="">Select gender</option>
-        <option value="female">Female</option>
-        <option value="male">Male</option>
-        <option value="other">Other</option>
-        <option value="prefer_not_to_say">Prefer not to say</option>
-      </select>
-
-      <input required name="addressLine1" placeholder="Address line 1" className="rounded border px-3 py-2" />
-      <input name="addressLine2" placeholder="Address line 2" className="rounded border px-3 py-2" />
-      <input required name="city" placeholder="City" className="rounded border px-3 py-2" />
-      <input required name="state" placeholder="State" className="rounded border px-3 py-2" />
-      <input required name="country" placeholder="Country" className="rounded border px-3 py-2" />
-      <input required name="postalCode" placeholder="Postal code" className="rounded border px-3 py-2" />
-
-      {(role === "institute" || role === "admin") && (
+      {showStudentBase && (
         <>
-          <input
-            required
-            name="organizationName"
-            placeholder={role === "admin" ? "Organization / Department name" : "Institute / University / College name"}
-            className="rounded border px-3 py-2"
-          />
-          <input name="legalName" placeholder="Legal entity name" className="rounded border px-3 py-2" />
+          <input name="alternatePhone" placeholder="Alternate phone (optional)" className="rounded border px-3 py-2" />
+          <input required type="date" name="dateOfBirth" className="rounded border px-3 py-2" />
+
+          <select required name="gender" className="rounded border px-3 py-2">
+            <option value="">Select gender</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+            <option value="other">Other</option>
+            <option value="prefer_not_to_say">Prefer not to say</option>
+          </select>
+
+          <input required name="addressLine1" placeholder="Address line 1" className="rounded border px-3 py-2" />
+          <input name="addressLine2" placeholder="Address line 2" className="rounded border px-3 py-2" />
+          <input required name="city" placeholder="City" className="rounded border px-3 py-2" />
+          <input required name="state" placeholder="State" className="rounded border px-3 py-2" />
+          <input required name="country" placeholder="Country" className="rounded border px-3 py-2" />
+          <input required name="postalCode" placeholder="Postal code" className="rounded border px-3 py-2" />
+        </>
+      )}
+
+      {role === "admin" && (
+        <>
+          <input required name="designation" placeholder="Designation" className="rounded border px-3 py-2" />
+          <input required name="city" placeholder="City" className="rounded border px-3 py-2" />
+          <input required name="state" placeholder="State" className="rounded border px-3 py-2" />
+          <input required name="country" placeholder="Country" className="rounded border px-3 py-2" />
+        </>
+      )}
+
+      {role === "institute" && (
+        <>
+          <input required name="organizationName" placeholder="Institute / University / College name" className="rounded border px-3 py-2" />
+          <input name="legalEntityName" placeholder="Legal entity name" className="rounded border px-3 py-2" />
           <select required name="organizationType" className="rounded border px-3 py-2">
             <option value="">Select organization type</option>
             <option value="school">School</option>
@@ -91,15 +102,14 @@ export function UnifiedRegisterForm() {
             <option value="college">College</option>
             <option value="university">University</option>
             <option value="edtech">EdTech</option>
-            <option value="administration">Administration</option>
           </select>
           <input required name="designation" placeholder="Your designation" className="rounded border px-3 py-2" />
           <input name="registrationNumber" placeholder="Registration number" className="rounded border px-3 py-2" />
-          <input name="accreditationNumber" placeholder="Accreditation / affiliation number" className="rounded border px-3 py-2" />
+          <input name="accreditationAffiliationNumber" placeholder="Accreditation / affiliation number" className="rounded border px-3 py-2" />
           <input name="websiteUrl" placeholder="Website URL" className="rounded border px-3 py-2" />
           <input name="establishedYear" type="number" min={1800} max={2100} placeholder="Established year" className="rounded border px-3 py-2" />
-          <input name="studentStrength" type="number" min={0} placeholder="Total students" className="rounded border px-3 py-2" />
-          <input name="staffStrength" type="number" min={0} placeholder="Total staff" className="rounded border px-3 py-2" />
+          <input name="totalStudents" type="number" min={0} placeholder="Total students" className="rounded border px-3 py-2" />
+          <input name="totalStaff" type="number" min={0} placeholder="Total staff" className="rounded border px-3 py-2" />
         </>
       )}
 
@@ -110,22 +120,35 @@ export function UnifiedRegisterForm() {
         <option value="passport">Passport</option>
         <option value="driving_license">Driving License</option>
         <option value="voter_id">Voter ID</option>
+        <option value="employee_id">Employee ID</option>
       </select>
       <input required type="file" name="identityDocument" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
 
-      {(role === "institute" || role === "admin") && (
+      {role === "institute" && (
         <>
-          <label className="text-sm font-medium text-slate-700">
-            {role === "admin" ? "Admin authorization document type" : `${roleLabel} approval document type`}
-          </label>
-          <select required name="approvalDocumentType" className="rounded border px-3 py-2">
+          <label className="text-sm font-medium text-slate-700">Institute approval document type</label>
+          <select required name="instituteApprovalDocumentType" className="rounded border px-3 py-2">
             <option value="">Select approval document</option>
             <option value="registration_certificate">Registration Certificate</option>
             <option value="accreditation_letter">Accreditation Letter</option>
             <option value="board_resolution">Board Resolution / Authorization</option>
             <option value="government_approval">Government Approval Document</option>
           </select>
-          <input required type="file" name="approvalDocument" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
+          <input required type="file" name="instituteApprovalDocument" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
+        </>
+      )}
+
+      {role === "admin" && (
+        <>
+          <label className="text-sm font-medium text-slate-700">Admin authorization document type</label>
+          <select required name="adminAuthorizationDocumentType" className="rounded border px-3 py-2">
+            <option value="">Select authorization document</option>
+            <option value="authorization_letter">Authorization Letter</option>
+            <option value="employee_id">Employee ID</option>
+            <option value="appointment_letter">Appointment Letter</option>
+            <option value="government_authorization">Government Authorization</option>
+          </select>
+          <input required type="file" name="adminAuthorizationDocument" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
         </>
       )}
 
