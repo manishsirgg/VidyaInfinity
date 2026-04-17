@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 type Props = {
-  targetType: "institutes" | "courses";
+  targetType: "institutes" | "courses" | "users";
   targetId: string;
   currentStatus: string;
 };

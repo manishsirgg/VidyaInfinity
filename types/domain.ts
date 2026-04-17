@@ -6,6 +6,8 @@ export interface Profile {
   full_name: string;
   email: string;
   role: Role;
+  approval_status?: ApprovalStatus;
+  avatar_url?: string | null;
 }
 
 export interface Course {

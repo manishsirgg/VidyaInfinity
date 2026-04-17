@@ -8,6 +8,7 @@ const allowedMimeTypes: Record<string, string[]> = {
   "course-media": ["image/png", "image/jpeg", "image/webp", "video/mp4"],
   "blog-media": ["image/png", "image/jpeg", "image/webp"],
   "psychometric-reports": ["application/json", "application/pdf"],
+  "avatar-images": ["image/png", "image/jpeg", "image/webp"],
 };
 
 const maxSizeByBucket: Record<string, number> = {
@@ -15,6 +16,7 @@ const maxSizeByBucket: Record<string, number> = {
   "course-media": 20 * 1024 * 1024,
   "blog-media": 10 * 1024 * 1024,
   "psychometric-reports": 10 * 1024 * 1024,
+  "avatar-images": 3 * 1024 * 1024,
 };
 
 export async function uploadToBucket({

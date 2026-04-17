@@ -17,14 +17,22 @@ export async function POST(request: Request) {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role,approval_status")
       .eq("id", data.user.id)
       .maybeSingle();
 
+    if (!profile || profile.approval_status !== "approved") {
+      await supabase.auth.signOut();
+      return NextResponse.json(
+        { error: "Your registration is pending admin approval. Please try again after approval." },
+        { status: 403 }
+      );
+    }
+
     const redirectPath =
-      profile?.role === "admin"
+      profile.role === "admin"
         ? "/admin/dashboard"
-        : profile?.role === "institute"
+        : profile.role === "institute"
           ? "/institute/dashboard"
           : "/student/dashboard";
 
