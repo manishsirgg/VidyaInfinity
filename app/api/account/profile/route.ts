@@ -72,7 +72,7 @@ export async function PATCH(request: Request) {
   });
   if (metaError) return NextResponse.json({ error: metaError.message }, { status: 400 });
 
-  const profileUpdate = {
+  const profileUpdateBase = {
     full_name: fullName,
     email: nextEmail,
     phone: val(form, "phone") || null,
@@ -84,7 +84,26 @@ export async function PATCH(request: Request) {
     designation: val(form, "designation") || null,
   };
 
-  const { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
+  const profileUpdate =
+    avatarUrl && avatarPath
+      ? {
+          ...profileUpdateBase,
+          avatar_url: avatarUrl,
+          avatar_storage_path: avatarPath,
+        }
+      : profileUpdateBase;
+
+  let { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
+
+  if (
+    profileError &&
+    avatarUrl &&
+    avatarPath &&
+    /column\s+profiles\.avatar_(url|storage_path)\s+does\s+not\s+exist/i.test(profileError.message)
+  ) {
+    ({ error: profileError } = await admin.data.from("profiles").update(profileUpdateBase).eq("id", auth.user.id));
+  }
+
   if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
 
   if (auth.profile.role === "institute") {
