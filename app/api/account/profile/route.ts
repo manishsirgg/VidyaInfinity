@@ -15,11 +15,22 @@ export async function GET() {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const { data: profile, error: profileError } = await admin.data
+  const profileWithAvatar = await admin.data
     .from("profiles")
-    .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation")
+    .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation,avatar_url")
     .eq("id", auth.user.id)
     .maybeSingle();
+
+  const profileFallback = profileWithAvatar.error
+    ? await admin.data
+        .from("profiles")
+        .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation")
+        .eq("id", auth.user.id)
+        .maybeSingle()
+    : null;
+
+  const profile = profileWithAvatar.data ?? profileFallback?.data ?? null;
+  const profileError = profileWithAvatar.error ?? profileFallback?.error ?? null;
 
   if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
 
