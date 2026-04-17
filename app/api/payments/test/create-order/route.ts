@@ -1,22 +1,13 @@
 import { NextResponse } from "next/server";
 
+import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { razorpay } from "@/lib/payments/razorpay";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { detectPaymentSchemaMismatches } from "@/lib/supabase/schema-guard";
 
 export async function POST(request: Request) {
+  const schemaErrorResponse = await getPaymentSchemaErrorResponse();
+  if (schemaErrorResponse) return schemaErrorResponse;
 
-  const missingTables = await detectPaymentSchemaMismatches();
-  if (missingTables.length) {
-    return NextResponse.json(
-      {
-        error: "Supabase payment schema mismatch",
-        missingTables,
-        migration: "Run supabase/migrations/20260417_000001_payment_order_commission_foundation.sql",
-      },
-      { status: 500 }
-    );
-  }
   const { testId, userId, couponCode } = await request.json();
 
   const { data: test } = await supabaseAdmin
