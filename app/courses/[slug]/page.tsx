@@ -21,10 +21,10 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   const videoMedia = course.course_media?.filter((media) => media.media_type === "video") ?? [];
 
   return (
-    <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 md:grid-cols-[2fr_1fr]">
-      <article className="space-y-6 rounded-xl border bg-white p-6">
+    <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:py-12 md:grid-cols-[2fr_1fr] md:gap-8">
+      <article className="space-y-6 rounded-xl border bg-white p-4 sm:p-6">
         <div>
-          <h1 className="text-3xl font-semibold">{course.title}</h1>
+          <h1 className="text-2xl font-semibold sm:text-3xl">{course.title}</h1>
           <p className="mt-2 text-sm text-slate-500">
             {course.category ?? "General"} {course.subcategory ? `· ${course.subcategory}` : ""} · {course.course_level ?? "-"} · {course.language ?? "-"}
           </p>

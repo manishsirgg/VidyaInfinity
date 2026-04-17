@@ -20,7 +20,7 @@ export const serviceInquirySchema = z.object({
     "Career Guidance",
     "Admission Support",
     "Visa Assistance",
-    "Work Permits",
+    "Other Support / Query",
   ]),
   message: z.string().max(500).optional(),
 });

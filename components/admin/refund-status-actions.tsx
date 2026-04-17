@@ -24,7 +24,7 @@ export function RefundStatusActions({ refundId, currentStatus }: { refundId: str
   }
 
   return (
-    <div className="mt-2 flex items-center gap-2">
+    <div className="mt-2 flex flex-wrap items-center gap-2">
       <span className="rounded bg-slate-100 px-2 py-1 text-xs">{status}</span>
       {[
         { key: "approved", label: "Approve" },

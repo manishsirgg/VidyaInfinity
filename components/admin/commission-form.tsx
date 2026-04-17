@@ -20,7 +20,7 @@ export function CommissionForm({ currentValue }: { currentValue: number }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-4 flex items-end gap-3">
+    <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
       <div>
         <label className="text-sm">Commission (%)</label>
         <input

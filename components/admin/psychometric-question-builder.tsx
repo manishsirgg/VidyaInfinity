@@ -36,7 +36,7 @@ export function PsychometricQuestionBuilder({ testId }: { testId: string }) {
       <textarea name="questionText" required placeholder="Question text" className="rounded border px-2 py-1" />
       <input name="marks" type="number" min={1} defaultValue={1} className="rounded border px-2 py-1" />
       {[1, 2, 3, 4].map((index) => (
-        <div key={index} className="grid grid-cols-[1fr_120px] gap-2">
+        <div key={index} className="grid gap-2 sm:grid-cols-[1fr_120px]">
           <input name={`option${index}`} placeholder={`Option ${index}`} className="rounded border px-2 py-1" />
           <input
             name={`score${index}`}
