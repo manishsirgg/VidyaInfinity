@@ -93,7 +93,7 @@ export function ProfileSettingsForm({ role }: Props) {
     <div className="mt-6 space-y-6">
       {loading ? <p className="text-sm text-slate-600">Loading profile...</p> : null}
       <form onSubmit={saveProfile} className="grid gap-3 rounded-xl border bg-white p-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
           {profile.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={String(profile.avatar_url)} alt="Avatar" className="h-16 w-16 rounded-full object-cover" />

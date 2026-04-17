@@ -22,10 +22,10 @@ export function LeadForm({ courseId }: { courseId: string }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid gap-3 rounded-lg border bg-white p-4">
+    <form onSubmit={onSubmit} className="grid gap-3 rounded-lg border bg-white p-4 sm:p-5">
       <input required name="name" placeholder="Full name" className="rounded border px-3 py-2" />
       <input required type="email" name="email" placeholder="Email" className="rounded border px-3 py-2" />
-      <input required name="phone" placeholder="Phone" className="rounded border px-3 py-2" />
+      <input required name="phone" placeholder="WhatsApp / contact number" className="rounded border px-3 py-2" />
       <textarea name="message" placeholder="Optional message" className="rounded border px-3 py-2" />
       <button type="submit" className="rounded bg-brand-600 px-4 py-2 text-white">
         Submit Lead

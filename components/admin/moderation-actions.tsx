@@ -44,7 +44,7 @@ export function ModerationActions({ targetType, targetId, currentStatus }: Props
   }
 
   return (
-    <div className="mt-2 flex items-center gap-2">
+    <div className="mt-2 flex flex-wrap items-center gap-2">
       <span className="text-xs rounded bg-slate-100 px-2 py-1">{status}</span>
       <button
         disabled={loading}
