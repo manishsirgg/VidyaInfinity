@@ -1,9 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-import { FormFeedback } from "@/components/shared/form-feedback";
 
 type Course = {
   id: string;
@@ -27,7 +25,6 @@ export function CourseManagementTable({ courses }: Props) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [formValues, setFormValues] = useState({
     title: "",
@@ -37,45 +34,28 @@ export function CourseManagementTable({ courses }: Props) {
     totalSeats: "",
   });
 
-  const editErrors = useMemo(() => {
-    if (!editingId) return {} as Record<string, string>;
-    const next: Record<string, string> = {};
-    if (!formValues.title.trim()) next.title = "Title is required.";
-    if (!formValues.summary.trim()) next.summary = "Summary is required.";
-    const fee = Number(formValues.feeAmount);
-    if (!Number.isFinite(fee) || fee <= 0) next.feeAmount = "Fee must be a positive number.";
-    if (formValues.totalSeats.trim()) {
-      const seats = Number(formValues.totalSeats);
-      if (!Number.isInteger(seats) || seats < 0) next.totalSeats = "Total seats must be a non-negative whole number.";
-    }
-    return next;
-  }, [editingId, formValues]);
-
   async function handleDelete(courseId: string) {
     if (!window.confirm("Delete this course? This cannot be undone.")) return;
 
     setBusyId(courseId);
     setError("");
-    setSuccess("");
 
     const response = await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" });
-    const body = await response.json().catch(() => null);
+    const body = await response.json();
 
     setBusyId(null);
 
     if (!response.ok) {
-      setError(body?.error ?? "Unable to delete course.");
+      setError(body.error ?? "Unable to delete course.");
       return;
     }
 
-    setSuccess("Course deleted successfully.");
     router.refresh();
   }
 
   function startEditing(course: Course) {
     setEditingId(course.id);
     setError("");
-    setSuccess("");
     setFormValues({
       title: course.title,
       summary: course.summary,
@@ -86,15 +66,8 @@ export function CourseManagementTable({ courses }: Props) {
   }
 
   async function save(courseId: string) {
-    setError("");
-    setSuccess("");
-
-    if (Object.keys(editErrors).length > 0) {
-      setError("Please fix the highlighted fields before saving changes.");
-      return;
-    }
-
     setBusyId(courseId);
+    setError("");
 
     const response = await fetch(`/api/institute/courses/${courseId}`, {
       method: "PATCH",
@@ -108,16 +81,15 @@ export function CourseManagementTable({ courses }: Props) {
       }),
     });
 
-    const body = await response.json().catch(() => null);
+    const body = await response.json();
     setBusyId(null);
 
     if (!response.ok) {
-      setError(body?.error ?? "Unable to update course.");
+      setError(body.error ?? "Unable to update course.");
       return;
     }
 
     setEditingId(null);
-    setSuccess(body?.message ?? "Course updated successfully.");
     router.refresh();
   }
 
@@ -138,7 +110,6 @@ export function CourseManagementTable({ courses }: Props) {
                     onChange={(event) => setFormValues((prev) => ({ ...prev, title: event.target.value }))}
                     className="rounded border px-3 py-2"
                   />
-                  {editErrors.title ? <p className="text-xs text-rose-700">{editErrors.title}</p> : null}
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-slate-600">Fee (₹)</span>
@@ -149,7 +120,6 @@ export function CourseManagementTable({ courses }: Props) {
                     onChange={(event) => setFormValues((prev) => ({ ...prev, feeAmount: event.target.value }))}
                     className="rounded border px-3 py-2"
                   />
-                  {editErrors.feeAmount ? <p className="text-xs text-rose-700">{editErrors.feeAmount}</p> : null}
                 </label>
                 <label className="grid gap-1 md:col-span-2">
                   <span className="text-xs font-medium text-slate-600">Summary</span>
@@ -159,7 +129,6 @@ export function CourseManagementTable({ courses }: Props) {
                     onChange={(event) => setFormValues((prev) => ({ ...prev, summary: event.target.value }))}
                     className="rounded border px-3 py-2"
                   />
-                  {editErrors.summary ? <p className="text-xs text-rose-700">{editErrors.summary}</p> : null}
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-medium text-slate-600">Start date</span>
@@ -179,7 +148,6 @@ export function CourseManagementTable({ courses }: Props) {
                     onChange={(event) => setFormValues((prev) => ({ ...prev, totalSeats: event.target.value }))}
                     className="rounded border px-3 py-2"
                   />
-                  {editErrors.totalSeats ? <p className="text-xs text-rose-700">{editErrors.totalSeats}</p> : null}
                 </label>
                 <div className="flex gap-2 md:col-span-2">
                   <button
@@ -204,7 +172,7 @@ export function CourseManagementTable({ courses }: Props) {
                   {course.title} · {course.category ?? "-"} · {course.course_level ?? "-"}
                 </p>
                 <p>
-                  ₹{course.fee_amount} · Starts {course.start_date ?? "TBA"} · Seats {course.total_seats ?? "-"} · Status:{" "}
+                  ₹{course.fee_amount} · Starts {course.start_date ?? "TBA"} · Seats {course.total_seats ?? "-"} · Status: {" "}
                   {course.approval_status}
                 </p>
                 {course.rejection_reason ? <p className="text-rose-600">Reason: {course.rejection_reason}</p> : null}
@@ -227,8 +195,7 @@ export function CourseManagementTable({ courses }: Props) {
       })}
 
       {courses.length === 0 ? <p className="text-sm text-slate-600">No courses listed yet.</p> : null}
-      {success ? <FormFeedback tone="success">{success}</FormFeedback> : null}
-      {error ? <FormFeedback tone="error">{error}</FormFeedback> : null}
+      {error ? <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
     </div>
   );
 }

@@ -57,14 +57,6 @@ export default async function InstituteDashboardPage() {
   const orderRows = orderResult.data ?? [];
   const payouts = payoutsResult.data ?? [];
 
-  const loadWarnings = [
-    coursesResult.error?.message,
-    leadsResult.error?.message,
-    enrollmentsResult.error?.message,
-    orderResult.error?.message,
-    payoutsResult.error?.message,
-  ].filter(Boolean) as string[];
-
   const now = Date.now();
   const days30 = 30 * 24 * 60 * 60 * 1000;
 
@@ -109,17 +101,6 @@ export default async function InstituteDashboardPage() {
         <p className="mt-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           Last moderation note: {institute.rejection_reason}
         </p>
-      ) : null}
-
-      {loadWarnings.length > 0 ? (
-        <div className="mt-4 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <p className="font-medium">Some dashboard data could not be loaded completely.</p>
-          <ul className="mt-1 list-disc pl-5">
-            {loadWarnings.map((warning, index) => (
-              <li key={`${warning}-${index}`}>{warning}</li>
-            ))}
-          </ul>
-        </div>
       ) : null}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
