@@ -1,4 +1,5 @@
 import { CourseCreateForm } from "@/components/institute/course-create-form";
+import { CourseManagementTable } from "@/components/institute/course-management-table";
 import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
 
@@ -10,7 +11,7 @@ export default async function Page() {
   const { data: courses } = institute
     ? await supabase
         .from("courses")
-        .select("id,title,category,course_level,fee_amount,approval_status,created_at,rejection_reason,start_date")
+        .select("id,title,summary,category,course_level,fee_amount,approval_status,created_at,rejection_reason,start_date,total_seats")
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
     : { data: [] };
@@ -23,19 +24,11 @@ export default async function Page() {
         approval.
       </p>
       <CourseCreateForm />
-      <div className="mt-6 space-y-2">
-        {courses?.map((course) => (
-          <div key={course.id} className="rounded border bg-white p-3 text-sm">
-            <p className="font-medium">
-              {course.title} · {course.category ?? "-"} · {course.course_level ?? "-"}
-            </p>
-            <p>
-              ₹{course.fee_amount} · Starts {course.start_date ?? "TBA"} · Status: {course.approval_status}
-            </p>
-            {course.rejection_reason ? <p className="text-rose-600">Reason: {course.rejection_reason}</p> : null}
-          </div>
-        ))}
-      </div>
+      <h2 className="mt-8 text-lg font-semibold">Manage listed courses</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Update title, pricing, summary, seat availability, and schedule. Edits are automatically sent for re-approval.
+      </p>
+      <CourseManagementTable courses={courses ?? []} />
     </div>
   );
 }

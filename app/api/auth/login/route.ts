@@ -34,7 +34,7 @@ export async function POST(request: Request) {
         ? "/admin/dashboard"
         : profile.role === "institute"
           ? "/institute/dashboard"
-          : "/student/dashboard";
+           : "/";
 
     return NextResponse.json({ ok: true, redirectPath });
   } catch (error) {
