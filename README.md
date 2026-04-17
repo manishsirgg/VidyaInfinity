@@ -62,6 +62,9 @@ npm run dev
 
 If GitHub shows conflicted files, run this command locally before committing:
 
+Detailed per-file click choices are documented in `docs/conflict-resolution.md`.
+
+
 ```bash
 npm run check:conflicts
 ```
