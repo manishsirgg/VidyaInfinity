@@ -1,43 +1,80 @@
 import { NextResponse } from "next/server";
 
+import { requireApiUser } from "@/lib/auth/api-auth";
 import { calculateCommission } from "@/lib/payments/commission";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
-import { razorpay } from "@/lib/payments/razorpay";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getRazorpayClient } from "@/lib/payments/razorpay";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
-  const schemaErrorResponse = await getPaymentSchemaErrorResponse();
-  if (schemaErrorResponse) return schemaErrorResponse;
+  try {
+    const schemaErrorResponse = await getPaymentSchemaErrorResponse();
+    if (schemaErrorResponse) return schemaErrorResponse;
 
-  const { courseId, userId } = await request.json();
+    const auth = await requireApiUser("student");
+    if ("error" in auth) return auth.error;
+    const { user } = auth;
+    const { courseId } = await request.json();
 
-  const { data: course } = await supabaseAdmin
-    .from("courses")
-    .select("id,institute_id,fee_amount,approval_status")
-    .eq("id", courseId)
-    .eq("approval_status", "approved")
-    .single();
+    if (!courseId) {
+      return NextResponse.json({ error: "courseId is required" }, { status: 400 });
+    }
 
-  if (!course) return NextResponse.json({ error: "Invalid course" }, { status: 400 });
+    const admin = getSupabaseAdmin();
+    if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const { data: settings } = await supabaseAdmin
-    .from("platform_settings")
-    .select("commission_percentage")
-    .eq("key", "default")
-    .single();
+    const { data: course } = await admin.data
+      .from("courses")
+      .select("id,institute_id,fee_amount,approval_status")
+      .eq("id", courseId)
+      .eq("approval_status", "approved")
+      .single();
 
-  const commission = calculateCommission(course.fee_amount, settings?.commission_percentage ?? 12);
+    if (!course) return NextResponse.json({ error: "Invalid course" }, { status: 400 });
 
-  const order = await razorpay.orders.create({
-    amount: Math.round(course.fee_amount * 100),
-    currency: "INR",
-    notes: {
-      courseId,
-      userId,
-      instituteId: course.institute_id,
-      commissionPercentage: String(commission.commissionPercentage),
-    },
-  });
+    const { data: settings } = await admin.data
+      .from("platform_commission_settings")
+      .select("commission_percentage")
+      .eq("key", "default")
+      .maybeSingle();
 
-  return NextResponse.json({ order, commission });
+    const commission = calculateCommission(course.fee_amount, Number(settings?.commission_percentage ?? 12));
+
+    const razorpay = getRazorpayClient();
+    if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
+
+    const order = await razorpay.data.orders.create({
+      amount: Math.round(commission.grossAmount * 100),
+      currency: "INR",
+      notes: {
+        userId: user.id,
+        courseId: course.id,
+        instituteId: course.institute_id,
+      },
+    });
+
+    const { error: orderError } = await admin.data.from("course_orders").insert({
+      user_id: user.id,
+      course_id: course.id,
+      institute_id: course.institute_id,
+      payment_status: "created",
+      gross_amount: commission.grossAmount,
+      commission_percentage: commission.commissionPercentage,
+      platform_commission_amount: commission.commissionAmount,
+      institute_receivable_amount: commission.instituteReceivable,
+      final_paid_amount: commission.grossAmount,
+      currency: "INR",
+      razorpay_order_id: order.id,
+      metadata: { source: "course_create_order_api" },
+    });
+
+    if (orderError) return NextResponse.json({ error: orderError.message }, { status: 500 });
+
+    return NextResponse.json({ order, orderId: order.id });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to create course order" },
+      { status: 500 }
+    );
+  }
 }

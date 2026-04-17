@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { newsletterSchema } from "@/lib/validations/forms";
 
 export async function POST(request: Request) {
@@ -10,7 +10,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const { error } = await supabaseAdmin
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  const { error } = await admin.data
     .from("newsletter_subscribers")
     .upsert({ email: payload.data.email }, { onConflict: "email" });
 
