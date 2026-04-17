@@ -1,0 +1,133 @@
+import { NextResponse } from "next/server";
+
+import { requireApiUser } from "@/lib/auth/api-auth";
+import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { uploadToBucket } from "@/lib/storage/uploads";
+
+function val(form: FormData, key: string) {
+  return String(form.get(key) ?? "").trim();
+}
+
+export async function GET() {
+  const auth = await requireApiUser();
+  if ("error" in auth) return auth.error;
+
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  const { data: profile, error: profileError } = await admin.data
+    .from("profiles")
+    .select("*")
+    .eq("id", auth.user.id)
+    .maybeSingle();
+
+  if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
+
+  const institute =
+    auth.profile.role === "institute"
+      ? (await admin.data.from("institutes").select("*").eq("user_id", auth.user.id).maybeSingle()).data
+      : null;
+
+  return NextResponse.json({ profile, institute });
+}
+
+export async function PATCH(request: Request) {
+  const auth = await requireApiUser();
+  if ("error" in auth) return auth.error;
+
+  const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  const form = await request.formData();
+
+  const nextEmail = val(form, "email").toLowerCase();
+  const fullName = val(form, "fullName");
+
+  if (!nextEmail || !fullName) {
+    return NextResponse.json({ error: "fullName and email are required" }, { status: 400 });
+  }
+
+  let avatarUrl: string | undefined;
+  let avatarPath: string | undefined;
+  const avatarFile = form.get("avatar");
+  if (avatarFile instanceof File && avatarFile.size > 0) {
+    const uploaded = await uploadToBucket({
+      bucket: "avatar-images",
+      file: avatarFile,
+      ownerId: auth.user.id,
+      folder: "avatars",
+    });
+
+    if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
+    avatarUrl = uploaded.publicUrl;
+    avatarPath = uploaded.path;
+  }
+
+  if (nextEmail !== auth.user.email) {
+    const { error: emailError } = await supabase.auth.updateUser({ email: nextEmail });
+    if (emailError) return NextResponse.json({ error: emailError.message }, { status: 400 });
+  }
+
+  const { error: metaError } = await supabase.auth.updateUser({
+    data: {
+      full_name: fullName,
+      role: auth.profile.role,
+    },
+  });
+  if (metaError) return NextResponse.json({ error: metaError.message }, { status: 400 });
+
+  const profileUpdate = {
+    full_name: fullName,
+    email: nextEmail,
+    phone: val(form, "phone") || null,
+    alternate_phone: val(form, "alternatePhone") || null,
+    date_of_birth: val(form, "dateOfBirth") || null,
+    gender: val(form, "gender") || null,
+    address_line1: val(form, "addressLine1") || null,
+    address_line2: val(form, "addressLine2") || null,
+    city: val(form, "city") || null,
+    state: val(form, "state") || null,
+    country: val(form, "country") || null,
+    postal_code: val(form, "postalCode") || null,
+    organization_name: val(form, "organizationName") || null,
+    organization_type: val(form, "organizationType") || null,
+    designation: val(form, "designation") || null,
+    avatar_url: avatarUrl ?? undefined,
+    avatar_storage_path: avatarPath ?? undefined,
+  };
+
+  const { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
+  if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
+
+  if (auth.profile.role === "institute") {
+    const instituteUpdate = {
+      name: val(form, "instituteName") || val(form, "organizationName") || null,
+      legal_name: val(form, "legalName") || null,
+      institute_type: val(form, "organizationType") || null,
+      registration_number: val(form, "registrationNumber") || null,
+      accreditation_number: val(form, "accreditationNumber") || null,
+      website_url: val(form, "websiteUrl") || null,
+      established_year: val(form, "establishedYear") ? Number(val(form, "establishedYear")) : null,
+      address_line1: val(form, "addressLine1") || null,
+      address_line2: val(form, "addressLine2") || null,
+      city: val(form, "city") || null,
+      state: val(form, "state") || null,
+      country: val(form, "country") || null,
+      postal_code: val(form, "postalCode") || null,
+      contact_email: nextEmail,
+      contact_phone: val(form, "phone") || null,
+      authorized_person_name: fullName,
+      authorized_person_designation: val(form, "designation") || null,
+      student_strength: val(form, "studentStrength") ? Number(val(form, "studentStrength")) : null,
+      staff_strength: val(form, "staffStrength") ? Number(val(form, "staffStrength")) : null,
+      description: val(form, "description") || null,
+    };
+
+    const { error: instituteError } = await admin.data.from("institutes").update(instituteUpdate).eq("user_id", auth.user.id);
+    if (instituteError) return NextResponse.json({ error: instituteError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}

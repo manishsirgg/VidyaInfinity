@@ -30,7 +30,7 @@ export function SiteHeader() {
           <Link href="/auth/login" className="text-slate-700 hover:text-brand-700">
             Login
           </Link>
-          <Link href="/auth/register/student" className="rounded-md bg-brand-600 px-3 py-1.5 text-white">
+          <Link href="/auth/register" className="rounded-md bg-brand-600 px-3 py-1.5 text-white">
             Apply Now
           </Link>
         </div>

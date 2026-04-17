@@ -14,7 +14,7 @@ export async function getCurrentUserProfile() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id,full_name,email,role")
+    .select("id,full_name,email,role,approval_status")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -23,13 +23,18 @@ export async function getCurrentUserProfile() {
   return { user, profile };
 }
 
-export async function requireUser(role?: Role) {
+export async function requireUser(role?: Role, options?: { requireApproved?: boolean }) {
   const result = await getCurrentUserProfile();
 
   if (!result) redirect("/auth/login");
 
   if (role && result.profile.role !== role) {
     redirect("/");
+  }
+
+  if ((options?.requireApproved ?? true) && result.profile.approval_status !== "approved") {
+    await (await createClient()).auth.signOut();
+    redirect("/auth/login?status=pending_approval");
   }
 
   return result;

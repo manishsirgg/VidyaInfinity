@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { Role } from "@/types/domain";
 
-export async function requireApiUser(role?: Role) {
+export async function requireApiUser(role?: Role, options?: { requireApproved?: boolean }) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -14,12 +14,23 @@ export async function requireApiUser(role?: Role) {
     return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   }
 
-  if (role) {
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-    if (!profile || profile.role !== role) {
-      return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
-    }
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role,approval_status")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!profile) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
 
-  return { user };
+  if (role && profile.role !== role) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+
+  if ((options?.requireApproved ?? true) && profile.approval_status !== "approved") {
+    return { error: NextResponse.json({ error: "Your account is pending admin approval" }, { status: 403 }) };
+  }
+
+  return { user, profile };
 }
