@@ -93,16 +93,6 @@ export function ProfileSettingsForm({ role }: Props) {
     <div className="mt-6 space-y-6">
       {loading ? <p className="text-sm text-slate-600">Loading profile...</p> : null}
       <form onSubmit={saveProfile} className="grid gap-3 rounded-xl border bg-white p-4">
-        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-          {profile.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={String(profile.avatar_url)} alt="Avatar" className="h-16 w-16 rounded-full object-cover" />
-          ) : (
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-200 text-xs text-slate-600">No avatar</div>
-          )}
-          <input type="file" name="avatar" accept="image/png,image/jpeg,image/webp" className="rounded border px-3 py-2 text-sm" />
-        </div>
-
         <input required name="fullName" defaultValue={String(profile.full_name ?? "")} placeholder="Full name" className="rounded border px-3 py-2" />
         <input required type="email" name="email" defaultValue={String(profile.email ?? "")} placeholder="Email" className="rounded border px-3 py-2" />
         <input name="phone" defaultValue={String(profile.phone ?? "")} placeholder="Phone number" className="rounded border px-3 py-2" />

@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { uploadAvatar } from "@/lib/storage/uploads";
 
 function val(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
@@ -60,20 +59,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "fullName and email are required" }, { status: 400 });
   }
 
-  let avatarUrl: string | undefined;
-  let avatarPath: string | undefined;
-  const avatarFile = form.get("avatar");
-  if (avatarFile instanceof File && avatarFile.size > 0) {
-    const uploaded = await uploadAvatar({
-      userId: auth.user.id,
-      file: avatarFile,
-    });
-
-    if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
-    avatarUrl = uploaded.publicUrl;
-    avatarPath = uploaded.path;
-  }
-
   if (nextEmail !== auth.user.email) {
     const { error: emailError } = await supabase.auth.updateUser({ email: nextEmail });
     if (emailError) return NextResponse.json({ error: emailError.message }, { status: 400 });
@@ -97,8 +82,6 @@ export async function PATCH(request: Request) {
     organization_name: val(form, "organizationName") || null,
     organization_type: val(form, "organizationType") || null,
     designation: val(form, "designation") || null,
-    avatar_url: avatarUrl ?? undefined,
-    avatar_storage_path: avatarPath ?? undefined,
   };
 
   const { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
