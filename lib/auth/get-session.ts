@@ -3,25 +3,34 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Role } from "@/types/domain";
 
-export async function requireUser(role?: Role) {
+export async function getCurrentUserProfile() {
   const supabase = await createClient();
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
 
-  if (!user) redirect("/auth/login");
+  if (error || !user) return null;
 
-  if (role) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id,full_name,email,role")
+    .eq("id", user.id)
+    .maybeSingle();
 
-    if (!profile || profile.role !== role) {
-      redirect("/");
-    }
+  if (!profile) return null;
+
+  return { user, profile };
+}
+
+export async function requireUser(role?: Role) {
+  const result = await getCurrentUserProfile();
+
+  if (!result) redirect("/auth/login");
+
+  if (role && result.profile.role !== role) {
+    redirect("/");
   }
 
-  return user;
+  return result;
 }

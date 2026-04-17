@@ -32,15 +32,15 @@ Production-oriented Next.js App Router foundation for an education marketplace +
 
 The base Supabase concept list did not explicitly include payment ledger tables. This project now includes a ready SQL migration:
 
-- `supabase/migrations/20260417_000001_payment_order_commission_foundation.sql`
+- `supabase/migrations/20260417_000002_schema_alignment_for_orders_and_transactions.sql`
 
 It creates:
 
-- `platform_settings` (commission percentage source of truth)
+- `platform_commission_settings` (commission percentage source of truth)
 - `course_enrollments` (post-payment enrollment records)
-- `course_transactions` (course-level payment + commission ledger)
-- `test_purchases` (psychometric payment ledger)
-- `razorpay_events` (gateway event logging)
+- `course_orders` (course-level payment + commission ledger)
+- `psychometric_orders` (psychometric payment ledger)
+- `razorpay_transactions + razorpay_webhook_logs` (gateway event logging)
 
 Payment API routes also perform runtime schema mismatch detection and return explicit guidance if any required tables are missing.
 

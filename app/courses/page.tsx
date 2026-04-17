@@ -7,7 +7,7 @@ export default async function CoursesPage() {
   const supabase = await createClient();
   const { data: courses } = await supabase
     .from("courses")
-    .select("id,title,slug,summary,fee_amount,approval_status")
+    .select("id,title,slug,summary,fee_amount,approval_status,course_media(media_url,media_type)")
     .eq("approval_status", "approved")
     .order("created_at", { ascending: false });
 
@@ -20,6 +20,7 @@ export default async function CoursesPage() {
             <h2 className="text-lg font-medium">{course.title}</h2>
             <p className="mt-2 text-sm text-slate-600">{course.summary}</p>
             <p className="mt-2 text-sm font-medium">₹{course.fee_amount}</p>
+            <p className="mt-2 text-xs text-slate-500">Media attached: {course.course_media?.length ?? 0}</p>
             <Link href={`/courses/${course.slug}` as Route} className="mt-4 inline-block text-brand-600">
               Enroll Now
             </Link>
