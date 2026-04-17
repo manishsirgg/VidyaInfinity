@@ -28,15 +28,21 @@ Production-oriented Next.js App Router foundation for an education marketplace +
 - `/api/payments/test/create-order`
 - `/api/payments/test/verify`
 
-## Known Schema Assumptions / Potential Mismatches
+## Payment / Order / Commission Schema Notes
 
-The provided DB concept list did not explicitly mention these tables used for production payment flow:
+The base Supabase concept list did not explicitly include payment ledger tables. This project now includes a ready SQL migration:
 
-- `platform_settings` (commission percentage)
+- `supabase/migrations/20260417_000001_payment_order_commission_foundation.sql`
+
+It creates:
+
+- `platform_settings` (commission percentage source of truth)
+- `course_enrollments` (post-payment enrollment records)
 - `course_transactions` (course-level payment + commission ledger)
 - `test_purchases` (psychometric payment ledger)
+- `razorpay_events` (gateway event logging)
 
-If your Supabase instance uses different names, map these query targets before deployment.
+Payment API routes also perform runtime schema mismatch detection and return explicit guidance if any required tables are missing.
 
 ## Setup
 
@@ -50,3 +56,16 @@ npm run dev
 - Payment verification is server-side using Razorpay signature HMAC verification.
 - Public listing pages only query approved/published records.
 - Dashboard routes use role-aware guards with server redirects.
+- Migration includes baseline RLS policies for admin/student isolation.
+
+## Merge Conflict Safety Check
+
+If GitHub shows conflicted files, run this command locally before committing:
+
+```bash
+npm run check:conflicts
+```
+
+Expected output when resolved:
+
+- `no-conflict-markers`

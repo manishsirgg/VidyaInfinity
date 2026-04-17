@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 
+import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
+  const schemaErrorResponse = await getPaymentSchemaErrorResponse();
+  if (schemaErrorResponse) return schemaErrorResponse;
+
   const { orderId, paymentId, signature, userId, testId, finalPaidAmount, couponCode } = await request.json();
 
   if (!verifyRazorpaySignature({ orderId, paymentId, signature })) {

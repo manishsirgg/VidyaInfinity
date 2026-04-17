@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { calculateCommission } from "@/lib/payments/commission";
+import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { razorpay } from "@/lib/payments/razorpay";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
+  const schemaErrorResponse = await getPaymentSchemaErrorResponse();
+  if (schemaErrorResponse) return schemaErrorResponse;
+
   const { courseId, userId } = await request.json();
 
   const { data: course } = await supabaseAdmin
