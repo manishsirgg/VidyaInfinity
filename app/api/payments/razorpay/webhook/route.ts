@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { verifyRazorpayWebhookSignature } from "@/lib/payments/razorpay";
+import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -9,6 +10,10 @@ export async function POST(request: Request) {
     const signature = (await headers()).get("x-razorpay-signature") ?? "";
     const raw = await request.text();
     const payload = raw ? JSON.parse(raw) : {};
+
+    const eventType = payload?.event ?? "unknown";
+    const eventId =
+      payload?.payload?.payment?.entity?.id ?? payload?.payload?.order?.entity?.id ?? payload?.account_id ?? null;
 
     const verifyResult = verifyRazorpayWebhookSignature(raw, signature);
     if (!verifyResult.ok) {
@@ -18,9 +23,22 @@ export async function POST(request: Request) {
     const admin = getSupabaseAdmin();
     if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
+    if (eventId) {
+      const { data: existing } = await admin.data
+        .from("razorpay_webhook_logs")
+        .select("id")
+        .eq("event_id", eventId)
+        .eq("event_type", eventType)
+        .maybeSingle();
+
+      if (existing) {
+        return NextResponse.json({ ok: true, idempotent: true });
+      }
+    }
+
     await admin.data.from("razorpay_webhook_logs").insert({
-      event_id: payload?.payload?.payment?.entity?.id ?? payload?.payload?.order?.entity?.id ?? null,
-      event_type: payload?.event ?? "unknown",
+      event_id: eventId,
+      event_type: eventType,
       signature_valid: verifyResult.valid,
       payload,
     });
@@ -29,7 +47,63 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true });
+    if (!eventType.startsWith("payment.")) {
+      return NextResponse.json({ ok: true, skipped: true, reason: "Unsupported event type" });
+    }
+
+    const paymentEntity = payload?.payload?.payment?.entity;
+    const razorpayOrderId = paymentEntity?.order_id;
+    const razorpayPaymentId = paymentEntity?.id;
+
+    if (!razorpayOrderId || !razorpayPaymentId) {
+      return NextResponse.json({ ok: true, skipped: true, reason: "Missing order/payment id" });
+    }
+
+    const { data: courseOrder } = await admin.data
+      .from("course_orders")
+      .select("id,user_id,course_id,institute_id,final_paid_amount,institute_receivable_amount,currency,payment_status")
+      .eq("razorpay_order_id", razorpayOrderId)
+      .maybeSingle();
+
+    if (courseOrder) {
+      const reconciled = await reconcileCourseOrderPaid({
+        supabase: admin.data,
+        order: courseOrder,
+        razorpayOrderId,
+        razorpayPaymentId,
+        source: "webhook",
+      });
+
+      if (reconciled.error) {
+        return NextResponse.json({ error: reconciled.error }, { status: 500 });
+      }
+
+      return NextResponse.json({ ok: true, reconciled: "course_order" });
+    }
+
+    const { data: psychometricOrder } = await admin.data
+      .from("psychometric_orders")
+      .select("id,user_id,test_id,final_paid_amount,currency,payment_status")
+      .eq("razorpay_order_id", razorpayOrderId)
+      .maybeSingle();
+
+    if (psychometricOrder) {
+      const reconciled = await reconcilePsychometricOrderPaid({
+        supabase: admin.data,
+        order: psychometricOrder,
+        razorpayOrderId,
+        razorpayPaymentId,
+        source: "webhook",
+      });
+
+      if (reconciled.error) {
+        return NextResponse.json({ error: reconciled.error }, { status: 500 });
+      }
+
+      return NextResponse.json({ ok: true, reconciled: "psychometric_order" });
+    }
+
+    return NextResponse.json({ ok: true, skipped: true, reason: "No order mapping" });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to process webhook" },

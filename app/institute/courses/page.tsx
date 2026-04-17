@@ -1,3 +1,4 @@
+import { CourseCreateForm } from "@/components/institute/course-create-form";
 import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,7 +10,7 @@ export default async function Page() {
   const { data: courses } = institute
     ? await supabase
         .from("courses")
-        .select("id,title,fee_amount,approval_status,created_at")
+        .select("id,title,fee_amount,approval_status,created_at,rejection_reason")
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
     : { data: [] };
@@ -17,10 +18,12 @@ export default async function Page() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Institute Courses</h1>
+      <CourseCreateForm />
       <div className="mt-4 space-y-2">
         {courses?.map((course) => (
           <div key={course.id} className="rounded border bg-white p-3 text-sm">
             {course.title} · ₹{course.fee_amount} · {course.approval_status}
+            {course.rejection_reason ? ` · ${course.rejection_reason}` : ""}
           </div>
         ))}
       </div>

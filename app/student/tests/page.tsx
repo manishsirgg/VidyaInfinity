@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
 
@@ -7,7 +9,7 @@ export default async function Page() {
 
   const { data: attempts } = await supabase
     .from("test_attempts")
-    .select("id,test_id,status,started_at,completed_at")
+    .select("id,test_id,status,started_at,completed_at,score,report_url")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -17,7 +19,14 @@ export default async function Page() {
       <div className="mt-4 space-y-2">
         {attempts?.map((attempt) => (
           <div key={attempt.id} className="rounded border bg-white p-3 text-sm">
-            Test {attempt.test_id} · {attempt.status}
+            Test {attempt.test_id} · {attempt.status} · score {attempt.score ?? "-"}
+            {attempt.report_url && (
+              <div>
+                <Link href={attempt.report_url} className="text-brand-600" target="_blank">
+                  View Report
+                </Link>
+              </div>
+            )}
           </div>
         ))}
       </div>

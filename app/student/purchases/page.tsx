@@ -1,3 +1,4 @@
+import { RefundRequestButton } from "@/components/student/refund-request-button";
 import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
 
@@ -25,6 +26,7 @@ export default async function Page() {
         {courseOrders?.map((order) => (
           <div key={order.id} className="rounded border bg-white p-3 text-sm">
             {order.course_id} · ₹{order.final_paid_amount} · {order.payment_status}
+            {order.payment_status === "paid" && <RefundRequestButton orderType="course" orderId={order.id} />}
           </div>
         ))}
       </div>
@@ -33,6 +35,7 @@ export default async function Page() {
         {testOrders?.map((order) => (
           <div key={order.id} className="rounded border bg-white p-3 text-sm">
             {order.test_id} · ₹{order.final_paid_amount} · {order.payment_status}
+            {order.payment_status === "paid" && <RefundRequestButton orderType="psychometric" orderId={order.id} />}
           </div>
         ))}
       </div>

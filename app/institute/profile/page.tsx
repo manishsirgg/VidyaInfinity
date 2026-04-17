@@ -6,7 +6,7 @@ export default async function Page() {
   const supabase = await createClient();
   const { data: institute } = await supabase
     .from("institutes")
-    .select("name,city,description,website_url,approval_status")
+    .select("name,city,description,website_url,approval_status,rejection_reason")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -19,6 +19,7 @@ export default async function Page() {
           <p>City: {institute.city ?? "-"}</p>
           <p>Website: {institute.website_url ?? "-"}</p>
           <p>Approval: {institute.approval_status}</p>
+          {institute.rejection_reason && <p className="text-rose-600">Reason: {institute.rejection_reason}</p>}
           <p>Description: {institute.description ?? "-"}</p>
         </div>
       ) : (

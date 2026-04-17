@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
+import { reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -33,10 +34,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Order not found for this user" }, { status: 404 });
     }
 
-    if (order.payment_status === "paid") {
-      return NextResponse.json({ ok: true, idempotent: true });
-    }
-
     const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
     if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
 
@@ -45,46 +42,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
 
-    const { error: updateOrderError } = await admin.data
-      .from("psychometric_orders")
-      .update({
-        payment_status: "paid",
-        razorpay_payment_id: paymentId,
-        razorpay_signature: signature,
-        paid_at: new Date().toISOString(),
-      })
-      .eq("id", order.id)
-      .eq("payment_status", "created");
+    const reconciled = await reconcilePsychometricOrderPaid({
+      supabase: admin.data,
+      order,
+      razorpayOrderId: orderId,
+      razorpayPaymentId: paymentId,
+      razorpaySignature: signature,
+      source: "verify_api",
+    });
 
-    if (updateOrderError) return NextResponse.json({ error: updateOrderError.message }, { status: 500 });
+    if (reconciled.error) {
+      return NextResponse.json({ error: reconciled.error }, { status: 500 });
+    }
 
-    await admin.data.from("razorpay_transactions").upsert(
-      {
-        order_type: "psychometric",
-        order_id: order.id,
-        user_id: user.id,
-        razorpay_order_id: orderId,
-        razorpay_payment_id: paymentId,
-        razorpay_signature: signature,
-        amount: order.final_paid_amount,
-        currency: order.currency,
-        status: "captured",
-        payload: { source: "psychometric_verify_api" },
-      },
-      { onConflict: "razorpay_payment_id" }
-    );
-
-    await admin.data.from("test_attempts").upsert(
-      {
-        user_id: user.id,
-        test_id: order.test_id,
-        status: "unlocked",
-        started_at: null,
-      },
-      { onConflict: "user_id,test_id" }
-    );
-
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, idempotent: order.payment_status === "paid" });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to verify psychometric payment" },
