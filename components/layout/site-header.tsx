@@ -1,4 +1,5 @@
 import type { Route } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
 import { siteConfig } from "@/lib/constants/site";
@@ -14,10 +15,9 @@ const links: Array<{ href: Route; label: string }> = [
 export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-        <Link href="/" className="font-semibold text-brand-700">
-          {siteConfig.name}
-          <span className="ml-2 text-xs font-normal text-slate-500">{siteConfig.tagline}</span>
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4">
+        <Link href="/" className="flex items-center">
+          <Image src="/logo.svg" alt={`${siteConfig.name} logo`} width={200} height={40} priority className="h-10 w-auto" />
         </Link>
         <nav className="hidden gap-6 text-sm md:flex">
           {links.map((link) => (
@@ -26,7 +26,7 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <div className="flex gap-3 text-sm">
+        <div className="flex shrink-0 gap-3 text-sm">
           <Link href="/auth/login" className="text-slate-700 hover:text-brand-700">
             Login
           </Link>

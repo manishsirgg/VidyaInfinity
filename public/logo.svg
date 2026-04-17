@@ -1,0 +1,40 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Vidya Infinity Logo</title>
+  <desc id="desc">Infinity loop with graduation cap and Vidya Infinity text on blue background.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f5fd6"/>
+      <stop offset="100%" stop-color="#163da8"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8d048"/>
+      <stop offset="100%" stop-color="#d39a13"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#63d6ff"/>
+      <stop offset="100%" stop-color="#0d4ccf"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <g transform="translate(0,8)">
+    <ellipse cx="330" cy="480" rx="170" ry="112" fill="none" stroke="url(#gold)" stroke-width="34"/>
+    <ellipse cx="694" cy="480" rx="170" ry="112" fill="none" stroke="url(#cyan)" stroke-width="34"/>
+    <path d="M350 388C452 406 512 478 512 478C512 478 575 406 680 388" fill="none" stroke="url(#gold)" stroke-width="36" stroke-linecap="round"/>
+    <path d="M350 388C434 410 500 478 500 478C500 478 572 411 680 388" fill="none" stroke="#1ca4eb" stroke-width="18" stroke-linecap="round" opacity="0.95"/>
+
+    <g transform="translate(192,214)">
+      <polygon points="0,120 206,120 304,182 98,182" fill="#1270d9" stroke="#60dbff" stroke-width="3"/>
+      <polygon points="0,120 126,55 333,60 206,120" fill="#1454c7" stroke="#60dbff" stroke-width="3"/>
+      <line x1="24" y1="128" x2="20" y2="214" stroke="#f8c73c" stroke-width="6"/>
+      <circle cx="20" cy="216" r="10" fill="#f8c73c"/>
+      <polygon points="8,226 32,226 37,274 3,274" fill="#f8c73c"/>
+      <line x1="52" y1="158" x2="154" y2="84" stroke="#f8c73c" stroke-width="7"/>
+      <circle cx="154" cy="84" r="10" fill="#f8c73c"/>
+    </g>
+  </g>
+
+  <text x="512" y="740" fill="#f2f6ff" font-family="Georgia, 'Times New Roman', serif" font-size="92" font-weight="700" text-anchor="middle">VIDYA INFINITY</text>
+  <text x="512" y="848" fill="#d8e6ff" font-family="Arial, Helvetica, sans-serif" font-size="58" text-anchor="middle" letter-spacing="1">Global Education Architects</text>
+</svg>

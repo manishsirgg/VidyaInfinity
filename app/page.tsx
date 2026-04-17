@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { NewsletterForm } from "@/components/shared/newsletter-form";
@@ -6,7 +7,7 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-16">
       <section className="rounded-2xl bg-gradient-to-r from-brand-700 to-brand-500 p-10 text-white">
-        <p className="text-sm uppercase tracking-wider">Vidya Infinity</p>
+        <Image src="/logo.svg" alt="Vidya Infinity logo" width={360} height={120} className="h-16 w-auto" priority />
         <h1 className="mt-3 text-4xl font-semibold">Global Education Architects</h1>
         <p className="mt-4 max-w-2xl text-brand-50">
           Discover verified institutes, apply to approved courses, purchase psychometric tests, and get expert guidance.
