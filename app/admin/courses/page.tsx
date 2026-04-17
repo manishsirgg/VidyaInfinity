@@ -9,7 +9,7 @@ export default async function Page() {
   const { data: courses } = await supabase
     .from("courses")
     .select(
-      "id,title,category,course_level,delivery_mode,language,summary,fee_amount,approval_status,instructor_name,total_seats,start_date,rejection_reason,course_media(id,media_type,media_url),created_at"
+      "id,title,category,course_level,delivery_mode,language,summary,fee_amount,approval_status,instructor_name,total_seats,start_date,rejection_reason,course_media(id,type,file_url),created_at"
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -32,7 +32,7 @@ export default async function Page() {
             <p className="text-slate-600">Media: {course.course_media?.length ?? 0} file(s)</p>
             {(course.course_media ?? []).slice(0, 4).map((media) => (
               <p key={media.id} className="text-xs text-slate-500">
-                {media.media_type}: {media.media_url}
+                {media.type}: {media.file_url}
               </p>
             ))}
             {course.rejection_reason && <p className="text-xs text-rose-600">Reason: {course.rejection_reason}</p>}

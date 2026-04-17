@@ -1,6 +1,7 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
 import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
+import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 
 export default async function Page() {
   await requireUser("admin");
@@ -23,6 +24,16 @@ export default async function Page() {
         .order("created_at", { ascending: false })
     : { data: [] };
 
+  const docsWithLinks = await Promise.all(
+    (docs ?? []).map(async (doc) => ({
+      ...doc,
+      signedUrl: await getSignedPrivateFileUrl({
+        bucket: "user-documents",
+        fileRef: doc.document_url,
+      }),
+    }))
+  );
+
   const { data: institutes } = userIds.length
     ? await supabase.from("institutes").select("id,user_id").in("user_id", userIds)
     : { data: [] };
@@ -37,8 +48,18 @@ export default async function Page() {
         .order("created_at", { ascending: false })
     : { data: [] };
 
-  const docsByUser = new Map<string, typeof docs>();
-  for (const doc of docs ?? []) {
+  const instituteDocsWithLinks = await Promise.all(
+    (instituteDocs ?? []).map(async (doc) => ({
+      ...doc,
+      signedUrl: await getSignedPrivateFileUrl({
+        bucket: "institute-documents",
+        fileRef: doc.document_url,
+      }),
+    }))
+  );
+
+  const docsByUser = new Map<string, typeof docsWithLinks>();
+  for (const doc of docsWithLinks ?? []) {
     const list = docsByUser.get(doc.user_id) ?? [];
     list.push(doc);
     docsByUser.set(doc.user_id, list);
@@ -49,8 +70,8 @@ export default async function Page() {
     instituteByUser.set(institute.user_id, institute.id);
   }
 
-  const instituteDocsByInstitute = new Map<string, typeof instituteDocs>();
-  for (const doc of instituteDocs ?? []) {
+  const instituteDocsByInstitute = new Map<string, typeof instituteDocsWithLinks>();
+  for (const doc of instituteDocsWithLinks ?? []) {
     const list = instituteDocsByInstitute.get(doc.institute_id) ?? [];
     list.push(doc);
     instituteDocsByInstitute.set(doc.institute_id, list);
@@ -92,9 +113,13 @@ export default async function Page() {
                     {directDocs.map((doc) => (
                       <li key={doc.id}>
                         {doc.document_category} · {doc.document_type} · {doc.status} ·{" "}
-                        <a className="text-brand-700 underline" href={doc.document_url} target="_blank" rel="noreferrer">
-                          view
-                        </a>
+                        {doc.signedUrl ? (
+                          <a className="text-brand-700 underline" href={doc.signedUrl} target="_blank" rel="noreferrer">
+                            view
+                          </a>
+                        ) : (
+                          <span className="text-rose-600">Unavailable</span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -110,9 +135,13 @@ export default async function Page() {
                     {relatedInstituteDocs.map((doc) => (
                       <li key={doc.id}>
                         {doc.type} · {doc.status} ·{" "}
-                        <a className="text-brand-700 underline" href={doc.document_url} target="_blank" rel="noreferrer">
-                          view
-                        </a>
+                        {doc.signedUrl ? (
+                          <a className="text-brand-700 underline" href={doc.signedUrl} target="_blank" rel="noreferrer">
+                            view
+                          </a>
+                        ) : (
+                          <span className="text-rose-600">Unavailable</span>
+                        )}
                       </li>
                     ))}
                   </ul>
