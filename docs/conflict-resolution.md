@@ -94,3 +94,25 @@ Expected output:
   - `experimental: { typedRoutes: true }`
 - choose **`Accept incoming change`** (or accept both then delete that experimental block manually).
 - Final `next.config.ts` should only keep the `images.remotePatterns` config.
+
+---
+
+## PR #6 (conflicts created after typed-route fix)
+
+If GitHub shows these 6 conflicted files:
+
+- `app/blogs/page.tsx`
+- `app/courses/page.tsx`
+- `app/institutes/page.tsx`
+- `app/psychometric-tests/page.tsx`
+- `components/layout/site-header.tsx`
+- `next.config.ts`
+
+Use this rule:
+
+1. For the **five page/header files**, keep the version that includes:
+   - `import type { Route } from "next";`
+   - `href={... as Route}` for slug links, or typed links array in header.
+2. For **`next.config.ts`**, keep the version **without** `experimental.typedRoutes`.
+
+This preserves Vercel build compatibility and typed-route-safe Link usage.

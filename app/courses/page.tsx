@@ -1,3 +1,4 @@
+import type { Route } from "next";
 import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/server";
@@ -19,7 +20,7 @@ export default async function CoursesPage() {
             <h2 className="text-lg font-medium">{course.title}</h2>
             <p className="mt-2 text-sm text-slate-600">{course.summary}</p>
             <p className="mt-2 text-sm font-medium">₹{course.fee_amount}</p>
-            <Link href={`/courses/${course.slug}`} className="mt-4 inline-block text-brand-600">
+            <Link href={`/courses/${course.slug}` as Route} className="mt-4 inline-block text-brand-600">
               Enroll Now
             </Link>
           </article>

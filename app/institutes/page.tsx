@@ -1,3 +1,4 @@
+import type { Route } from "next";
 import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/server";
@@ -18,7 +19,7 @@ export default async function InstitutesPage() {
           <article key={institute.id} className="rounded-xl border bg-white p-5">
             <h2 className="text-lg font-medium">{institute.name}</h2>
             <p className="mt-2 text-sm text-slate-600">{institute.city}</p>
-            <Link href={`/institutes/${institute.slug}`} className="mt-4 inline-block text-brand-600">
+            <Link href={`/institutes/${institute.slug}` as Route} className="mt-4 inline-block text-brand-600">
               View Institute
             </Link>
           </article>

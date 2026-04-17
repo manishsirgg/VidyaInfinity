@@ -1,8 +1,9 @@
+import type { Route } from "next";
 import Link from "next/link";
 
 import { siteConfig } from "@/lib/constants/site";
 
-const links = [
+const links: Array<{ href: Route; label: string }> = [
   { href: "/courses", label: "Courses" },
   { href: "/institutes", label: "Institutes" },
   { href: "/psychometric-tests", label: "Psychometric Tests" },
