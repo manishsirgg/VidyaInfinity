@@ -57,3 +57,15 @@ npm run dev
 - Public listing pages only query approved/published records.
 - Dashboard routes use role-aware guards with server redirects.
 - Migration includes baseline RLS policies for admin/student isolation.
+
+## Merge Conflict Safety Check
+
+If GitHub shows conflicted files, run this command locally before committing:
+
+```bash
+npm run check:conflicts
+```
+
+Expected output when resolved:
+
+- `no-conflict-markers`
