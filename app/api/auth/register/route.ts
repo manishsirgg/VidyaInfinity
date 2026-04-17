@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { deleteFromBucket, uploadToBucket } from "@/lib/storage/uploads";
+import {
+  deleteFromBucket,
+  uploadInstituteDocument,
+  uploadUserDocument,
+  STORAGE_BUCKETS,
+} from "@/lib/storage/uploads";
 
 type RegisterRole = "student" | "institute" | "admin";
 
@@ -30,7 +35,7 @@ function assertRequired(fields: Record<string, string>) {
 }
 
 export async function POST(request: Request) {
-  const uploadedPaths: Array<{ bucket: "institute-documents"; path: string }> = [];
+  const uploadedPaths: Array<{ bucket: keyof Pick<typeof STORAGE_BUCKETS, "userDocuments" | "instituteDocuments">; path: string }> = [];
   let createdUserId: string | null = null;
 
   try {
@@ -217,27 +222,26 @@ export async function POST(request: Request) {
       instituteId = institute.id;
     }
 
-    const identityUpload = await uploadToBucket({
-      bucket: "institute-documents",
+    const identityUpload = await uploadUserDocument({
+      userId: createdUserId,
       file: identityDocument,
-      ownerId: createdUserId,
-      folder: "identity",
+      category: "identity",
     });
 
     if (identityUpload.error) {
       throw new Error(identityUpload.error);
     }
-    if (!identityUpload.path || !identityUpload.publicUrl) {
+    if (!identityUpload.path) {
       throw new Error("Failed to upload identity document");
     }
 
-    uploadedPaths.push({ bucket: "institute-documents", path: identityUpload.path });
+    uploadedPaths.push({ bucket: "userDocuments", path: identityUpload.path });
 
     const { error: identityDocError } = await admin.data.from("user_documents").insert({
       user_id: createdUserId,
       document_category: "identity",
       document_type: text(form, "identityDocumentType") || "government_id",
-      document_url: identityUpload.publicUrl,
+      document_url: identityUpload.path,
       status: "pending",
     });
 
@@ -246,25 +250,24 @@ export async function POST(request: Request) {
     }
 
     if (role === "institute" && instituteApprovalDocument instanceof File && instituteId) {
-      const approvalUpload = await uploadToBucket({
-        bucket: "institute-documents",
+      const approvalUpload = await uploadInstituteDocument({
+        userId: createdUserId,
         file: instituteApprovalDocument,
-        ownerId: createdUserId,
-        folder: "institute-approval",
+        type: "approval",
       });
 
       if (approvalUpload.error) {
         throw new Error(approvalUpload.error);
       }
-      if (!approvalUpload.path || !approvalUpload.publicUrl) {
+      if (!approvalUpload.path) {
         throw new Error("Failed to upload institute approval document");
       }
 
-      uploadedPaths.push({ bucket: "institute-documents", path: approvalUpload.path });
+      uploadedPaths.push({ bucket: "instituteDocuments", path: approvalUpload.path });
 
       const { error: instituteDocsError } = await admin.data.from("institute_documents").insert({
         institute_id: instituteId,
-        document_url: approvalUpload.publicUrl,
+        document_url: approvalUpload.path,
         type: text(form, "instituteApprovalDocumentType") || "registration_certificate",
         status: "pending",
       });
@@ -275,27 +278,26 @@ export async function POST(request: Request) {
     }
 
     if (role === "admin" && adminAuthorizationDocument instanceof File) {
-      const authUpload = await uploadToBucket({
-        bucket: "institute-documents",
+      const authUpload = await uploadUserDocument({
+        userId: createdUserId,
         file: adminAuthorizationDocument,
-        ownerId: createdUserId,
-        folder: "admin-authorization",
+        category: "authorization",
       });
 
       if (authUpload.error) {
         throw new Error(authUpload.error);
       }
-      if (!authUpload.path || !authUpload.publicUrl) {
+      if (!authUpload.path) {
         throw new Error("Failed to upload admin authorization document");
       }
 
-      uploadedPaths.push({ bucket: "institute-documents", path: authUpload.path });
+      uploadedPaths.push({ bucket: "userDocuments", path: authUpload.path });
 
       const { error: authDocError } = await admin.data.from("user_documents").insert({
         user_id: createdUserId,
         document_category: "authorization",
         document_type: text(form, "adminAuthorizationDocumentType") || "authorization_letter",
-        document_url: authUpload.publicUrl,
+        document_url: authUpload.path,
         status: "pending",
       });
 
@@ -313,7 +315,7 @@ export async function POST(request: Request) {
     const admin = getSupabaseAdmin();
     if (admin.ok) {
       for (const uploaded of uploadedPaths) {
-        await deleteFromBucket(uploaded.bucket, uploaded.path);
+        await deleteFromBucket(STORAGE_BUCKETS[uploaded.bucket], uploaded.path);
       }
 
       if (createdUserId) {

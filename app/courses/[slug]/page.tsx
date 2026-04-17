@@ -9,7 +9,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   const { data: course } = await supabase
     .from("courses")
     .select(
-      "id,title,summary,description,fee_amount,category,subcategory,course_level,language,delivery_mode,duration_value,duration_unit,weekly_schedule,start_date,end_date,eligibility,prerequisites,learning_outcomes,target_audience,syllabus,certificate_available,certification_details,total_seats,admission_deadline,support_email,support_phone,instructor_name,instructor_qualification,demo_video_url,brochure_url,approval_status,course_media(media_url,media_type)"
+      "id,title,summary,description,fee_amount,category,subcategory,course_level,language,delivery_mode,duration_value,duration_unit,weekly_schedule,start_date,end_date,eligibility,prerequisites,learning_outcomes,target_audience,syllabus,certificate_available,certification_details,total_seats,admission_deadline,support_email,support_phone,instructor_name,instructor_qualification,demo_video_url,brochure_url,approval_status,course_media(file_url,type)"
     )
     .eq("slug", slug)
     .eq("approval_status", "approved")
@@ -17,8 +17,8 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
 
   if (!course) notFound();
 
-  const imageMedia = course.course_media?.filter((media) => media.media_type === "image") ?? [];
-  const videoMedia = course.course_media?.filter((media) => media.media_type === "video") ?? [];
+  const imageMedia = course.course_media?.filter((media) => media.type === "image") ?? [];
+  const videoMedia = course.course_media?.filter((media) => media.type === "video") ?? [];
 
   return (
     <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:py-12 md:grid-cols-[2fr_1fr] md:gap-8">
@@ -76,7 +76,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               {imageMedia.map((media) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={media.media_url} src={media.media_url} alt={course.title} className="h-48 w-full rounded-md object-cover" />
+                <img key={media.file_url} src={media.file_url} alt={course.title} className="h-48 w-full rounded-md object-cover" />
               ))}
             </div>
           ) : (
@@ -85,7 +85,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           {videoMedia.length > 0 ? (
             <div className="mt-3 grid gap-3">
               {videoMedia.map((media) => (
-                <video key={media.media_url} controls className="w-full rounded-md border" src={media.media_url} />
+                <video key={media.file_url} controls className="w-full rounded-md border" src={media.file_url} />
               ))}
             </div>
           ) : (

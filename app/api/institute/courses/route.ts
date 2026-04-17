@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { uploadToBucket } from "@/lib/storage/uploads";
+import { uploadCourseMedia } from "@/lib/storage/uploads";
 
 function toSlug(value: string) {
   return value
@@ -147,21 +147,23 @@ export async function POST(request: Request) {
   if (error || !course) return NextResponse.json({ error: error?.message ?? "Failed to create course" }, { status: 500 });
 
   for (const file of mediaFiles) {
-    const uploaded = await uploadToBucket({
-      bucket: "course-media",
+    const uploaded = await uploadCourseMedia({
+      userId: user.id,
+      courseId: course.id,
       file,
-      ownerId: user.id,
-      folder: "course-media",
     });
 
     if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
+    if (!uploaded.path || !uploaded.publicUrl) {
+      return NextResponse.json({ error: "Failed to upload course media" }, { status: 500 });
+    }
 
-    const mediaType = file.type.startsWith("video/") ? "video" : "image";
+    const mediaType = file.type.startsWith("video/") ? "video" : file.type.startsWith("image/") ? "image" : "document";
 
     const { error: mediaError } = await admin.data.from("course_media").insert({
       course_id: course.id,
-      media_type: mediaType,
-      media_url: uploaded.publicUrl,
+      file_url: uploaded.publicUrl,
+      type: mediaType,
       storage_path: uploaded.path,
     });
 

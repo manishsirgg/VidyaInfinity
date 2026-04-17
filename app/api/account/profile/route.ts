@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { uploadToBucket } from "@/lib/storage/uploads";
+import { uploadAvatar } from "@/lib/storage/uploads";
 
 function val(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
@@ -53,11 +53,9 @@ export async function PATCH(request: Request) {
   let avatarPath: string | undefined;
   const avatarFile = form.get("avatar");
   if (avatarFile instanceof File && avatarFile.size > 0) {
-    const uploaded = await uploadToBucket({
-      bucket: "avatar-images",
+    const uploaded = await uploadAvatar({
+      userId: auth.user.id,
       file: avatarFile,
-      ownerId: auth.user.id,
-      folder: "avatars",
     });
 
     if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });

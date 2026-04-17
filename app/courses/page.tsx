@@ -8,7 +8,7 @@ export default async function CoursesPage() {
   const { data: courses } = await supabase
     .from("courses")
     .select(
-      "id,title,slug,summary,fee_amount,category,course_level,language,delivery_mode,duration_value,duration_unit,start_date,course_media(media_url,media_type),approval_status"
+      "id,title,slug,summary,fee_amount,category,course_level,language,delivery_mode,duration_value,duration_unit,start_date,course_media(file_url,type),approval_status"
     )
     .eq("approval_status", "approved")
     .order("created_at", { ascending: false });
@@ -18,9 +18,9 @@ export default async function CoursesPage() {
       <h1 className="text-3xl font-semibold">Approved Courses</h1>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {courses?.map((course) => {
-          const previewImage = course.course_media?.find((media) => media.media_type === "image")?.media_url;
-          const imageCount = course.course_media?.filter((media) => media.media_type === "image").length ?? 0;
-          const videoCount = course.course_media?.filter((media) => media.media_type === "video").length ?? 0;
+          const previewImage = course.course_media?.find((media) => media.type === "image")?.file_url;
+          const imageCount = course.course_media?.filter((media) => media.type === "image").length ?? 0;
+          const videoCount = course.course_media?.filter((media) => media.type === "video").length ?? 0;
 
           return (
             <article key={course.id} className="rounded-xl border bg-white p-5">
@@ -37,9 +37,7 @@ export default async function CoursesPage() {
                 Duration: {course.duration_value ?? "-"} {course.duration_unit ?? ""} · Start: {course.start_date ?? "TBA"}
               </p>
               <p className="mt-2 text-sm font-medium">₹{course.fee_amount}</p>
-              <p className="mt-2 text-xs text-slate-500">
-                Media attached: {imageCount} images, {videoCount} videos
-              </p>
+              <p className="mt-2 text-xs text-slate-500">Media attached: {imageCount} images, {videoCount} videos</p>
               <Link href={`/courses/${course.slug}` as Route} className="mt-4 inline-block text-brand-600">
                 View Course
               </Link>
