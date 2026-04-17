@@ -16,7 +16,7 @@ export default function HomePage() {
           <Link href="/courses" className="rounded-md bg-white px-5 py-2 text-brand-700">
             Explore Courses
           </Link>
-          <Link href="/services" className="rounded-md border border-white px-5 py-2">
+          <Link href="/contact" className="rounded-md border border-white px-5 py-2">
             Get Guidance
           </Link>
         </div>

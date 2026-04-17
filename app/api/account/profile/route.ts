@@ -16,11 +16,22 @@ export async function GET() {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const { data: profile, error: profileError } = await admin.data
+  const profileWithAvatar = await admin.data
     .from("profiles")
-    .select("*")
+    .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation,avatar_url")
     .eq("id", auth.user.id)
     .maybeSingle();
+
+  const profileFallback = profileWithAvatar.error
+    ? await admin.data
+        .from("profiles")
+        .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation")
+        .eq("id", auth.user.id)
+        .maybeSingle()
+    : null;
+
+  const profile = profileWithAvatar.data ?? profileFallback?.data ?? null;
+  const profileError = profileWithAvatar.error ?? profileFallback?.error ?? null;
 
   if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
 
@@ -76,27 +87,38 @@ export async function PATCH(request: Request) {
   });
   if (metaError) return NextResponse.json({ error: metaError.message }, { status: 400 });
 
-  const profileUpdate = {
+  const profileUpdateBase = {
     full_name: fullName,
     email: nextEmail,
     phone: val(form, "phone") || null,
-    alternate_phone: val(form, "alternatePhone") || null,
-    date_of_birth: val(form, "dateOfBirth") || null,
-    gender: val(form, "gender") || null,
-    address_line1: val(form, "addressLine1") || null,
-    address_line2: val(form, "addressLine2") || null,
     city: val(form, "city") || null,
     state: val(form, "state") || null,
     country: val(form, "country") || null,
-    postal_code: val(form, "postalCode") || null,
     organization_name: val(form, "organizationName") || null,
     organization_type: val(form, "organizationType") || null,
     designation: val(form, "designation") || null,
-    avatar_url: avatarUrl ?? undefined,
-    avatar_storage_path: avatarPath ?? undefined,
   };
 
-  const { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
+  const profileUpdate =
+    avatarUrl && avatarPath
+      ? {
+          ...profileUpdateBase,
+          avatar_url: avatarUrl,
+          avatar_storage_path: avatarPath,
+        }
+      : profileUpdateBase;
+
+  let { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
+
+  if (
+    profileError &&
+    avatarUrl &&
+    avatarPath &&
+    /column\s+profiles\.avatar_(url|storage_path)\s+does\s+not\s+exist/i.test(profileError.message)
+  ) {
+    ({ error: profileError } = await admin.data.from("profiles").update(profileUpdateBase).eq("id", auth.user.id));
+  }
+
   if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
 
   if (auth.profile.role === "institute") {
@@ -108,12 +130,9 @@ export async function PATCH(request: Request) {
       accreditation_number: val(form, "accreditationNumber") || null,
       website_url: val(form, "websiteUrl") || null,
       established_year: val(form, "establishedYear") ? Number(val(form, "establishedYear")) : null,
-      address_line1: val(form, "addressLine1") || null,
-      address_line2: val(form, "addressLine2") || null,
       city: val(form, "city") || null,
       state: val(form, "state") || null,
       country: val(form, "country") || null,
-      postal_code: val(form, "postalCode") || null,
       contact_email: nextEmail,
       contact_phone: val(form, "phone") || null,
       authorized_person_name: fullName,
