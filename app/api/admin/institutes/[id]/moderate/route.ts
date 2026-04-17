@@ -22,27 +22,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const { data, error } = await admin.data
+  const result = await admin.data
     .from("institutes")
     .update({
-      approval_status: status,
+      status,
       rejection_reason: status === "rejected" ? rejectionReason : null,
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: auth.user.id,
     })
     .eq("id", id)
-    .select("id,name,approval_status,rejection_reason")
+    .select("id,name,status,rejection_reason")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
 
   await writeAdminAuditLog({
     adminUserId: auth.user.id,
     action: status === "approved" ? "INSTITUTE_APPROVED" : status === "rejected" ? "INSTITUTE_REJECTED" : "INSTITUTE_MARKED_PENDING",
     targetTable: "institutes",
     targetId: id,
-    metadata: { status, rejectionReason: rejectionReason ?? null, instituteName: data?.name ?? null },
+    metadata: { status, rejectionReason: rejectionReason ?? null, instituteName: result.data?.name ?? null },
   });
 
-  return NextResponse.json({ ok: true, institute: data });
+  return NextResponse.json({ ok: true, institute: result.data });
 }

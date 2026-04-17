@@ -27,8 +27,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .update({
       approval_status: status,
       rejection_reason: status === "rejected" ? rejectionReason : null,
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: auth.user.id,
     })
     .eq("id", id)
     .select("id,role,email,approval_status,rejection_reason")
@@ -42,11 +40,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { error: instituteError } = await admin.data
       .from("institutes")
       .update({
-        approval_status: status,
-        rejection_reason: status === "rejected" ? rejectionReason : null,
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: auth.user.id,
-      })
+      status,
+      rejection_reason: status === "rejected" ? rejectionReason : null,
+    })
       .eq("user_id", id);
 
     if (instituteError) {

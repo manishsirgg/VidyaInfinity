@@ -32,15 +32,14 @@ export async function POST(request: Request) {
 
   if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
 
-  const { error } = await admin.data.from("institute_documents").insert({
+  const { error: insertError } = await admin.data.from("institute_documents").insert({
     institute_id: institute.id,
-    document_type: documentType,
+    type: documentType,
     document_url: uploaded.publicUrl,
-    storage_path: uploaded.path,
-    verification_status: "pending",
+    status: "pending",
   });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
 
   return NextResponse.json({ ok: true, url: uploaded.publicUrl });
 }

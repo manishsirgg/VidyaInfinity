@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "check:conflicts": "bash -lc 'if rg -n \"^(<<<<<<<|=======|>>>>>>>)\"; then exit 1; else echo no-conflict-markers; fi'"
+    "check:conflicts": "bash -lc 'if rg -n \"^(<<<<<<<|=======|>>>>>>>)\"; then exit 1; else echo no-conflict-markers; fi'",
+    "check:no-legacy-user-verification-table": "bash -lc 'if rg -n \"user_verification_documents\" app components lib types; then echo \"Found legacy table references in runtime code\"; exit 1; else echo \"no-legacy-user-verification-table-references\"; fi'"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

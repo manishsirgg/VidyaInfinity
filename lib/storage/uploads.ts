@@ -63,3 +63,11 @@ export async function uploadToBucket({
     publicUrl: publicData.publicUrl,
   };
 }
+
+export async function deleteFromBucket(bucket: keyof typeof allowedMimeTypes, pathToDelete: string) {
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return { error: admin.error };
+
+  const { error } = await admin.data.storage.from(bucket).remove([pathToDelete]);
+  return { error: error?.message ?? null };
+}
