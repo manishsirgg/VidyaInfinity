@@ -106,23 +106,9 @@ export function ProfileSettingsForm({ role }: Props) {
         <input required name="fullName" defaultValue={String(profile.full_name ?? "")} placeholder="Full name" className="rounded border px-3 py-2" />
         <input required type="email" name="email" defaultValue={String(profile.email ?? "")} placeholder="Email" className="rounded border px-3 py-2" />
         <input name="phone" defaultValue={String(profile.phone ?? "")} placeholder="Phone number" className="rounded border px-3 py-2" />
-        <input name="alternatePhone" defaultValue={String(profile.alternate_phone ?? "")} placeholder="Alternate phone" className="rounded border px-3 py-2" />
-        <input type="date" name="dateOfBirth" defaultValue={String(profile.date_of_birth ?? "")} className="rounded border px-3 py-2" />
-
-        <select name="gender" defaultValue={String(profile.gender ?? "")} className="rounded border px-3 py-2">
-          <option value="">Select gender</option>
-          <option value="female">Female</option>
-          <option value="male">Male</option>
-          <option value="other">Other</option>
-          <option value="prefer_not_to_say">Prefer not to say</option>
-        </select>
-
-        <input name="addressLine1" defaultValue={String(profile.address_line1 ?? "")} placeholder="Address line 1" className="rounded border px-3 py-2" />
-        <input name="addressLine2" defaultValue={String(profile.address_line2 ?? "")} placeholder="Address line 2" className="rounded border px-3 py-2" />
         <input name="city" defaultValue={String(profile.city ?? "")} placeholder="City" className="rounded border px-3 py-2" />
         <input name="state" defaultValue={String(profile.state ?? "")} placeholder="State" className="rounded border px-3 py-2" />
         <input name="country" defaultValue={String(profile.country ?? "")} placeholder="Country" className="rounded border px-3 py-2" />
-        <input name="postalCode" defaultValue={String(profile.postal_code ?? "")} placeholder="Postal code" className="rounded border px-3 py-2" />
 
         <input name="organizationName" defaultValue={String(profile.organization_name ?? "")} placeholder="Organization name" className="rounded border px-3 py-2" />
         <input name="organizationType" defaultValue={String(profile.organization_type ?? "")} placeholder="Organization type" className="rounded border px-3 py-2" />
