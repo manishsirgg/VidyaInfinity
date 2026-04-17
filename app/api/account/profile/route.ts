@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { uploadAvatar } from "@/lib/storage/uploads";
 
 function val(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
@@ -18,7 +17,7 @@ export async function GET() {
 
   const { data: profile, error: profileError } = await admin.data
     .from("profiles")
-    .select("*")
+    .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation")
     .eq("id", auth.user.id)
     .maybeSingle();
 
@@ -49,20 +48,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "fullName and email are required" }, { status: 400 });
   }
 
-  let avatarUrl: string | undefined;
-  let avatarPath: string | undefined;
-  const avatarFile = form.get("avatar");
-  if (avatarFile instanceof File && avatarFile.size > 0) {
-    const uploaded = await uploadAvatar({
-      userId: auth.user.id,
-      file: avatarFile,
-    });
-
-    if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
-    avatarUrl = uploaded.publicUrl;
-    avatarPath = uploaded.path;
-  }
-
   if (nextEmail !== auth.user.email) {
     const { error: emailError } = await supabase.auth.updateUser({ email: nextEmail });
     if (emailError) return NextResponse.json({ error: emailError.message }, { status: 400 });
@@ -80,20 +65,12 @@ export async function PATCH(request: Request) {
     full_name: fullName,
     email: nextEmail,
     phone: val(form, "phone") || null,
-    alternate_phone: val(form, "alternatePhone") || null,
-    date_of_birth: val(form, "dateOfBirth") || null,
-    gender: val(form, "gender") || null,
-    address_line1: val(form, "addressLine1") || null,
-    address_line2: val(form, "addressLine2") || null,
     city: val(form, "city") || null,
     state: val(form, "state") || null,
     country: val(form, "country") || null,
-    postal_code: val(form, "postalCode") || null,
     organization_name: val(form, "organizationName") || null,
     organization_type: val(form, "organizationType") || null,
     designation: val(form, "designation") || null,
-    avatar_url: avatarUrl ?? undefined,
-    avatar_storage_path: avatarPath ?? undefined,
   };
 
   const { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
@@ -108,12 +85,9 @@ export async function PATCH(request: Request) {
       accreditation_number: val(form, "accreditationNumber") || null,
       website_url: val(form, "websiteUrl") || null,
       established_year: val(form, "establishedYear") ? Number(val(form, "establishedYear")) : null,
-      address_line1: val(form, "addressLine1") || null,
-      address_line2: val(form, "addressLine2") || null,
       city: val(form, "city") || null,
       state: val(form, "state") || null,
       country: val(form, "country") || null,
-      postal_code: val(form, "postalCode") || null,
       contact_email: nextEmail,
       contact_phone: val(form, "phone") || null,
       authorized_person_name: fullName,
