@@ -80,3 +80,17 @@ npm run check:conflicts
 Expected output:
 
 - `no-conflict-markers`
+
+---
+
+## PR #5 (2-file conflict quick fix)
+
+### A) `README.md`
+- For the conflict around **Vercel Build Compatibility**, choose **`Accept current change`**.
+- Keep that section in the final README.
+
+### B) `next.config.ts`
+- For the conflict block containing:
+  - `experimental: { typedRoutes: true }`
+- choose **`Accept incoming change`** (or accept both then delete that experimental block manually).
+- Final `next.config.ts` should only keep the `images.remotePatterns` config.

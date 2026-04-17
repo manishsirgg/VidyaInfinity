@@ -44,6 +44,12 @@ It creates:
 
 Payment API routes also perform runtime schema mismatch detection and return explicit guidance if any required tables are missing.
 
+
+## Vercel Build Compatibility
+
+- `typedRoutes` was removed from `experimental` in newer Next.js releases.
+- This repository keeps default route typing disabled to avoid CI/typecheck breaks from dynamic string hrefs until route-safe typing is fully adopted.
+
 ## Setup
 
 ```bash
