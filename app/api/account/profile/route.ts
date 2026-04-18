@@ -213,14 +213,6 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const mediaFiles = form.getAll("instituteMedia").filter((item): item is File => item instanceof File && item.size > 0);
-  if (auth.profile.role !== "institute" && mediaFiles.length > 0) {
-    return NextResponse.json({ error: "Institute media uploads are only available for institute accounts" }, { status: 400 });
-  }
-  if (mediaFiles.length > 8) {
-    return NextResponse.json({ error: "You can upload up to 8 institute media files at once" }, { status: 400 });
-  }
-
   if (nextEmail !== (auth.user.email ?? "").toLowerCase()) {
     const { error: emailError } = await supabase.auth.updateUser({ email: nextEmail });
     if (emailError) return NextResponse.json({ error: emailError.message }, { status: 400 });
