@@ -9,6 +9,16 @@ function val(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
 }
 
+function hasMissingProfileColumn(errorMessage: string, columnName: "avatar_url" | "avatar_storage_path") {
+  const normalized = errorMessage.toLowerCase();
+  return (
+    new RegExp(`column\\s+profiles\\.${columnName}\\s+does\\s+not\\s+exist`, "i").test(errorMessage) ||
+    (normalized.includes(columnName) &&
+      normalized.includes("profiles") &&
+      (normalized.includes("schema cache") || normalized.includes("could not find the")))
+  );
+}
+
 export async function GET() {
   const auth = await requireApiUser();
   if ("error" in auth) return auth.error;
@@ -120,12 +130,12 @@ export async function PATCH(request: Request) {
     profileError &&
     avatarUrl &&
     avatarPath &&
-    /column\s+profiles\.avatar_storage_path\s+does\s+not\s+exist/i.test(profileError.message)
+    hasMissingProfileColumn(profileError.message, "avatar_storage_path")
   ) {
     ({ error: profileError } = await admin.data.from("profiles").update(profileUpdateWithAvatar).eq("id", auth.user.id));
   }
 
-  if (profileError && avatarUrl && /column\s+profiles\.avatar_url\s+does\s+not\s+exist/i.test(profileError.message)) {
+  if (profileError && avatarUrl && hasMissingProfileColumn(profileError.message, "avatar_url")) {
     ({ error: profileError } = await admin.data.from("profiles").update(profileUpdateBase).eq("id", auth.user.id));
   }
 
