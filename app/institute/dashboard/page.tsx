@@ -17,11 +17,21 @@ export default async function InstituteDashboardPage() {
   const { user, profile } = await requireUser("institute");
   const supabase = await createClient();
 
-  const { data: institute } = await supabase
+  const { data: instituteRows, error: instituteError } = await supabase
     .from("institutes")
     .select("id,name,status,rejection_reason,created_at")
     .eq("user_id", user.id)
-    .maybeSingle();
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (instituteError) {
+    console.error("Failed to load institute dashboard record", {
+      userId: user.id,
+      error: instituteError.message,
+    });
+  }
+
+  const institute = instituteRows?.[0] ?? null;
 
   if (!institute) {
     return (
