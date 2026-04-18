@@ -13,7 +13,7 @@ export default async function InstituteDashboardPage() {
 
   const { data: institute } = await supabase
     .from("institutes")
-    .select("id,name,approval_status,city,rejection_reason,created_at")
+    .select("id,name,status,rejection_reason,created_at")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -92,8 +92,8 @@ export default async function InstituteDashboardPage() {
         </div>
         <div className="rounded border bg-white px-4 py-2 text-sm">
           <p className="font-medium">{institute.name}</p>
-          <p className="text-slate-600">{institute.city ?? "City not set"}</p>
-          <p className="text-slate-600">Status: {institute.approval_status}</p>
+          <p className="text-slate-600">{profile.city ?? "City not set"}</p>
+          <p className="text-slate-600">Status: {institute.status}</p>
         </div>
       </div>
 

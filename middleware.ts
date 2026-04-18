@@ -10,6 +10,10 @@ function getRequiredRole(pathname: string) {
   return null;
 }
 
+function approvalRedirect(status: string | null | undefined) {
+  return status === "rejected" ? "/auth/login?status=rejected" : "/auth/login?status=pending_approval";
+}
+
 export async function middleware(request: NextRequest) {
   const requiredRole = getRequiredRole(request.nextUrl.pathname);
   if (!requiredRole) return NextResponse.next();
@@ -46,10 +50,26 @@ export async function middleware(request: NextRequest) {
     .from("profiles")
     .select("role,approval_status")
     .eq("id", user.id)
-    .maybeSingle();
+    .maybeSingle<{ role: string; approval_status: string | null }>();
 
-  if (!profile || profile.role !== requiredRole || profile.approval_status !== "approved") {
-    return NextResponse.redirect(new URL("/auth/login?status=pending_approval", request.url));
+  if (!profile || profile.role !== requiredRole) {
+    return NextResponse.redirect(new URL("/auth/login", request.url));
+  }
+
+  if (profile.approval_status !== "approved") {
+    return NextResponse.redirect(new URL(approvalRedirect(profile.approval_status), request.url));
+  }
+
+  if (requiredRole === "institute") {
+    const { data: institute } = await supabase
+      .from("institutes")
+      .select("status")
+      .eq("user_id", user.id)
+      .maybeSingle<{ status: string }>();
+
+    if (institute && institute.status !== "approved") {
+      return NextResponse.redirect(new URL(approvalRedirect(institute.status), request.url));
+    }
   }
 
   return response;

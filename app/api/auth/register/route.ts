@@ -2,22 +2,27 @@ import { NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
+  STORAGE_BUCKETS,
   deleteFromBucket,
   uploadInstituteDocument,
   uploadUserDocument,
-  STORAGE_BUCKETS,
 } from "@/lib/storage/uploads";
 
 type RegisterRole = "student" | "institute" | "admin";
+type UploadRef = {
+  bucket: keyof Pick<typeof STORAGE_BUCKETS, "userDocuments" | "instituteDocuments">;
+  path: string;
+};
 
 function text(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
 }
 
-function parseOptionalNumber(value: string) {
+function parseOptionalInteger(value: string) {
   if (!value) return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null;
+  return parsed;
 }
 
 function isIsoDate(value: string) {
@@ -26,16 +31,36 @@ function isIsoDate(value: string) {
   return !Number.isNaN(parsed.getTime()) && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
-function assertRequired(fields: Record<string, string>) {
-  const missing = Object.entries(fields)
-    .filter(([, value]) => !value)
-    .map(([key]) => key);
+function missing(...fields: Array<[string, string]>) {
+  return fields.filter(([, value]) => !value).map(([name]) => name);
+}
 
-  return missing;
+function mapErrorStatus(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("duplicate") || normalized.includes("already registered") || normalized.includes("already exists")) {
+    return 409;
+  }
+  if (normalized.includes("invalid") || normalized.includes("required")) {
+    return 400;
+  }
+  return 500;
+}
+
+async function cleanupFailure(uploadedPaths: UploadRef[], createdUserId: string | null) {
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return;
+
+  for (const uploaded of uploadedPaths) {
+    await deleteFromBucket(STORAGE_BUCKETS[uploaded.bucket], uploaded.path);
+  }
+
+  if (createdUserId) {
+    await admin.data.auth.admin.deleteUser(createdUserId);
+  }
 }
 
 export async function POST(request: Request) {
-  const uploadedPaths: Array<{ bucket: keyof Pick<typeof STORAGE_BUCKETS, "userDocuments" | "instituteDocuments">; path: string }> = [];
+  const uploadedPaths: UploadRef[] = [];
   let createdUserId: string | null = null;
 
   try {
@@ -49,35 +74,45 @@ export async function POST(request: Request) {
     const fullName = text(form, "fullName");
     const email = text(form, "email").toLowerCase();
     const password = String(form.get("password") ?? "");
+    const phone = text(form, "phone");
 
-    const requiredForAll = assertRequired({
-      fullName,
-      email,
-      password,
-      phone: text(form, "phone"),
-    });
+    const missingCore = missing(
+      ["fullName", fullName],
+      ["email", email],
+      ["password", password],
+      ["phone", phone]
+    );
 
-    if (requiredForAll.length > 0) {
-      return NextResponse.json({ error: `Missing required fields: ${requiredForAll.join(", ")}` }, { status: 400 });
+    if (missingCore.length > 0) {
+      return NextResponse.json({ error: `Missing required fields: ${missingCore.join(", ")}` }, { status: 400 });
     }
 
     if (password.length < 8) {
       return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
     }
 
+    const city = text(form, "city");
+    const state = text(form, "state");
+    const country = text(form, "country");
+
     if (role === "student" || role === "institute") {
       const dateOfBirth = text(form, "dateOfBirth");
-      const missing = assertRequired({
-        dateOfBirth,
-        gender: text(form, "gender"),
-        addressLine1: text(form, "addressLine1"),
-        city: text(form, "city"),
-        state: text(form, "state"),
-        country: text(form, "country"),
-        postalCode: text(form, "postalCode"),
-      });
-      if (missing.length > 0) {
-        return NextResponse.json({ error: `Missing required fields: ${missing.join(", ")}` }, { status: 400 });
+      const gender = text(form, "gender");
+      const addressLine1 = text(form, "addressLine1");
+      const postalCode = text(form, "postalCode");
+
+      const roleMissing = missing(
+        ["dateOfBirth", dateOfBirth],
+        ["gender", gender],
+        ["addressLine1", addressLine1],
+        ["city", city],
+        ["state", state],
+        ["country", country],
+        ["postalCode", postalCode]
+      );
+
+      if (roleMissing.length > 0) {
+        return NextResponse.json({ error: `Missing required fields: ${roleMissing.join(", ")}` }, { status: 400 });
       }
 
       if (!isIsoDate(dateOfBirth)) {
@@ -86,45 +121,79 @@ export async function POST(request: Request) {
     }
 
     if (role === "admin") {
-      const missing = assertRequired({
-        designation: text(form, "designation"),
-        city: text(form, "city"),
-        state: text(form, "state"),
-        country: text(form, "country"),
-      });
-      if (missing.length > 0) {
-        return NextResponse.json({ error: `Missing required fields: ${missing.join(", ")}` }, { status: 400 });
+      const designation = text(form, "designation");
+      const roleMissing = missing(
+        ["designation", designation],
+        ["city", city],
+        ["state", state],
+        ["country", country]
+      );
+      if (roleMissing.length > 0) {
+        return NextResponse.json({ error: `Missing required fields: ${roleMissing.join(", ")}` }, { status: 400 });
       }
     }
 
     if (role === "institute") {
-      const missing = assertRequired({
-        organizationName: text(form, "organizationName"),
-        organizationType: text(form, "organizationType"),
-        designation: text(form, "designation"),
-      });
-      if (missing.length > 0) {
-        return NextResponse.json({ error: `Missing required fields: ${missing.join(", ")}` }, { status: 400 });
+      const organizationName = text(form, "organizationName");
+      const organizationType = text(form, "organizationType");
+      const designation = text(form, "designation");
+
+      const roleMissing = missing(
+        ["organizationName", organizationName],
+        ["organizationType", organizationType],
+        ["designation", designation]
+      );
+
+      if (roleMissing.length > 0) {
+        return NextResponse.json({ error: `Missing required fields: ${roleMissing.join(", ")}` }, { status: 400 });
       }
     }
 
+    const identityDocumentType = text(form, "identityDocumentType");
     const identityDocument = form.get("identityDocument");
-    if (!(identityDocument instanceof File)) {
-      return NextResponse.json({ error: "Identity document is required" }, { status: 400 });
+    if (!identityDocumentType || !(identityDocument instanceof File) || identityDocument.size === 0) {
+      return NextResponse.json({ error: "Identity document type and file are required" }, { status: 400 });
     }
 
-    const instituteApprovalDocument = form.get("instituteApprovalDocument");
-    if (role === "institute" && !(instituteApprovalDocument instanceof File)) {
-      return NextResponse.json({ error: "Institute approval document is required" }, { status: 400 });
-    }
-
+    const adminAuthorizationDocumentType = text(form, "adminAuthorizationDocumentType");
     const adminAuthorizationDocument = form.get("adminAuthorizationDocument");
-    if (role === "admin" && !(adminAuthorizationDocument instanceof File)) {
-      return NextResponse.json({ error: "Admin authorization document is required" }, { status: 400 });
+    if (
+      role === "admin" &&
+      (!adminAuthorizationDocumentType || !(adminAuthorizationDocument instanceof File) || adminAuthorizationDocument.size === 0)
+    ) {
+      return NextResponse.json({ error: "Admin authorization document type and file are required" }, { status: 400 });
+    }
+
+    const instituteApprovalDocumentType = text(form, "instituteApprovalDocumentType");
+    const instituteApprovalDocument = form.get("instituteApprovalDocument");
+    if (
+      role === "institute" &&
+      (!instituteApprovalDocumentType || !(instituteApprovalDocument instanceof File) || instituteApprovalDocument.size === 0)
+    ) {
+      return NextResponse.json({ error: "Institute approval document type and file are required" }, { status: 400 });
+    }
+
+    const establishedYear = parseOptionalInteger(text(form, "establishedYear"));
+    const totalStudents = parseOptionalInteger(text(form, "totalStudents"));
+    const totalStaff = parseOptionalInteger(text(form, "totalStaff"));
+
+    if (role === "institute") {
+      const yearNow = new Date().getUTCFullYear();
+      if (text(form, "establishedYear") && (establishedYear === null || establishedYear < 1800 || establishedYear > yearNow)) {
+        return NextResponse.json({ error: "establishedYear must be a valid year" }, { status: 400 });
+      }
+      if (text(form, "totalStudents") && (totalStudents === null || totalStudents < 0)) {
+        return NextResponse.json({ error: "totalStudents must be a non-negative integer" }, { status: 400 });
+      }
+      if (text(form, "totalStaff") && (totalStaff === null || totalStaff < 0)) {
+        return NextResponse.json({ error: "totalStaff must be a non-negative integer" }, { status: 400 });
+      }
     }
 
     const admin = getSupabaseAdmin();
-    if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: 500 });
+    }
 
     const signUp = await admin.data.auth.admin.createUser({
       email,
@@ -142,43 +211,26 @@ export async function POST(request: Request) {
 
     createdUserId = signUp.data.user.id;
 
-    const profilePayload = {
+    const { error: profileError } = await admin.data.from("profiles").insert({
       id: createdUserId,
       name: fullName,
       full_name: fullName,
       email,
       role,
       approval_status: "pending",
-      phone: text(form, "phone") || null,
+      phone,
+      city: city || null,
+      state: state || null,
+      country: country || null,
+      designation: role === "admin" || role === "institute" ? text(form, "designation") || null : null,
       organization_name: role === "institute" ? text(form, "organizationName") || null : null,
       organization_type: role === "institute" ? text(form, "organizationType") || null : null,
-      designation: role === "institute" || role === "admin" ? text(form, "designation") || null : null,
-      city: text(form, "city") || null,
-      state: text(form, "state") || null,
-      country: text(form, "country") || null,
-    };
+    });
 
-    const { error: profileError } = await admin.data.from("profiles").insert(profilePayload);
-    if (profileError) {
-      throw new Error(profileError.message);
-    }
+    if (profileError) throw new Error(profileError.message);
 
     if (role === "student" || role === "institute") {
-      const establishedYear = role === "institute" ? parseOptionalNumber(text(form, "establishedYear")) : null;
-      const totalStudents = role === "institute" ? parseOptionalNumber(text(form, "totalStudents")) : null;
-      const totalStaff = role === "institute" ? parseOptionalNumber(text(form, "totalStaff")) : null;
-
-      if (establishedYear !== null && (!Number.isInteger(establishedYear) || establishedYear < 1800 || establishedYear > 2100)) {
-        return NextResponse.json({ error: "establishedYear must be a valid year" }, { status: 400 });
-      }
-      if (totalStudents !== null && (!Number.isInteger(totalStudents) || totalStudents < 0)) {
-        return NextResponse.json({ error: "totalStudents must be a non-negative integer" }, { status: 400 });
-      }
-      if (totalStaff !== null && (!Number.isInteger(totalStaff) || totalStaff < 0)) {
-        return NextResponse.json({ error: "totalStaff must be a non-negative integer" }, { status: 400 });
-      }
-
-      const detailsPayload = {
+      const { error: detailsError } = await admin.data.from("user_additional_details").insert({
         user_id: createdUserId,
         alternate_phone: text(form, "alternatePhone") || null,
         dob: text(form, "dateOfBirth") || null,
@@ -186,19 +238,9 @@ export async function POST(request: Request) {
         address_line_1: text(form, "addressLine1") || null,
         address_line_2: text(form, "addressLine2") || null,
         postal_code: text(form, "postalCode") || null,
-        legal_entity_name: role === "institute" ? text(form, "legalEntityName") || null : null,
-        registration_number: role === "institute" ? text(form, "registrationNumber") || null : null,
-        accreditation_affiliation_number: role === "institute" ? text(form, "accreditationAffiliationNumber") || null : null,
-        website_url: role === "institute" ? text(form, "websiteUrl") || null : null,
-        established_year: establishedYear,
-        total_students: totalStudents,
-        total_staff: totalStaff,
-      };
+      });
 
-      const { error: detailsError } = await admin.data.from("user_additional_details").insert(detailsPayload);
-      if (detailsError) {
-        throw new Error(detailsError.message);
-      }
+      if (detailsError) throw new Error(detailsError.message);
     }
 
     let instituteId: string | null = null;
@@ -209,8 +251,16 @@ export async function POST(request: Request) {
         .insert({
           user_id: createdUserId,
           name: text(form, "organizationName"),
-          description: null,
           status: "pending",
+          verified: false,
+          legal_entity_name: text(form, "legalEntityName") || null,
+          organization_type: text(form, "organizationType") || null,
+          registration_number: text(form, "registrationNumber") || null,
+          accreditation_affiliation_number: text(form, "accreditationAffiliationNumber") || null,
+          website_url: text(form, "websiteUrl") || null,
+          established_year: establishedYear,
+          total_students: totalStudents,
+          total_staff: totalStaff,
         })
         .select("id")
         .single();
@@ -228,11 +278,8 @@ export async function POST(request: Request) {
       category: "identity",
     });
 
-    if (identityUpload.error) {
-      throw new Error(identityUpload.error);
-    }
-    if (!identityUpload.path) {
-      throw new Error("Failed to upload identity document");
+    if (identityUpload.error || !identityUpload.path) {
+      throw new Error(identityUpload.error ?? "Failed to upload identity document");
     }
 
     uploadedPaths.push({ bucket: "userDocuments", path: identityUpload.path });
@@ -240,13 +287,35 @@ export async function POST(request: Request) {
     const { error: identityDocError } = await admin.data.from("user_documents").insert({
       user_id: createdUserId,
       document_category: "identity",
-      document_type: text(form, "identityDocumentType") || "government_id",
+      document_type: identityDocumentType,
       document_url: identityUpload.path,
       status: "pending",
     });
 
-    if (identityDocError) {
-      throw new Error(identityDocError.message);
+    if (identityDocError) throw new Error(identityDocError.message);
+
+    if (role === "admin" && adminAuthorizationDocument instanceof File) {
+      const authorizationUpload = await uploadUserDocument({
+        userId: createdUserId,
+        file: adminAuthorizationDocument,
+        category: "authorization",
+      });
+
+      if (authorizationUpload.error || !authorizationUpload.path) {
+        throw new Error(authorizationUpload.error ?? "Failed to upload admin authorization document");
+      }
+
+      uploadedPaths.push({ bucket: "userDocuments", path: authorizationUpload.path });
+
+      const { error: authorizationError } = await admin.data.from("user_documents").insert({
+        user_id: createdUserId,
+        document_category: "authorization",
+        document_type: adminAuthorizationDocumentType,
+        document_url: authorizationUpload.path,
+        status: "pending",
+      });
+
+      if (authorizationError) throw new Error(authorizationError.message);
     }
 
     if (role === "institute" && instituteApprovalDocument instanceof File && instituteId) {
@@ -256,54 +325,20 @@ export async function POST(request: Request) {
         type: "approval",
       });
 
-      if (approvalUpload.error) {
-        throw new Error(approvalUpload.error);
-      }
-      if (!approvalUpload.path) {
-        throw new Error("Failed to upload institute approval document");
+      if (approvalUpload.error || !approvalUpload.path) {
+        throw new Error(approvalUpload.error ?? "Failed to upload institute approval document");
       }
 
       uploadedPaths.push({ bucket: "instituteDocuments", path: approvalUpload.path });
 
-      const { error: instituteDocsError } = await admin.data.from("institute_documents").insert({
+      const { error: instituteDocError } = await admin.data.from("institute_documents").insert({
         institute_id: instituteId,
         document_url: approvalUpload.path,
-        type: text(form, "instituteApprovalDocumentType") || "registration_certificate",
+        type: instituteApprovalDocumentType,
         status: "pending",
       });
 
-      if (instituteDocsError) {
-        throw new Error(instituteDocsError.message);
-      }
-    }
-
-    if (role === "admin" && adminAuthorizationDocument instanceof File) {
-      const authUpload = await uploadUserDocument({
-        userId: createdUserId,
-        file: adminAuthorizationDocument,
-        category: "authorization",
-      });
-
-      if (authUpload.error) {
-        throw new Error(authUpload.error);
-      }
-      if (!authUpload.path) {
-        throw new Error("Failed to upload admin authorization document");
-      }
-
-      uploadedPaths.push({ bucket: "userDocuments", path: authUpload.path });
-
-      const { error: authDocError } = await admin.data.from("user_documents").insert({
-        user_id: createdUserId,
-        document_category: "authorization",
-        document_type: text(form, "adminAuthorizationDocumentType") || "authorization_letter",
-        document_url: authUpload.path,
-        status: "pending",
-      });
-
-      if (authDocError) {
-        throw new Error(authDocError.message);
-      }
+      if (instituteDocError) throw new Error(instituteDocError.message);
     }
 
     return NextResponse.json({
@@ -312,20 +347,9 @@ export async function POST(request: Request) {
       redirectPath: "/auth/login?status=pending_approval",
     });
   } catch (error) {
-    const admin = getSupabaseAdmin();
-    if (admin.ok) {
-      for (const uploaded of uploadedPaths) {
-        await deleteFromBucket(STORAGE_BUCKETS[uploaded.bucket], uploaded.path);
-      }
+    await cleanupFailure(uploadedPaths, createdUserId);
 
-      if (createdUserId) {
-        await admin.data.auth.admin.deleteUser(createdUserId);
-      }
-    }
-
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to register" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Unable to register";
+    return NextResponse.json({ error: message }, { status: mapErrorStatus(message) });
   }
 }
