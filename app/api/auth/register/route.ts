@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-documents";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   STORAGE_BUCKETS,
@@ -173,6 +174,9 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json({ error: "Institute approval document type and file are required" }, { status: 400 });
     }
+    if (role === "institute" && !isInstituteApprovalDocumentSubtype(instituteApprovalDocumentType)) {
+      return NextResponse.json({ error: "Invalid institute approval document type" }, { status: 400 });
+    }
 
     const establishedYear = parseOptionalInteger(text(form, "establishedYear"));
     const totalStudents = parseOptionalInteger(text(form, "totalStudents"));
@@ -337,7 +341,8 @@ export async function POST(request: Request) {
       const { error: instituteDocError } = await admin.data.from("institute_documents").insert({
         institute_id: instituteId,
         document_url: approvalUpload.path,
-        type: instituteApprovalDocumentType,
+        type: "approval",
+        subtype: instituteApprovalDocumentType,
         status: "pending",
       });
 

@@ -131,7 +131,7 @@ export async function uploadInstituteDocument({
 }: {
   userId: string;
   file: File;
-  type: "approval" | "registration" | "accreditation";
+  type: "approval";
 }) {
   const filename = sanitizeFilename(file.name);
   const uploadPath = `${userId}/${type}/${filename}`;

@@ -1,5 +1,6 @@
 import { KycUploadForm } from "@/components/institute/kyc-upload-form";
 import { requireUser } from "@/lib/auth/get-session";
+import { getInstituteApprovalSubtypeLabel } from "@/lib/constants/institute-documents";
 import { createClient } from "@/lib/supabase/server";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 
@@ -14,12 +15,12 @@ export default async function Page() {
     .maybeSingle();
 
   const { data: docs } = institute
-    ? await supabase
+      ? await supabase
         .from("institute_documents")
-        .select("id,type,document_url,status,created_at")
+        .select("id,type,subtype,document_url,status,created_at")
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
-    : { data: [] as Array<{ id: string; type: string; status: string; document_url: string }> };
+    : { data: [] as Array<{ id: string; type: string; subtype: string | null; status: string; document_url: string }> };
 
   const docsWithLinks = await Promise.all(
     (docs ?? []).map(async (doc) => ({
@@ -40,7 +41,7 @@ export default async function Page() {
       <div className="mt-4 space-y-2">
         {docsWithLinks.map((doc) => (
           <div key={doc.id} className="rounded border bg-white p-3 text-sm">
-            {doc.type} · {doc.status} ·{" "}
+            {doc.type} · {getInstituteApprovalSubtypeLabel(doc.subtype)} · {doc.status} ·{" "}
             {doc.signedUrl ? (
               <a className="text-brand-700 underline" href={doc.signedUrl} target="_blank" rel="noreferrer">
                 view
