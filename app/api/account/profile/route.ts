@@ -33,6 +33,12 @@ function toInstituteFolderType(documentType: string): "approval" | "registration
   return "approval";
 }
 
+function isMissingNotificationsTableError(error: { code?: string; message?: string } | null) {
+  if (!error) return false;
+  const message = String(error.message ?? "").toLowerCase();
+  return error.code === "42P01" || (message.includes("notifications") && message.includes("does not exist"));
+}
+
 export async function GET() {
   const auth = await requireApiUser(undefined, { requireApproved: false });
   if ("error" in auth) return auth.error;
@@ -83,10 +89,38 @@ export async function GET() {
   if (detailsError) return NextResponse.json({ error: detailsError.message }, { status: 500 });
   if (instituteError) return NextResponse.json({ error: instituteError.message }, { status: 500 });
   if (userDocumentsError) return NextResponse.json({ error: userDocumentsError.message }, { status: 500 });
-  if (notificationsError) return NextResponse.json({ error: notificationsError.message }, { status: 500 });
 
-  return NextResponse.json({ profile, details, institute, userDocuments: userDocuments ?? [], notifications: notifications ?? [] });
+  if (notificationsError && !isMissingNotificationsTableError(notificationsError)) {
+    return NextResponse.json({ error: notificationsError.message }, { status: 500 });
+  }
+
+  let instituteDocuments: Array<{ id: string; type: string; status: string; created_at: string }> = [];
+
+  if (auth.profile.role === "institute" && institute?.id) {
+    const { data, error } = await admin.data
+      .from("institute_documents")
+      .select("id,type,status,created_at")
+      .eq("institute_id", institute.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    instituteDocuments = data ?? [];
+  }
+
+  return NextResponse.json({
+    profile,
+    details,
+    institute,
+    userDocuments: userDocuments ?? [],
+    instituteDocuments,
+    notifications: notificationsError ? [] : (notifications ?? []),
+    notificationsAvailable: !Boolean(notificationsError),
+  });
 }
+
 
 export async function PATCH(request: Request) {
   const auth = await requireApiUser(undefined, { requireApproved: false });

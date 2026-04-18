@@ -8,6 +8,21 @@ import { FormFeedback } from "@/components/shared/form-feedback";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function normalizeErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const maybeError = "error" in error ? (error as { error?: unknown }).error : undefined;
+    if (typeof maybeError === "string" && maybeError.trim()) return maybeError;
+    if (maybeError && typeof maybeError === "object") {
+      const nestedMessage = "message" in maybeError ? (maybeError as { message?: unknown }).message : undefined;
+      if (typeof nestedMessage === "string" && nestedMessage.trim()) return nestedMessage;
+    }
+    const maybeMessage = "message" in error ? (error as { message?: unknown }).message : undefined;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
+  }
+  return fallback;
+}
+
 export function LoginForm() {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -54,7 +69,7 @@ export function LoginForm() {
     setLoading(false);
 
     if (!response.ok) {
-      setError(body?.error ?? "Login failed");
+      setError(normalizeErrorMessage(body, "Login failed. Please try again."));
       return;
     }
 
