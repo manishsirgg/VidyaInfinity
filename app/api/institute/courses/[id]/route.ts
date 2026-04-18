@@ -50,7 +50,9 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   updates.approval_status = "pending";
+  updates.status = "pending";
   updates.rejection_reason = null;
+  updates.updated_at = new Date().toISOString();
 
   const { data: course, error } = await admin.data
     .from("courses")

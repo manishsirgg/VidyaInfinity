@@ -1,4 +1,5 @@
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
+import { notifyCoursePurchase } from "@/lib/marketplace/course-notifications";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function reconcileCourseOrderPaid({
@@ -67,6 +68,7 @@ export async function reconcileCourseOrderPaid({
       institute_id: order.institute_id,
       enrollment_status: "enrolled",
       order_id: order.id,
+      enrolled_at: new Date().toISOString(),
     },
     { onConflict: "user_id,course_id" }
   );
@@ -88,6 +90,56 @@ export async function reconcileCourseOrderPaid({
       due_at: new Date().toISOString(),
     });
     if (payoutError) return { error: payoutError.message };
+  }
+
+  const [{ data: course }, { data: student }, { data: institute }, { data: admins }] = await Promise.all([
+    supabase.from("courses").select("title").eq("id", order.course_id).maybeSingle(),
+    supabase.from("profiles").select("id,full_name,email,phone").eq("id", order.user_id).maybeSingle(),
+    supabase
+      .from("institutes")
+      .select("id,user_id,name,phone")
+      .eq("id", order.institute_id)
+      .maybeSingle(),
+    supabase.from("profiles").select("id").eq("role", "admin"),
+  ]);
+
+  const instituteProfile = institute?.user_id
+    ? await supabase.from("profiles").select("email").eq("id", institute.user_id).maybeSingle()
+    : { data: null };
+
+  if (course && student && institute?.user_id) {
+    await notifyCoursePurchase({
+      orderId: order.id,
+      paymentId: razorpayPaymentId,
+      courseTitle: course.title ?? "Course",
+      amount: order.final_paid_amount,
+      currency: order.currency,
+      student: {
+        id: student.id,
+        name: student.full_name ?? student.email ?? "Student",
+        email: student.email,
+        phone: student.phone,
+      },
+      institute: {
+        userId: institute.user_id,
+        instituteId: institute.id,
+        name: institute.name ?? "Institute",
+        email: instituteProfile.data?.email ?? null,
+        phone: institute.phone ?? null,
+      },
+      adminUserIds: (admins ?? []).map((item) => item.id),
+    }).catch(async (error: unknown) => {
+      await writeAdminAuditLog({
+        adminUserId: null,
+        action: "COURSE_ENROLLMENT_NOTIFICATIONS_FAILED",
+        targetTable: "course_orders",
+        targetId: order.id,
+        metadata: {
+          source,
+          error: error instanceof Error ? error.message : "Unknown notification error",
+        },
+      });
+    });
   }
 
   await writeAdminAuditLog({
