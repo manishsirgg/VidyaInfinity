@@ -5,7 +5,7 @@ import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-do
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { uploadAvatar, uploadInstituteDocument, uploadUserDocument } from "@/lib/storage/uploads";
+import { getPublicFileUrl, uploadAvatar, uploadInstituteDocument, uploadInstituteMedia, uploadUserDocument } from "@/lib/storage/uploads";
 import { sendModerationExternalNotifications } from "@/lib/integrations/account-moderation";
 
 function val(form: FormData, key: string) {
@@ -95,19 +95,39 @@ export async function GET() {
   }
 
   let instituteDocuments: Array<{ id: string; type: string; subtype: string | null; status: string; created_at: string }> = [];
+  let instituteMedia: Array<{
+    id: string;
+    file_url: string;
+    media_type: string;
+    file_name: string | null;
+    file_size: number | null;
+    created_at: string;
+  }> = [];
 
   if (auth.profile.role === "institute" && institute?.id) {
-    const { data, error } = await admin.data
-      .from("institute_documents")
-      .select("id,type,subtype,status,created_at")
-      .eq("institute_id", institute.id)
-      .order("created_at", { ascending: false });
+    const [{ data, error }, { data: media, error: mediaError }] = await Promise.all([
+      admin.data
+        .from("institute_documents")
+        .select("id,type,subtype,status,created_at")
+        .eq("institute_id", institute.id)
+        .order("created_at", { ascending: false }),
+      admin.data
+        .from("institute_media")
+        .select("id,file_url,media_type,file_name,file_size,created_at")
+        .eq("institute_id", institute.id)
+        .order("created_at", { ascending: false })
+        .limit(20),
+    ]);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    if (mediaError) {
+      return NextResponse.json({ error: mediaError.message }, { status: 500 });
+    }
 
     instituteDocuments = data ?? [];
+    instituteMedia = media ?? [];
   }
 
   return NextResponse.json({
@@ -118,6 +138,13 @@ export async function GET() {
     instituteDocuments,
     notifications: notificationsError ? [] : (notifications ?? []),
     notificationsAvailable: !Boolean(notificationsError),
+    instituteMedia:
+      auth.profile.role === "institute"
+        ? (instituteMedia ?? []).map((media) => ({
+            ...media,
+            publicUrl: getPublicFileUrl({ bucket: "blog-media", path: media.file_url }),
+          }))
+        : [],
   });
 }
 
@@ -139,8 +166,8 @@ export async function PATCH(request: Request) {
   const nextEmail = val(form, "email").toLowerCase();
   const fullName = val(form, "fullName");
   const organizationType = val(form, "organizationType");
-  const instituteName = val(form, "instituteName") || val(form, "organizationName");
-  const organizationName = auth.profile.role === "institute" ? instituteName : val(form, "organizationName");
+  const instituteName = val(form, "instituteName");
+  const organizationName = val(form, "organizationName");
 
   if (!nextEmail || !fullName) {
     return NextResponse.json({ error: "fullName and email are required" }, { status: 400 });
@@ -148,6 +175,9 @@ export async function PATCH(request: Request) {
 
   if (auth.profile.role === "institute") {
     if (!instituteName) {
+      return NextResponse.json({ error: "instituteName is required for institute profiles" }, { status: 400 });
+    }
+    if (!organizationName) {
       return NextResponse.json({ error: "organizationName is required for institute profiles" }, { status: 400 });
     }
     if (!organizationType) {
@@ -347,8 +377,58 @@ export async function PATCH(request: Request) {
       uploadedInstituteDocument = true;
     }
 
+    if (mediaFiles.length > 0) {
+      const { count: existingMediaCount, error: mediaCountError } = await admin.data
+        .from("institute_media")
+        .select("id", { head: true, count: "exact" })
+        .eq("institute_id", institute.id);
+
+      if (mediaCountError) {
+        return NextResponse.json({ error: mediaCountError.message }, { status: 500 });
+      }
+
+      const totalAfterUpload = (existingMediaCount ?? 0) + mediaFiles.length;
+      if (totalAfterUpload > 20) {
+        return NextResponse.json({ error: "Institute showcase supports up to 20 media files in total" }, { status: 400 });
+      }
+
+      for (const mediaFile of mediaFiles) {
+        const isImage = mediaFile.type.startsWith("image/");
+        const isVideo = mediaFile.type.startsWith("video/");
+
+        if (!isImage && !isVideo) {
+          return NextResponse.json({ error: "Only image and video files are allowed for institute media" }, { status: 400 });
+        }
+
+        const maxSize = isImage ? 5 * 1024 * 1024 : 20 * 1024 * 1024;
+        if (mediaFile.size > maxSize) {
+          return NextResponse.json(
+            { error: `${mediaFile.name} exceeds max ${(maxSize / 1024 / 1024).toFixed(0)}MB for ${isImage ? "images" : "videos"}` },
+            { status: 400 }
+          );
+        }
+
+        const uploadedMedia = await uploadInstituteMedia({ userId: auth.user.id, file: mediaFile });
+        if (uploadedMedia.error || !uploadedMedia.path) {
+          return NextResponse.json({ error: uploadedMedia.error ?? "Unable to upload institute media file" }, { status: 400 });
+        }
+
+        const { error: mediaInsertError } = await admin.data.from("institute_media").insert({
+          institute_id: institute.id,
+          file_url: uploadedMedia.path,
+          media_type: isImage ? "image" : "video",
+          file_name: mediaFile.name,
+          file_size: mediaFile.size,
+        });
+
+        if (mediaInsertError) {
+          return NextResponse.json({ error: mediaInsertError.message }, { status: 500 });
+        }
+      }
+    }
+
     const instituteUpdate: Record<string, string | number | null | boolean> = {
-      name: organizationName || null,
+      name: instituteName || null,
       description: val(form, "description") || null,
       legal_entity_name: val(form, "legalEntityName") || null,
       organization_type: organizationType || null,

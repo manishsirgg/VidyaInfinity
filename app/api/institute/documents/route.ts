@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-documents";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { uploadInstituteDocument } from "@/lib/storage/uploads";
+import { uploadInstituteDocument, uploadUserDocument } from "@/lib/storage/uploads";
 
 export async function POST(request: Request) {
   const auth = await requireApiUser("institute", { requireApproved: false });
@@ -14,37 +14,66 @@ export async function POST(request: Request) {
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
   const form = await request.formData();
+  const documentCategory = String(form.get("documentCategory") ?? "approval")
+    .trim()
+    .toLowerCase();
   const documentType = String(form.get("documentType") ?? "").trim().toLowerCase();
   const file = form.get("file");
 
   if (!documentType || !(file instanceof File)) {
     return NextResponse.json({ error: "documentType and file are required" }, { status: 400 });
   }
-  if (!isInstituteApprovalDocumentSubtype(documentType)) {
-    return NextResponse.json({ error: "Invalid documentType" }, { status: 400 });
+  if (!["approval", "identity"].includes(documentCategory)) {
+    return NextResponse.json({ error: "Invalid documentCategory" }, { status: 400 });
   }
 
   const { data: institute } = await admin.data.from("institutes").select("id").eq("user_id", user.id).maybeSingle();
   if (!institute) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
 
-  const uploaded = await uploadInstituteDocument({
-    userId: user.id,
-    file,
-    type: "approval",
-  });
+  if (documentCategory === "approval") {
+    if (!isInstituteApprovalDocumentSubtype(documentType)) {
+      return NextResponse.json({ error: "Invalid approval documentType" }, { status: 400 });
+    }
 
-  if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
-  if (!uploaded.path) return NextResponse.json({ error: "Unable to store document" }, { status: 500 });
+    const uploaded = await uploadInstituteDocument({
+      userId: user.id,
+      file,
+      type: "approval",
+    });
 
-  const { error: insertError } = await admin.data.from("institute_documents").insert({
-    institute_id: institute.id,
-    type: "approval",
-    subtype: documentType,
-    document_url: uploaded.path,
-    status: "pending",
-  });
+    if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
+    if (!uploaded.path) return NextResponse.json({ error: "Unable to store document" }, { status: 500 });
 
-  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+    const { error: insertError } = await admin.data.from("institute_documents").insert({
+      institute_id: institute.id,
+      type: "approval",
+      subtype: documentType,
+      document_url: uploaded.path,
+      status: "pending",
+    });
+
+    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+  } else {
+    const uploaded = await uploadUserDocument({
+      userId: user.id,
+      file,
+      category: "identity",
+    });
+
+    if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
+    if (!uploaded.path) return NextResponse.json({ error: "Unable to store document" }, { status: 500 });
+
+    const { error: insertError } = await admin.data.from("user_documents").insert({
+      user_id: user.id,
+      document_category: "identity",
+      document_type: documentType,
+      document_url: uploaded.path,
+      status: "pending",
+      rejection_reason: null,
+    });
+
+    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+  }
 
   const now = new Date().toISOString();
 
@@ -62,5 +91,5 @@ export async function POST(request: Request) {
 
   if (profileUpdateError) return NextResponse.json({ error: profileUpdateError.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, path: uploaded.path });
+  return NextResponse.json({ ok: true });
 }

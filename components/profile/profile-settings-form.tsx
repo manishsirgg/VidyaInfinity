@@ -36,6 +36,15 @@ type NotificationItem = {
   created_at: string;
 };
 
+type InstituteMediaItem = {
+  id: string;
+  media_type: "image" | "video";
+  file_name: string | null;
+  file_size: number | null;
+  created_at: string;
+  publicUrl: string | null;
+};
+
 function formatDateTime(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -57,6 +66,7 @@ export function ProfileSettingsForm({ role }: Props) {
   const [instituteDocuments, setInstituteDocuments] = useState<InstituteDocument[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsAvailable, setNotificationsAvailable] = useState(true);
+  const [instituteMedia, setInstituteMedia] = useState<InstituteMediaItem[]>([]);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -81,6 +91,7 @@ export function ProfileSettingsForm({ role }: Props) {
     setInstituteDocuments(Array.isArray(body?.instituteDocuments) ? body.instituteDocuments : []);
     setNotifications(Array.isArray(body?.notifications) ? body.notifications : []);
     setNotificationsAvailable(body?.notificationsAvailable !== false);
+    setInstituteMedia(Array.isArray(body?.instituteMedia) ? body.instituteMedia : []);
   }, []);
 
   useEffect(() => {
@@ -283,6 +294,45 @@ export function ProfileSettingsForm({ role }: Props) {
               className="min-h-24 rounded border px-3 py-2"
             />
             <p className="text-xs text-slate-500">Keep institute description within 2500 words.</p>
+
+            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-sm font-semibold text-slate-700">Institute showcase media</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Upload up to 8 files at once (max total 20). Images up to 5MB each, videos up to 20MB each.
+              </p>
+              <input
+                name="instituteMedia"
+                type="file"
+                multiple
+                accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime"
+                className="mt-2 rounded border bg-white px-3 py-2"
+              />
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-sm font-semibold text-slate-700">Uploaded showcase media ({instituteMedia.length}/20)</p>
+              {instituteMedia.length === 0 ? <p className="mt-2 text-xs text-slate-500">No media uploaded yet.</p> : null}
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                {instituteMedia.map((item) => (
+                  <div key={item.id} className="rounded border border-slate-200 bg-white p-2">
+                    {item.publicUrl ? (
+                      item.media_type === "image" ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.publicUrl} alt={item.file_name ?? "Institute image"} className="h-32 w-full rounded object-cover" />
+                      ) : (
+                        <video src={item.publicUrl} controls className="h-32 w-full rounded object-cover" />
+                      )
+                    ) : (
+                      <div className="flex h-32 items-center justify-center rounded bg-slate-100 text-xs text-slate-500">Preview unavailable</div>
+                    )}
+                    <p className="mt-2 truncate text-xs text-slate-700">{item.file_name ?? "Untitled file"}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {item.media_type.toUpperCase()} · {item.file_size ? `${(item.file_size / (1024 * 1024)).toFixed(2)}MB` : "size unknown"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </>
         ) : null}
 
