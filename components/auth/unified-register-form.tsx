@@ -124,6 +124,18 @@ export function UnifiedRegisterForm() {
             className="min-h-24 rounded border px-3 py-2"
           />
           <p className="text-xs text-slate-500">Describe your institute in up to 2500 words.</p>
+          <label className="text-sm font-medium text-slate-700" htmlFor="instituteMedia">
+            Institute media (images/videos)
+          </label>
+          <input
+            id="instituteMedia"
+            type="file"
+            name="instituteMedia"
+            accept="image/png,image/jpeg,image/webp,video/mp4"
+            multiple
+            className="rounded border px-3 py-2"
+          />
+          <p className="text-xs text-slate-500">Optional. Upload up to 6 files (PNG, JPG, WEBP, MP4), max 20MB each.</p>
         </>
       )}
 
