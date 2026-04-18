@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 function money(value: number) {
@@ -16,8 +17,10 @@ function formatDate(value: string) {
 export default async function InstituteDashboardPage() {
   const { user, profile } = await requireUser("institute");
   const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
 
-  const { data: instituteRows, error: instituteError } = await supabase
+  const { data: instituteRows, error: instituteError } = await dataClient
     .from("institutes")
     .select("id,name,status,rejection_reason,created_at")
     .eq("user_id", user.id)
@@ -45,29 +48,29 @@ export default async function InstituteDashboardPage() {
   }
 
   const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult] = await Promise.all([
-    supabase
+    dataClient
       .from("courses")
       .select("id,title,approval_status,fee_amount,created_at,start_date")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    supabase
+    dataClient
       .from("leads")
       .select("id,name,email,phone,created_at,course_id,courses!inner(title,institute_id)")
       .eq("courses.institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    supabase.from("course_enrollments").select("id", { count: "exact", head: true }).eq("institute_id", institute.id),
-    supabase
+    dataClient.from("course_enrollments").select("id", { count: "exact", head: true }).eq("institute_id", institute.id),
+    dataClient
       .from("course_orders")
       .select("id,course_id,payment_status,final_paid_amount,platform_commission_amount,institute_receivable_amount,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    supabase
+    dataClient
       .from("institute_payouts")
       .select("id,amount_payable,payout_status,created_at,paid_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
-    supabase
+    dataClient.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
+    dataClient
       .from("notifications")
       .select("id,title,message,type,is_read,created_at")
       .eq("user_id", user.id)
