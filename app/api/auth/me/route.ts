@@ -30,6 +30,7 @@ function getProfilePath(role: string) {
 
 function getNotificationsPath(role: string) {
   if (role === "student") return "/student/notifications";
+  if (role === "institute") return "/institute/notifications";
   return null;
 }
 
@@ -72,7 +73,7 @@ export async function GET() {
       (profile.role !== "institute" || !instituteStatus || instituteStatus === "approved");
 
     let unreadNotifications = 0;
-    if (profile.role === "student") {
+    if (profile.role === "student" || profile.role === "institute") {
       const { count } = await supabase
         .from("notifications")
         .select("id", { count: "exact", head: true })

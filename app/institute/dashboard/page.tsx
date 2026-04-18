@@ -7,6 +7,12 @@ function money(value: number) {
   return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
+function formatDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
+
 export default async function InstituteDashboardPage() {
   const { user, profile } = await requireUser("institute");
   const supabase = await createClient();
@@ -28,7 +34,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult] = await Promise.all([
     supabase
       .from("courses")
       .select("id,title,approval_status,fee_amount,created_at,start_date")
@@ -50,12 +56,20 @@ export default async function InstituteDashboardPage() {
       .select("id,amount_payable,payout_status,created_at,paid_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
+    supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
+    supabase
+      .from("notifications")
+      .select("id,title,message,type,is_read,created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(5),
   ]);
 
   const courses = coursesResult.data ?? [];
   const leads = leadsResult.data ?? [];
   const orderRows = orderResult.data ?? [];
   const payouts = payoutsResult.data ?? [];
+  const recentNotifications = recentNotificationsResult.data ?? [];
 
   const now = Date.now();
   const days30 = 30 * 24 * 60 * 60 * 1000;
@@ -103,7 +117,7 @@ export default async function InstituteDashboardPage() {
         </p>
       ) : null}
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded border bg-white p-4">
           <p className="text-xs uppercase tracking-wide text-slate-500">Courses</p>
           <p className="mt-1 text-2xl font-semibold">{courses.length}</p>
@@ -123,6 +137,11 @@ export default async function InstituteDashboardPage() {
           <p className="text-xs uppercase tracking-wide text-slate-500">Wallet balance</p>
           <p className="mt-1 text-2xl font-semibold">{money(walletBalance)}</p>
           <p className="mt-1 text-xs text-slate-600">Pending payouts: {money(pendingPayouts)}</p>
+        </div>
+        <div className="rounded border bg-white p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Unread notifications</p>
+          <p className="mt-1 text-2xl font-semibold">{unreadNotificationsResult.count ?? 0}</p>
+          <p className="mt-1 text-xs text-slate-600">Institute alerts and moderation updates</p>
         </div>
       </div>
 
@@ -164,6 +183,9 @@ export default async function InstituteDashboardPage() {
             <Link href="/institute/profile" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Update institute profile
             </Link>
+            <Link href="/institute/notifications" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              View notifications
+            </Link>
             <Link href="/institute/kyc" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               KYC and business docs
             </Link>
@@ -173,6 +195,27 @@ export default async function InstituteDashboardPage() {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="rounded border bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold">Recent notifications</h2>
+            <Link href="/institute/notifications" className="text-sm text-brand-700">
+              View all notifications
+            </Link>
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            {recentNotifications.length === 0 ? <p className="text-slate-600">No notifications yet.</p> : null}
+            {recentNotifications.map((item) => (
+              <div key={item.id} className="rounded border px-3 py-2">
+                <p className="font-medium">{item.title}</p>
+                <p className="text-slate-600">{item.message}</p>
+                <p className="text-xs text-slate-500">
+                  {item.is_read ? "Read" : "Unread"} · {formatDate(item.created_at)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="rounded border bg-white p-4">
           <h2 className="text-base font-semibold">Recent courses</h2>
           <div className="mt-3 space-y-2 text-sm">
