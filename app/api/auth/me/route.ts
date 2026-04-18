@@ -10,9 +10,9 @@ type ProfileRow = {
   approval_status: string | null;
 };
 
-function getDashboardPath(role: string) {
+function getDashboardPath(role: string, approved: boolean) {
   if (role === "admin") return "/admin/dashboard";
-  if (role === "institute") return "/institute/dashboard";
+  if (role === "institute") return approved ? "/institute/dashboard" : "/institute/approval-status";
   return "/student/dashboard";
 }
 
@@ -26,6 +26,11 @@ function getProfilePath(role: string) {
   if (role === "admin") return "/admin/profile";
   if (role === "institute") return "/institute/profile";
   return "/student/profile";
+}
+
+function getNotificationsPath(role: string) {
+  if (role === "student") return "/student/notifications";
+  return null;
 }
 
 export async function GET() {
@@ -66,6 +71,16 @@ export async function GET() {
       profile.approval_status === "approved" &&
       (profile.role !== "institute" || !instituteStatus || instituteStatus === "approved");
 
+    let unreadNotifications = 0;
+    if (profile.role === "student") {
+      const { count } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", profile.id)
+        .eq("is_read", false);
+      unreadNotifications = count ?? 0;
+    }
+
     return NextResponse.json({
       authenticated: true,
       user: {
@@ -76,10 +91,13 @@ export async function GET() {
         approvalStatus: profile.approval_status,
         instituteStatus,
         email: user.email,
+        unreadNotifications,
       },
       routes: {
-        dashboard: approved ? getDashboardPath(profile.role) : getApprovalStatusPath(profile.role),
+        dashboard: getDashboardPath(profile.role, approved),
+        approvalStatus: getApprovalStatusPath(profile.role),
         profile: getProfilePath(profile.role),
+        notifications: getNotificationsPath(profile.role),
       },
     });
   } catch (error) {
