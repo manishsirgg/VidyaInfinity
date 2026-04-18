@@ -6,12 +6,21 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
   const { slug } = await params;
   const supabase = await createClient();
 
-  const { data: institute } = await supabase
+  const statusAwareResponse = await supabase
     .from("institutes")
-    .select("id,name,description,status")
-    .eq("id", slug)
+    .select("id,name,description,slug,status")
+    .or(`id.eq.${slug},slug.eq.${slug}`)
     .eq("status", "approved")
     .maybeSingle();
+  const instituteResponse = statusAwareResponse.error
+    ? await supabase
+        .from("institutes")
+        .select("id,name,description,slug,approval_status")
+        .or(`id.eq.${slug},slug.eq.${slug}`)
+        .eq("approval_status", "approved")
+        .maybeSingle()
+    : statusAwareResponse;
+  const institute = instituteResponse.data;
 
   if (!institute) notFound();
 
