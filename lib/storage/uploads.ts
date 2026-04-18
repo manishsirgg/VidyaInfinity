@@ -210,6 +210,29 @@ export async function uploadBlogMedia({
   });
 }
 
+export async function uploadInstituteMedia({
+  userId,
+  file,
+}: {
+  userId: string;
+  file: File;
+}) {
+  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+    return { error: "Only image and video files are allowed for institute media" };
+  }
+
+  const filename = sanitizeFilename(file.name);
+  const uploadPath = `institute-showcase/${userId}/${Date.now()}-${filename}`;
+  const bytes = Buffer.from(await file.arrayBuffer());
+
+  return uploadBytes({
+    bucket: STORAGE_BUCKETS.blogMedia,
+    uploadPath,
+    bytes,
+    contentType: file.type,
+  });
+}
+
 export async function uploadPsychometricReport({
   userId,
   attemptId,
