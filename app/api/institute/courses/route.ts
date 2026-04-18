@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { uploadCourseMedia } from "@/lib/storage/uploads";
 
 function toSlug(value: string) {
   return value
@@ -82,17 +81,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const mediaFiles = form.getAll("mediaFiles").filter((item): item is File => item instanceof File && item.size > 0);
-  const imageFiles = mediaFiles.filter((file) => file.type.startsWith("image/"));
-  const videoFiles = mediaFiles.filter((file) => file.type.startsWith("video/"));
-
-  if (imageFiles.length === 0 || videoFiles.length === 0) {
-    return NextResponse.json(
-      { error: "Please upload at least one course image and one course video." },
-      { status: 400 }
-    );
-  }
-
   const { data: institute } = await admin.data
     .from("institutes")
     .select("id,status")
@@ -146,29 +134,5 @@ export async function POST(request: Request) {
 
   if (error || !course) return NextResponse.json({ error: error?.message ?? "Failed to create course" }, { status: 500 });
 
-  for (const file of mediaFiles) {
-    const uploaded = await uploadCourseMedia({
-      userId: user.id,
-      courseId: course.id,
-      file,
-    });
-
-    if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
-    if (!uploaded.path || !uploaded.publicUrl) {
-      return NextResponse.json({ error: "Failed to upload course media" }, { status: 500 });
-    }
-
-    const mediaType = file.type.startsWith("video/") ? "video" : file.type.startsWith("image/") ? "image" : "document";
-
-    const { error: mediaError } = await admin.data.from("course_media").insert({
-      course_id: course.id,
-      file_url: uploaded.publicUrl,
-      type: mediaType,
-      storage_path: uploaded.path,
-    });
-
-    if (mediaError) return NextResponse.json({ error: mediaError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, courseId: course.id, message: "Course submitted for admin approval." });
+  return NextResponse.json({ ok: true, courseId: course.id, message: "Course created. Uploading media now." });
 }
