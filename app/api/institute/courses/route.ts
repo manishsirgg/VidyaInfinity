@@ -20,6 +20,19 @@ function numberOrNull(form: FormData, key: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function booleanOrNull(form: FormData, key: string) {
+  const raw = text(form, key).toLowerCase();
+  if (!raw) return null;
+  if (["true", "yes", "1"].includes(raw)) return true;
+  if (["false", "no", "0"].includes(raw)) return false;
+  return null;
+}
+
+function getWordCount(value: string) {
+  if (!value.trim()) return 0;
+  return value.trim().split(/\s+/).length;
+}
+
 export async function POST(request: Request) {
   const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
@@ -52,8 +65,8 @@ export async function POST(request: Request) {
   const certificateStatus = text(form, "certificateStatus") || null;
   const certificateDetails = text(form, "certificateDetails") || null;
   const batchSize = numberOrNull(form, "batchSize");
-  const placementSupport = text(form, "placementSupport") || null;
-  const internshipSupport = text(form, "internshipSupport") || null;
+  const placementSupport = booleanOrNull(form, "placementSupport");
+  const internshipSupport = booleanOrNull(form, "internshipSupport");
   const facultyName = text(form, "facultyName") || null;
   const facultyQualification = text(form, "facultyQualification") || null;
   const supportEmail = text(form, "supportEmail") || null;
@@ -62,6 +75,10 @@ export async function POST(request: Request) {
 
   if (!title || !mode || !duration || !Number.isFinite(fees) || fees < 0) {
     return NextResponse.json({ error: "title, mode, duration and valid fees are required" }, { status: 400 });
+  }
+
+  if (description && getWordCount(description) > 3000) {
+    return NextResponse.json({ error: "Course details must be 3000 words or fewer" }, { status: 400 });
   }
 
   const { data: institute, error: instituteError } = await admin.data
