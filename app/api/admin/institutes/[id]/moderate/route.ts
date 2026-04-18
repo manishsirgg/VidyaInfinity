@@ -26,6 +26,43 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
+  const { data: instituteBefore, error: instituteBeforeError } = await admin.data
+    .from("institutes")
+    .select("id,user_id,name,status")
+    .eq("id", id)
+    .single<{ id: string; user_id: string; name: string; status: string }>();
+
+  if (instituteBeforeError || !instituteBefore) {
+    return NextResponse.json({ error: instituteBeforeError?.message ?? "Institute not found" }, { status: 404 });
+  }
+
+  if (instituteBefore.status !== "pending") {
+    return NextResponse.json({ error: "No active pending submission for this institute" }, { status: 409 });
+  }
+
+  const [{ data: pendingInstituteDocs, error: pendingInstituteDocsError }, { data: pendingOwnerDocs, error: pendingOwnerDocsError }] =
+    await Promise.all([
+      admin.data.from("institute_documents").select("id").eq("institute_id", id).eq("status", "pending"),
+      admin.data
+        .from("user_documents")
+        .select("id")
+        .eq("user_id", instituteBefore.user_id)
+        .eq("status", "pending")
+        .eq("document_category", "identity"),
+    ]);
+
+  if (pendingInstituteDocsError) {
+    return NextResponse.json({ error: pendingInstituteDocsError.message }, { status: 500 });
+  }
+
+  if (pendingOwnerDocsError) {
+    return NextResponse.json({ error: pendingOwnerDocsError.message }, { status: 500 });
+  }
+
+  if (!pendingInstituteDocs?.length || !pendingOwnerDocs?.length) {
+    return NextResponse.json({ error: "No active pending institute submission documents" }, { status: 409 });
+  }
+
   const result = await admin.data
     .from("institutes")
     .update({
@@ -60,13 +97,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       status,
       rejection_reason: status === "rejected" ? rejectionReason : null,
     })
-    .eq("user_id", result.data.user_id);
+    .eq("user_id", result.data.user_id)
+    .eq("status", "pending");
 
   if (userDocumentUpdateError) {
     return NextResponse.json({ error: userDocumentUpdateError.message }, { status: 500 });
   }
 
-  const { error: instituteDocumentUpdateError } = await admin.data.from("institute_documents").update({ status }).eq("institute_id", id);
+  const { error: instituteDocumentUpdateError } = await admin.data
+    .from("institute_documents")
+    .update({ status })
+    .eq("institute_id", id)
+    .eq("status", "pending");
+
   if (instituteDocumentUpdateError) {
     return NextResponse.json({ error: instituteDocumentUpdateError.message }, { status: 500 });
   }

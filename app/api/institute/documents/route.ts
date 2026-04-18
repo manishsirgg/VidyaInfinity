@@ -15,7 +15,6 @@ export async function POST(request: Request) {
   if ("error" in auth) return auth.error;
   const { user } = auth;
 
-
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
@@ -47,6 +46,22 @@ export async function POST(request: Request) {
   });
 
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+
+  const now = new Date().toISOString();
+
+  const { error: instituteUpdateError } = await admin.data
+    .from("institutes")
+    .update({ status: "pending", rejection_reason: null, verified: false, updated_at: now })
+    .eq("id", institute.id);
+
+  if (instituteUpdateError) return NextResponse.json({ error: instituteUpdateError.message }, { status: 500 });
+
+  const { error: profileUpdateError } = await admin.data
+    .from("profiles")
+    .update({ approval_status: "pending", rejection_reason: null })
+    .eq("id", user.id);
+
+  if (profileUpdateError) return NextResponse.json({ error: profileUpdateError.message }, { status: 500 });
 
   return NextResponse.json({ ok: true, path: uploaded.path });
 }
