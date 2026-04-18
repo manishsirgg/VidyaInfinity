@@ -144,12 +144,14 @@ export async function POST(request: Request) {
 
     if (role === "institute") {
       const organizationName = text(form, "organizationName");
+      const instituteName = text(form, "instituteName");
       const organizationType = text(form, "organizationType");
       const designation = text(form, "designation");
       const description = text(form, "description");
 
       const roleMissing = missing(
         ["organizationName", organizationName],
+        ["instituteName", instituteName],
         ["organizationType", organizationType],
         ["designation", designation]
       );
@@ -193,7 +195,8 @@ export async function POST(request: Request) {
     const establishedYear = parseOptionalInteger(text(form, "establishedYear"));
     const totalStudents = parseOptionalInteger(text(form, "totalStudents"));
     const totalStaff = parseOptionalInteger(text(form, "totalStaff"));
-    const instituteName = text(form, "organizationName");
+    const instituteName = text(form, "instituteName");
+    const organizationName = text(form, "organizationName");
     const instituteOrganizationType = text(form, "organizationType");
 
     if (role === "institute") {
@@ -253,7 +256,7 @@ export async function POST(request: Request) {
       state: state || null,
       country: country || null,
       designation: role === "admin" || role === "institute" ? text(form, "designation") || null : null,
-      organization_name: role === "institute" ? instituteName || null : null,
+      organization_name: role === "institute" ? organizationName || null : null,
       organization_type: role === "institute" ? instituteOrganizationType || null : null,
       avatar_url: avatarUrl,
     });
@@ -281,7 +284,7 @@ export async function POST(request: Request) {
         .from("institutes")
         .insert({
           user_id: createdUserId,
-          name: instituteName,
+          name: instituteName || organizationName,
           status: "pending",
           verified: false,
           legal_entity_name: text(form, "legalEntityName") || null,

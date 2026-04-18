@@ -100,7 +100,8 @@ export function UnifiedRegisterForm() {
 
       {role === "institute" && (
         <>
-          <input required name="organizationName" placeholder="Institute / University / College name" className="rounded border px-3 py-2" />
+          <input required name="organizationName" placeholder="Institute / Organization name" className="rounded border px-3 py-2" />
+          <input required name="instituteName" placeholder="Institute name" className="rounded border px-3 py-2" />
           <input name="legalEntityName" placeholder="Legal entity name" className="rounded border px-3 py-2" />
           <select required name="organizationType" className="rounded border px-3 py-2">
             <option value="">Select organization type</option>
