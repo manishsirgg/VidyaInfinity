@@ -2,7 +2,7 @@ import { ModerationActions } from "@/components/admin/moderation-actions";
 import { requireUser } from "@/lib/auth/get-session";
 import { getInstituteApprovalSubtypeLabel } from "@/lib/constants/institute-documents";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
-import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type InstituteRow = {
   id: string;
@@ -53,7 +53,11 @@ function disabledReasonFromStatus(status: string) {
 
 export default async function Page() {
   await requireUser("admin");
-  const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) {
+    throw new Error(admin.error);
+  }
+  const supabase = admin.data;
 
   const { data: institutes } = await supabase
     .from("institutes")
