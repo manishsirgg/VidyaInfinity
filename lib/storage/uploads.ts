@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 export const STORAGE_BUCKETS = {
   userDocuments: "user-documents",
   instituteDocuments: "institute-documents",
+  instituteMedia: "institute-media",
   courseMedia: "course-media",
   blogMedia: "blog-media",
   psychometricReports: "psychometric-reports",
@@ -22,6 +23,7 @@ type UploadResult = {
 const allowedMimeTypes: Record<StorageBucket, string[]> = {
   "user-documents": ["application/pdf", "image/png", "image/jpeg"],
   "institute-documents": ["application/pdf", "image/png", "image/jpeg"],
+  "institute-media": ["image/png", "image/jpeg", "image/webp", "video/mp4"],
   "course-media": [
     "image/png",
     "image/jpeg",
@@ -39,6 +41,7 @@ const allowedMimeTypes: Record<StorageBucket, string[]> = {
 const maxSizeByBucket: Record<StorageBucket, number> = {
   "user-documents": 5 * 1024 * 1024,
   "institute-documents": 5 * 1024 * 1024,
+  "institute-media": 20 * 1024 * 1024,
   "course-media": 50 * 1024 * 1024,
   "blog-media": 20 * 1024 * 1024,
   "psychometric-reports": 10 * 1024 * 1024,
@@ -226,7 +229,7 @@ export async function uploadInstituteMedia({
   const bytes = Buffer.from(await file.arrayBuffer());
 
   return uploadBytes({
-    bucket: STORAGE_BUCKETS.blogMedia,
+    bucket: STORAGE_BUCKETS.instituteMedia,
     uploadPath,
     bytes,
     contentType: file.type,
@@ -292,7 +295,7 @@ export async function getSignedPrivateFileUrl({
   return data?.signedUrl ?? null;
 }
 
-export function getPublicFileUrl({ bucket, path: pathValue }: { bucket: "avatars" | "course-media" | "blog-media"; path: string }) {
+export function getPublicFileUrl({ bucket, path: pathValue }: { bucket: "avatars" | "course-media" | "blog-media" | "institute-media"; path: string }) {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return null;
   return admin.data.storage.from(bucket).getPublicUrl(pathValue).data.publicUrl;
