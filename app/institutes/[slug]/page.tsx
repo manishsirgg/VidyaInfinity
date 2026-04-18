@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { InstituteMediaGallery } from "@/components/institutes/institute-media-gallery";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 function toPublicMediaUrl(
@@ -126,20 +127,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
     <div className="mx-auto max-w-5xl px-4 py-12">
       <article className="rounded-xl border bg-white p-8">
         <h1 className="text-3xl font-semibold">{instituteName}</h1>
-        {mediaItems.length > 0 ? (
-          <div className="mt-6 grid gap-3 md:grid-cols-2">
-            {mediaItems.map((item) => (
-              <div key={item.id} className="overflow-hidden rounded-md border">
-                {item.mediaType === "video" ? (
-                  <video className="h-56 w-full object-cover" controls src={item.url ?? undefined} />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img className="h-56 w-full object-cover" src={item.url ?? ""} alt={item.fileName ?? `${instituteName} media`} />
-                )}
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <InstituteMediaGallery mediaItems={mediaItems} instituteName={instituteName} />
         <p className="mt-6 text-slate-700">{instituteDescription ?? "No description available."}</p>
         <div className="mt-6 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
           <p>
