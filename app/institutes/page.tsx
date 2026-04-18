@@ -53,6 +53,11 @@ function toPublicMediaUrl(
   return instituteMediaUrl || blogMediaUrl || null;
 }
 
+function getInstituteCoverMedia(mediaItems: { mediaType: "image" | "video"; url: string | null; fileName: string | null }[]) {
+  const validItems = mediaItems.filter((item) => item.url);
+  return validItems.find((item) => item.mediaType === "image") ?? validItems[0] ?? null;
+}
+
 export default async function InstitutesPage() {
   const admin = getSupabaseAdmin();
   if (!admin.ok) {
@@ -199,23 +204,27 @@ export default async function InstitutesPage() {
         {instituteCards.map((institute) => (
           <article key={institute.id} className="rounded-xl border bg-white p-5">
             <h2 className="text-lg font-medium">{institute.name}</h2>
-            {institute.media.length > 0 ? (
-              <div className="mt-3">
-                {institute.media[0].mediaType === "video" ? (
-                  <video className="h-44 w-full rounded-md border object-cover" controls src={institute.media[0].url ?? undefined} />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    className="h-44 w-full rounded-md border object-cover"
-                    src={institute.media[0].url ?? ""}
-                    alt={institute.media[0].fileName ?? `${institute.name} media`}
-                  />
-                )}
-                {institute.media.length > 1 ? (
-                  <p className="mt-1 text-xs text-slate-500">+{institute.media.length - 1} more media file(s)</p>
-                ) : null}
-              </div>
-            ) : null}
+            {(() => {
+              const coverMedia = getInstituteCoverMedia(institute.media);
+              if (!coverMedia) return null;
+              return (
+                <div className="mt-3">
+                  {coverMedia.mediaType === "video" ? (
+                    <video className="h-44 w-full rounded-md border object-cover" src={coverMedia.url ?? undefined} muted preload="metadata" />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      className="h-44 w-full rounded-md border object-cover"
+                      src={coverMedia.url ?? ""}
+                      alt={coverMedia.fileName ?? `${institute.name} cover image`}
+                    />
+                  )}
+                  {institute.media.length > 1 ? (
+                    <p className="mt-1 text-xs text-slate-500">+{institute.media.length - 1} more media file(s)</p>
+                  ) : null}
+                </div>
+              );
+            })()}
             <p className="mt-2 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
             <div className="mt-3 space-y-1 text-xs text-slate-600">
               <p>Type: {institute.organizationType ?? "-"}</p>
