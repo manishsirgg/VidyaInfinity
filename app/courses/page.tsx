@@ -8,10 +8,9 @@ export default async function CoursesPage() {
   const supabase = await createClient();
   const { data: courses } = await supabase
     .from("courses")
-    .select(
-      "id,title,slug,summary,fee_amount,category,course_level,language,delivery_mode,duration_value,duration_unit,start_date,course_media(file_url,type),approval_status"
-    )
-    .eq("approval_status", "approved")
+    .select("id,title,summary,fees,category,subject,level,language,mode,duration,location,course_media(file_url,type),status")
+    .eq("status", "approved")
+    .eq("is_active", true)
     .order("created_at", { ascending: false });
 
   return (
@@ -39,15 +38,14 @@ export default async function CoursesPage() {
               )}
               <h2 className="text-lg font-medium">{course.title}</h2>
               <p className="mt-1 text-xs text-slate-500">
-                {course.category ?? "General"} · {course.course_level ?? "-"} · {course.language ?? "-"} · {course.delivery_mode ?? "-"}
+                {course.category ?? "General"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.language ?? "-"}
               </p>
               <p className="mt-2 text-sm text-slate-600">{course.summary}</p>
-              <p className="mt-2 text-sm text-slate-600">
-                Duration: {course.duration_value ?? "-"} {course.duration_unit ?? ""} · Start: {course.start_date ?? "TBA"}
-              </p>
-              <p className="mt-2 text-sm font-medium">₹{course.fee_amount}</p>
+              <p className="mt-2 text-sm text-slate-600">Duration: {course.duration ?? "-"} · Mode: {course.mode ?? "-"}</p>
+              <p className="mt-2 text-sm text-slate-600">Location: {course.location ?? "TBA"}</p>
+              <p className="mt-2 text-sm font-medium">₹{course.fees}</p>
               <p className="mt-2 text-xs text-slate-500">Media attached: {imageCount} images, {videoCount} videos</p>
-              <Link href={`/courses/${course.slug}` as Route} className="mt-4 inline-block text-brand-600">
+              <Link href={`/courses/${course.id}` as Route} className="mt-4 inline-block text-brand-600">
                 View Course
               </Link>
             </article>

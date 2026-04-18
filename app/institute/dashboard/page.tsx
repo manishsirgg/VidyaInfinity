@@ -50,7 +50,7 @@ export default async function InstituteDashboardPage() {
   const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult] = await Promise.all([
     dataClient
       .from("courses")
-      .select("id,title,approval_status,fee_amount,created_at,start_date")
+      .select("id,title,status,fees,created_at,start_date")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
     dataClient
@@ -61,7 +61,7 @@ export default async function InstituteDashboardPage() {
     dataClient.from("course_enrollments").select("id", { count: "exact", head: true }).eq("institute_id", institute.id),
     dataClient
       .from("course_orders")
-      .select("id,course_id,payment_status,final_paid_amount,platform_commission_amount,institute_receivable_amount,created_at")
+      .select("id,course_id,payment_status,gross_amount,platform_fee_amount,institute_receivable_amount,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
     dataClient
@@ -87,12 +87,12 @@ export default async function InstituteDashboardPage() {
   const now = Date.now();
   const days30 = 30 * 24 * 60 * 60 * 1000;
 
-  const approvedCourses = courses.filter((course) => course.approval_status === "approved").length;
-  const pendingCourses = courses.filter((course) => course.approval_status === "pending").length;
+  const approvedCourses = courses.filter((course) => course.status === "approved").length;
+  const pendingCourses = courses.filter((course) => course.status === "pending").length;
 
   const paidOrders = orderRows.filter((order) => order.payment_status === "paid");
-  const totalGrossRevenue = paidOrders.reduce((sum, order) => sum + Number(order.final_paid_amount ?? 0), 0);
-  const totalCommission = paidOrders.reduce((sum, order) => sum + Number(order.platform_commission_amount ?? 0), 0);
+  const totalGrossRevenue = paidOrders.reduce((sum, order) => sum + Number(order.gross_amount ?? 0), 0);
+  const totalCommission = paidOrders.reduce((sum, order) => sum + Number(order.platform_fee_amount ?? 0), 0);
   const totalNetEarnings = paidOrders.reduce((sum, order) => sum + Number(order.institute_receivable_amount ?? 0), 0);
 
   const totalPayoutsPaid = payouts
@@ -239,7 +239,7 @@ export default async function InstituteDashboardPage() {
               <div key={course.id} className="rounded border px-3 py-2">
                 <p className="font-medium">{course.title}</p>
                 <p className="text-slate-600">
-                  {course.approval_status} · ₹{course.fee_amount} · Starts {course.start_date ?? "TBA"}
+                  {course.status} · ₹{course.fees} · Starts {course.start_date ?? "TBA"}
                 </p>
               </div>
             ))}

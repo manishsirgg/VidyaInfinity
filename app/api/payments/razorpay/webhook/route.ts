@@ -7,13 +7,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   try {
-    const signature = (await headers()).get("x-razorpay-signature") ?? "";
+    const headerMap = await headers();
+    const signature = headerMap.get("x-razorpay-signature") ?? "";
     const raw = await request.text();
     const payload = raw ? JSON.parse(raw) : {};
 
     const eventType = payload?.event ?? "unknown";
-    const eventId =
-      payload?.payload?.payment?.entity?.id ?? payload?.payload?.order?.entity?.id ?? payload?.account_id ?? null;
+    const eventId = payload?.payload?.payment?.entity?.id ?? payload?.payload?.order?.entity?.id ?? null;
 
     const verifyResult = verifyRazorpayWebhookSignature(raw, signature);
     if (!verifyResult.ok) {
@@ -36,18 +36,36 @@ export async function POST(request: Request) {
       }
     }
 
-    await admin.data.from("razorpay_webhook_logs").insert({
-      event_id: eventId,
-      event_type: eventType,
-      signature_valid: verifyResult.valid,
-      payload,
-    });
+    const { data: insertedLog } = await admin.data
+      .from("razorpay_webhook_logs")
+      .insert({
+        event_id: eventId,
+        event_type: eventType,
+        signature: signature || null,
+        processed: false,
+        payload,
+        headers: {
+          "x-razorpay-signature": signature,
+          "user-agent": headerMap.get("user-agent") ?? null,
+        },
+      })
+      .select("id")
+      .maybeSingle<{ id: string }>();
 
     if (!verifyResult.valid) {
+      if (insertedLog?.id) {
+        await admin.data.from("razorpay_webhook_logs").update({ notes: "invalid_signature" }).eq("id", insertedLog.id);
+      }
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
     }
 
     if (!eventType.startsWith("payment.")) {
+      if (insertedLog?.id) {
+        await admin.data
+          .from("razorpay_webhook_logs")
+          .update({ processed: true, processed_at: new Date().toISOString(), notes: "ignored_non_payment_event" })
+          .eq("id", insertedLog.id);
+      }
       return NextResponse.json({ ok: true, skipped: true, reason: "Unsupported event type" });
     }
 
@@ -61,7 +79,7 @@ export async function POST(request: Request) {
 
     const { data: courseOrder } = await admin.data
       .from("course_orders")
-      .select("id,user_id,course_id,institute_id,final_paid_amount,institute_receivable_amount,currency,payment_status")
+      .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status")
       .eq("razorpay_order_id", razorpayOrderId)
       .maybeSingle();
 
@@ -76,6 +94,13 @@ export async function POST(request: Request) {
 
       if (reconciled.error) {
         return NextResponse.json({ error: reconciled.error }, { status: 500 });
+      }
+
+      if (insertedLog?.id) {
+        await admin.data
+          .from("razorpay_webhook_logs")
+          .update({ processed: true, processed_at: new Date().toISOString(), notes: "course_order_reconciled" })
+          .eq("id", insertedLog.id);
       }
 
       return NextResponse.json({ ok: true, reconciled: "course_order" });
@@ -98,6 +123,13 @@ export async function POST(request: Request) {
 
       if (reconciled.error) {
         return NextResponse.json({ error: reconciled.error }, { status: 500 });
+      }
+
+      if (insertedLog?.id) {
+        await admin.data
+          .from("razorpay_webhook_logs")
+          .update({ processed: true, processed_at: new Date().toISOString(), notes: "psychometric_order_reconciled" })
+          .eq("id", insertedLog.id);
       }
 
       return NextResponse.json({ ok: true, reconciled: "psychometric_order" });

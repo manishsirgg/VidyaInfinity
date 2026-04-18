@@ -14,9 +14,10 @@ export interface Course {
   id: string;
   institute_id: string;
   title: string;
-  slug: string;
-  summary: string;
-  fee_amount: number;
-  approval_status: ApprovalStatus;
+  summary: string | null;
+  fees: number;
+  duration: string;
+  mode: string;
+  status: ApprovalStatus;
   rejection_reason?: string | null;
 }

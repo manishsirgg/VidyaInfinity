@@ -31,9 +31,9 @@ export default async function StudentEnrollmentsPage() {
   const { data: enrollments } = await supabase
     .from("course_enrollments")
     .select(
-      "id,course_id,enrollment_status,enrolled_at,starts_at,ends_at,created_at,course:courses(title,slug,institute_id),institute:institutes(name,phone,user_id),order:course_orders(payment_status,paid_at)"
+      "id,course_id,enrollment_status,enrolled_at,access_start_at,access_end_at,created_at,course:courses(title,institute_id),institute:institutes(name,phone,user_id),order:course_orders(payment_status,paid_at)"
     )
-    .eq("user_id", user.id)
+    .eq("student_id", user.id)
     .order("created_at", { ascending: false });
 
   const instituteUserIds = Array.from(
@@ -59,9 +59,7 @@ export default async function StudentEnrollmentsPage() {
           <h1 className="text-2xl font-semibold">My Enrollments</h1>
           <p className="mt-1 text-sm text-slate-600">View your active and past course enrollments with post-purchase institute details.</p>
         </div>
-        <Link href="/courses" className="rounded bg-brand-600 px-3 py-2 text-sm text-white">
-          Browse Courses
-        </Link>
+        <Link href="/courses" className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Browse Courses</Link>
       </div>
 
       <div className="mt-6 space-y-2">
@@ -82,8 +80,8 @@ export default async function StudentEnrollmentsPage() {
               <p className="mt-1 text-slate-700">Status: {toTitleCase(enrollment.enrollment_status ?? "unknown")}</p>
               <p className="mt-1 text-slate-700">Payment: {toTitleCase(order?.payment_status ?? "unknown")}</p>
               <p className="mt-1 text-slate-700">Enrolled at: {formatDate(enrollment.enrolled_at ?? enrollment.created_at)}</p>
-              {enrollment.starts_at ? <p className="mt-1 text-slate-700">Starts: {formatDate(enrollment.starts_at)}</p> : null}
-              {enrollment.ends_at ? <p className="mt-1 text-slate-700">Ends: {formatDate(enrollment.ends_at)}</p> : null}
+              {enrollment.access_start_at ? <p className="mt-1 text-slate-700">Access starts: {formatDate(enrollment.access_start_at)}</p> : null}
+              {enrollment.access_end_at ? <p className="mt-1 text-slate-700">Access ends: {formatDate(enrollment.access_end_at)}</p> : null}
 
               {isPaid ? (
                 <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">

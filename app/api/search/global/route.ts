@@ -26,11 +26,11 @@ export async function GET(request: Request) {
 
   const term = `%${escapeLike(query)}%`;
 
-  const [coursesRes, blogsRes, testsRes, institutesStatusRes] = await Promise.all([
+  const [coursesRes, blogsRes, testsRes, institutesRes] = await Promise.all([
     admin.data
       .from("courses")
-      .select("id,title,slug,category,approval_status")
-      .eq("approval_status", "approved")
+      .select("id,title,category,status")
+      .eq("status", "approved")
       .or(`title.ilike.${term},summary.ilike.${term}`)
       .limit(5),
     admin.data
@@ -53,15 +53,6 @@ export async function GET(request: Request) {
       .limit(5),
   ]);
 
-  const institutesRes = institutesStatusRes.error
-    ? await admin.data
-        .from("institutes")
-        .select("id,name,slug,approval_status")
-        .eq("approval_status", "approved")
-        .or(`name.ilike.${term},description.ilike.${term}`)
-        .limit(5)
-    : institutesStatusRes;
-
   const items: SearchItem[] = [];
 
   for (const row of coursesRes.data ?? []) {
@@ -69,7 +60,7 @@ export async function GET(request: Request) {
       id: row.id,
       title: row.title,
       subtitle: `Course${row.category ? ` · ${row.category}` : ""}`,
-      href: `/courses/${row.slug}`,
+      href: `/courses/${row.id}`,
       kind: "course",
     });
   }

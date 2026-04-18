@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const schemaErrorResponse = await getPaymentSchemaErrorResponse();
     if (schemaErrorResponse) return schemaErrorResponse;
 
-    const auth = await requireApiUser("student");
+    const auth = await requireApiUser("student", { requireApproved: false });
     if ("error" in auth) return auth.error;
     const { user } = auth;
     const { orderId, paymentId, signature } = await request.json();
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
     const { data: duplicateTransaction } = await admin.data
       .from("razorpay_transactions")
-      .select("id,order_id")
+      .select("id")
       .eq("razorpay_payment_id", paymentId)
       .maybeSingle();
 
@@ -35,9 +35,9 @@ export async function POST(request: Request) {
 
     const { data: order, error: orderFetchError } = await admin.data
       .from("course_orders")
-      .select("id,user_id,course_id,institute_id,payment_status,final_paid_amount,institute_receivable_amount,currency")
+      .select("id,student_id,course_id,institute_id,payment_status,gross_amount,institute_receivable_amount,currency")
       .eq("razorpay_order_id", orderId)
-      .eq("user_id", user.id)
+      .eq("student_id", user.id)
       .single();
 
     if (orderFetchError || !order) {
