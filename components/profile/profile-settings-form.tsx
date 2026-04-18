@@ -17,6 +17,13 @@ type UserDocument = {
   created_at: string;
 };
 
+type InstituteDocument = {
+  id: string;
+  type: string;
+  status: string;
+  created_at: string;
+};
+
 type NotificationItem = {
   id: string;
   title: string;
@@ -25,6 +32,12 @@ type NotificationItem = {
   is_read: boolean;
   created_at: string;
 };
+
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
 
 export function ProfileSettingsForm({ role }: Props) {
   const [loading, setLoading] = useState(false);
@@ -38,23 +51,33 @@ export function ProfileSettingsForm({ role }: Props) {
   const [details, setDetails] = useState<GenericPayload>({});
   const [institute, setInstitute] = useState<GenericPayload>({});
   const [userDocuments, setUserDocuments] = useState<UserDocument[]>([]);
+  const [instituteDocuments, setInstituteDocuments] = useState<InstituteDocument[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationsAvailable, setNotificationsAvailable] = useState(true);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError("");
+
     const response = await fetch("/api/account/profile", { cache: "no-store" });
-    const body = await response.json();
+    const body = await response.json().catch(() => null);
+
     setLoading(false);
+
     if (!response.ok) {
-      setError(body.error ?? "Unable to load profile");
+      const nextError =
+        typeof body?.error === "string" && body.error.trim().length > 0 ? body.error : "Unable to load profile details right now.";
+      setError(nextError);
       return;
     }
-    setProfile(body.profile ?? {});
-    setDetails(body.details ?? {});
-    setInstitute(body.institute ?? {});
-    setUserDocuments(body.userDocuments ?? []);
-    setNotifications(body.notifications ?? []);
+
+    setProfile(body?.profile ?? {});
+    setDetails(body?.details ?? {});
+    setInstitute(body?.institute ?? {});
+    setUserDocuments(Array.isArray(body?.userDocuments) ? body.userDocuments : []);
+    setInstituteDocuments(Array.isArray(body?.instituteDocuments) ? body.instituteDocuments : []);
+    setNotifications(Array.isArray(body?.notifications) ? body.notifications : []);
+    setNotificationsAvailable(body?.notificationsAvailable !== false);
   }, []);
 
   useEffect(() => {
@@ -80,6 +103,16 @@ export function ProfileSettingsForm({ role }: Props) {
   const isRejected = effectiveStatus === "rejected";
   const isPending = effectiveStatus === "pending";
 
+  const identityDocuments = useMemo(
+    () => userDocuments.filter((doc) => doc.document_category === "identity"),
+    [userDocuments]
+  );
+
+  const authorizationDocuments = useMemo(
+    () => userDocuments.filter((doc) => doc.document_category === "authorization"),
+    [userDocuments]
+  );
+
   async function submitProfile(form: FormData, resubmit: boolean) {
     if (resubmit) {
       form.set("resubmit", "true");
@@ -90,9 +123,9 @@ export function ProfileSettingsForm({ role }: Props) {
       body: form,
     });
 
-    const body = await response.json();
+    const body = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(body.error ?? "Unable to update profile");
+      throw new Error((typeof body?.error === "string" && body.error) || "Unable to update profile");
     }
 
     return body;
@@ -135,11 +168,11 @@ export function ProfileSettingsForm({ role }: Props) {
       }),
     });
 
-    const body = await response.json();
+    const body = await response.json().catch(() => null);
     setPasswordSaving(false);
 
     if (!response.ok) {
-      setPasswordError(body.error ?? "Unable to update password");
+      setPasswordError((typeof body?.error === "string" && body.error) || "Unable to update password");
       return;
     }
 
@@ -163,6 +196,7 @@ export function ProfileSettingsForm({ role }: Props) {
         <div className="flex items-center gap-4 rounded-lg border border-slate-200 p-3">
           <div className="h-16 w-16 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
             {profile.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={String(profile.avatar_url)} alt="Profile avatar" className="h-full w-full object-cover" />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">No Avatar</div>
@@ -177,6 +211,7 @@ export function ProfileSettingsForm({ role }: Props) {
           </div>
         </div>
 
+        <h3 className="mt-2 text-sm font-semibold text-slate-700">Basic details</h3>
         <input required name="fullName" defaultValue={String(profile.full_name ?? "")} placeholder="Full name" className="rounded border px-3 py-2" />
         <input required type="email" name="email" defaultValue={String(profile.email ?? "")} placeholder="Email" className="rounded border px-3 py-2" />
         <input name="phone" defaultValue={String(profile.phone ?? "")} placeholder="Phone number" className="rounded border px-3 py-2" />
@@ -184,11 +219,19 @@ export function ProfileSettingsForm({ role }: Props) {
         <input name="state" defaultValue={String(profile.state ?? "")} placeholder="State" className="rounded border px-3 py-2" />
         <input name="country" defaultValue={String(profile.country ?? "")} placeholder="Country" className="rounded border px-3 py-2" />
 
-        <input name="organizationName" defaultValue={String(profile.organization_name ?? "")} placeholder="Organization name" className="rounded border px-3 py-2" />
-        <input name="organizationType" defaultValue={String(profile.organization_type ?? "")} placeholder="Organization type" className="rounded border px-3 py-2" />
-        <input name="designation" defaultValue={String(profile.designation ?? "")} placeholder="Designation" className="rounded border px-3 py-2" />
+        {(role === "admin" || role === "institute") ? (
+          <input name="designation" defaultValue={String(profile.designation ?? "")} placeholder="Designation" className="rounded border px-3 py-2" />
+        ) : null}
 
-        {(role === "student" || role === "institute") && (
+        {role === "institute" ? (
+          <>
+            <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute identity</h3>
+            <input name="organizationName" defaultValue={String(profile.organization_name ?? "")} placeholder="Institute / Organization name" className="rounded border px-3 py-2" />
+            <input name="organizationType" defaultValue={String(institute.organization_type ?? profile.organization_type ?? "")} placeholder="Organization type" className="rounded border px-3 py-2" />
+          </>
+        ) : null}
+
+        {(role === "student" || role === "institute") ? (
           <>
             <h3 className="mt-2 text-sm font-semibold text-slate-700">Personal details</h3>
             <input name="alternatePhone" defaultValue={String(details.alternate_phone ?? "")} placeholder="Alternate phone" className="rounded border px-3 py-2" />
@@ -204,9 +247,37 @@ export function ProfileSettingsForm({ role }: Props) {
             <input name="addressLine2" defaultValue={String(details.address_line_2 ?? "")} placeholder="Address line 2" className="rounded border px-3 py-2" />
             <input name="postalCode" defaultValue={String(details.postal_code ?? "")} placeholder="Postal code" className="rounded border px-3 py-2" />
           </>
-        )}
+        ) : null}
 
-        <h3 className="mt-2 text-sm font-semibold text-slate-700">User documents</h3>
+        {role === "institute" ? (
+          <>
+            <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute business details</h3>
+            <input name="instituteName" defaultValue={String(institute.name ?? profile.organization_name ?? "")} placeholder="Institute name" className="rounded border px-3 py-2" />
+            <input name="legalEntityName" defaultValue={String(institute.legal_entity_name ?? "")} placeholder="Legal entity name" className="rounded border px-3 py-2" />
+            <input name="registrationNumber" defaultValue={String(institute.registration_number ?? "")} placeholder="Registration number" className="rounded border px-3 py-2" />
+            <input
+              name="accreditationAffiliationNumber"
+              defaultValue={String(institute.accreditation_affiliation_number ?? "")}
+              placeholder="Accreditation / affiliation number"
+              className="rounded border px-3 py-2"
+            />
+            <input name="websiteUrl" defaultValue={String(institute.website_url ?? "")} placeholder="Website URL" className="rounded border px-3 py-2" />
+            <input
+              name="establishedYear"
+              type="number"
+              min={1800}
+              max={new Date().getFullYear()}
+              defaultValue={String(institute.established_year ?? "")}
+              placeholder="Established year"
+              className="rounded border px-3 py-2"
+            />
+            <input name="totalStudents" type="number" min={0} defaultValue={String(institute.total_students ?? "")} placeholder="Total students" className="rounded border px-3 py-2" />
+            <input name="totalStaff" type="number" min={0} defaultValue={String(institute.total_staff ?? "")} placeholder="Total staff" className="rounded border px-3 py-2" />
+            <textarea name="description" defaultValue={String(institute.description ?? "")} placeholder="Institute description" className="min-h-24 rounded border px-3 py-2" />
+          </>
+        ) : null}
+
+        <h3 className="mt-2 text-sm font-semibold text-slate-700">Identity document</h3>
         <select name="identityDocumentType" className="rounded border px-3 py-2">
           <option value="">Select identity document type</option>
           <option value="aadhaar_card">Aadhaar Card</option>
@@ -217,8 +288,9 @@ export function ProfileSettingsForm({ role }: Props) {
         </select>
         <input name="identityDocument" type="file" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
 
-        {role === "admin" && (
+        {role === "admin" ? (
           <>
+            <h3 className="mt-2 text-sm font-semibold text-slate-700">Authorization document</h3>
             <select name="adminAuthorizationDocumentType" className="rounded border px-3 py-2">
               <option value="">Select authorization document type</option>
               <option value="authorization_letter">Authorization Letter</option>
@@ -227,26 +299,11 @@ export function ProfileSettingsForm({ role }: Props) {
             </select>
             <input name="adminAuthorizationDocument" type="file" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
           </>
-        )}
+        ) : null}
 
-        {role === "institute" && (
+        {role === "institute" ? (
           <>
-            <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute details</h3>
-            <input name="instituteName" defaultValue={String(institute.name ?? "")} placeholder="Institute name" className="rounded border px-3 py-2" />
-            <input name="legalEntityName" defaultValue={String(institute.legal_entity_name ?? "")} placeholder="Legal entity name" className="rounded border px-3 py-2" />
-            <input name="registrationNumber" defaultValue={String(institute.registration_number ?? "")} placeholder="Registration number" className="rounded border px-3 py-2" />
-            <input
-              name="accreditationAffiliationNumber"
-              defaultValue={String(institute.accreditation_affiliation_number ?? "")}
-              placeholder="Accreditation / affiliation number"
-              className="rounded border px-3 py-2"
-            />
-            <input name="websiteUrl" defaultValue={String(institute.website_url ?? "")} placeholder="Website URL" className="rounded border px-3 py-2" />
-            <input name="establishedYear" type="number" min={1800} max={new Date().getFullYear()} defaultValue={String(institute.established_year ?? "")} placeholder="Established year" className="rounded border px-3 py-2" />
-            <input name="totalStudents" type="number" min={0} defaultValue={String(institute.total_students ?? "")} placeholder="Total students" className="rounded border px-3 py-2" />
-            <input name="totalStaff" type="number" min={0} defaultValue={String(institute.total_staff ?? "")} placeholder="Total staff" className="rounded border px-3 py-2" />
-            <textarea name="description" defaultValue={String(institute.description ?? "")} placeholder="Institute description" className="min-h-24 rounded border px-3 py-2" />
-
+            <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute approval document</h3>
             <select name="instituteApprovalDocumentType" className="rounded border px-3 py-2">
               <option value="">Select institute document type</option>
               <option value="registration_certificate">Registration Certificate</option>
@@ -255,7 +312,7 @@ export function ProfileSettingsForm({ role }: Props) {
             </select>
             <input name="instituteApprovalDocument" type="file" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
           </>
-        )}
+        ) : null}
 
         <div className="flex flex-wrap gap-2">
           <button disabled={saving} type="submit" value="save" className="rounded bg-brand-600 px-4 py-2 text-white">
@@ -285,29 +342,71 @@ export function ProfileSettingsForm({ role }: Props) {
       </form>
 
       <div className="rounded-xl border bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-700">Latest uploaded user documents</h3>
+        <h3 className="text-sm font-semibold text-slate-700">Identity documents</h3>
         <div className="mt-3 space-y-2 text-sm">
-          {userDocuments.length === 0 ? <p className="text-slate-500">No documents uploaded yet.</p> : null}
-          {userDocuments.map((doc) => (
+          {identityDocuments.length === 0 ? <p className="text-slate-500">No identity documents uploaded yet.</p> : null}
+          {identityDocuments.map((doc) => (
             <div key={doc.id} className="rounded border border-slate-200 bg-slate-50 p-2">
               <p>
-                {doc.document_category} · {doc.document_type} · {doc.status}
+                {doc.document_type} · {doc.status}
               </p>
               {doc.rejection_reason ? <p className="text-rose-700">Reason: {doc.rejection_reason}</p> : null}
+              <p className="text-xs text-slate-500">Uploaded: {formatDateTime(doc.created_at)}</p>
             </div>
           ))}
         </div>
       </div>
 
+      {role === "admin" ? (
+        <div className="rounded-xl border bg-white p-4">
+          <h3 className="text-sm font-semibold text-slate-700">Authorization documents</h3>
+          <div className="mt-3 space-y-2 text-sm">
+            {authorizationDocuments.length === 0 ? <p className="text-slate-500">No authorization documents uploaded yet.</p> : null}
+            {authorizationDocuments.map((doc) => (
+              <div key={doc.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+                <p>
+                  {doc.document_type} · {doc.status}
+                </p>
+                {doc.rejection_reason ? <p className="text-rose-700">Reason: {doc.rejection_reason}</p> : null}
+                <p className="text-xs text-slate-500">Uploaded: {formatDateTime(doc.created_at)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {role === "institute" ? (
+        <div className="rounded-xl border bg-white p-4">
+          <h3 className="text-sm font-semibold text-slate-700">Institute approval documents</h3>
+          <div className="mt-3 space-y-2 text-sm">
+            {instituteDocuments.length === 0 ? <p className="text-slate-500">No institute approval documents uploaded yet.</p> : null}
+            {instituteDocuments.map((doc) => (
+              <div key={doc.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+                <p>
+                  {doc.type} · {doc.status}
+                </p>
+                <p className="text-xs text-slate-500">Uploaded: {formatDateTime(doc.created_at)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="rounded-xl border bg-white p-4">
         <h3 className="text-sm font-semibold text-slate-700">Recent notifications</h3>
         <div className="mt-3 space-y-2 text-sm">
+          {!notificationsAvailable ? (
+            <p className="text-amber-700">
+              Notifications are temporarily unavailable for this deployment. Your login and profile updates still work normally.
+            </p>
+          ) : null}
+
           {notifications.length === 0 ? <p className="text-slate-500">No notifications yet.</p> : null}
           {notifications.map((item) => (
             <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
               <p className="font-medium">{item.title}</p>
               <p className="text-slate-700">{item.message}</p>
-              <p className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</p>
+              <p className="text-xs text-slate-500">{formatDateTime(item.created_at)}</p>
             </div>
           ))}
         </div>

@@ -4,6 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function normalizeErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const maybeMessage = "message" in error ? (error as { message?: unknown }).message : undefined;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
+  }
+  return fallback;
+}
+
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
@@ -25,14 +34,25 @@ export async function POST(request: Request) {
     });
 
     if (error || !data.user) {
-      return NextResponse.json({ error: error?.message ?? "Invalid credentials" }, { status: 401 });
+      return NextResponse.json(
+        { error: normalizeErrorMessage(error, "Unable to sign in with the provided credentials") },
+        { status: 401 }
+      );
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", data.user.id)
       .maybeSingle<{ role: "student" | "institute" | "admin" }>();
+
+    if (profileError) {
+      await supabase.auth.signOut();
+      return NextResponse.json(
+        { error: normalizeErrorMessage(profileError, "Unable to load account profile after login") },
+        { status: 500 }
+      );
+    }
 
     if (!profile) {
       await supabase.auth.signOut();
@@ -45,7 +65,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, redirectPath });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to process login" },
+      { error: normalizeErrorMessage(error, "Unable to process login") },
       { status: 500 }
     );
   }
