@@ -7,7 +7,10 @@ export default async function StudentProfilePage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Student Profile</h1>
-      <p className="mt-2 text-sm text-slate-600">Manage your personal information, avatar, email, phone and password.</p>
+      <p className="mt-2 text-sm text-slate-600">
+        Manage your personal information, contact details, password, and identity document. If your profile was rejected,
+        update details here and resubmit for review.
+      </p>
       <ProfileSettingsForm role="student" />
     </div>
   );
