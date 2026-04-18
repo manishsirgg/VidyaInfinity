@@ -12,6 +12,7 @@ type ServerEnv = {
 type PublicEnv = {
   NEXT_PUBLIC_SUPABASE_URL: string;
   NEXT_PUBLIC_SUPABASE_ANON_KEY: string;
+  NEXT_PUBLIC_RAZORPAY_KEY_ID?: string;
 };
 
 function missing(keys: string[]) {
@@ -22,10 +23,11 @@ export function getPublicEnv(): EnvResult<PublicEnv> {
   const values = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_RAZORPAY_KEY_ID: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
   };
 
   const missingKeys = Object.entries(values)
-    .filter(([, value]) => !value)
+     .filter(([key, value]) => key !== "NEXT_PUBLIC_RAZORPAY_KEY_ID" && !value)
     .map(([key]) => key);
 
   if (missingKeys.length) return { ok: false, error: missing(missingKeys) };

@@ -11,7 +11,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const { status, rejectionReason } = await request.json();
 
-  if (!["approved", "rejected", "pending"].includes(status)) {
+  if (!["approved", "rejected"].includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
@@ -22,13 +22,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
+  const { data: existing } = await admin.data.from("courses").select("id,approval_status").eq("id", id).maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Course not found" }, { status: 404 });
+
+  if (existing.approval_status !== "pending") {
+    return NextResponse.json({ error: "Only pending submissions can be moderated" }, { status: 409 });
+  }
+
   const { data, error } = await admin.data
     .from("courses")
     .update({
       approval_status: status,
+      status,
       rejection_reason: status === "rejected" ? rejectionReason : null,
       reviewed_at: new Date().toISOString(),
       reviewed_by: auth.user.id,
+      updated_at: new Date().toISOString(),
     })
     .eq("id", id)
     .select("id,title,approval_status,rejection_reason")
@@ -38,7 +47,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   await writeAdminAuditLog({
     adminUserId: auth.user.id,
-    action: status === "approved" ? "COURSE_APPROVED" : status === "rejected" ? "COURSE_REJECTED" : "COURSE_MARKED_PENDING",
+    action: status === "approved" ? "COURSE_APPROVED" : "COURSE_REJECTED",
     targetTable: "courses",
     targetId: id,
     metadata: { status, rejectionReason: rejectionReason ?? null, title: data?.title ?? null },

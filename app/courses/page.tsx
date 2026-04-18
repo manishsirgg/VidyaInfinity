@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 
+import { CourseCompareBar } from "@/components/courses/course-compare-bar";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function CoursesPage() {
@@ -16,6 +17,12 @@ export default async function CoursesPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-3xl font-semibold">Approved Courses</h1>
+      <p className="mt-2 text-sm text-slate-600">Institute identity and direct contact details are shared only after successful enrollment.</p>
+
+      <div className="mt-6">
+        <CourseCompareBar courses={(courses ?? []).map((course) => ({ id: course.id, title: course.title }))} />
+      </div>
+
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {courses?.map((course) => {
           const previewImage = course.course_media?.find((media) => media.type === "image")?.file_url;
@@ -27,7 +34,9 @@ export default async function CoursesPage() {
               {previewImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={previewImage} alt={course.title} className="mb-3 h-40 w-full rounded-md object-cover" />
-              ) : null}
+              ) : (
+                <div className="mb-3 grid h-40 w-full place-items-center rounded-md border border-dashed text-xs text-slate-500">No preview image</div>
+              )}
               <h2 className="text-lg font-medium">{course.title}</h2>
               <p className="mt-1 text-xs text-slate-500">
                 {course.category ?? "General"} · {course.course_level ?? "-"} · {course.language ?? "-"} · {course.delivery_mode ?? "-"}

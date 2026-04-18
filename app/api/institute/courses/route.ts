@@ -127,7 +127,9 @@ export async function POST(request: Request) {
       demo_video_url: demoVideoUrl || null,
       brochure_url: brochureUrl || null,
       approval_status: "pending",
+      status: "pending",
       rejection_reason: null,
+      updated_at: new Date().toISOString(),
     })
     .select("id")
     .single();

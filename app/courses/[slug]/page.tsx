@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { CoursePurchaseCard } from "@/components/courses/course-purchase-card";
 import { LeadForm } from "@/components/forms/lead-form";
 import { createClient } from "@/lib/supabase/server";
 
@@ -29,6 +30,9 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
             {course.category ?? "General"} {course.subcategory ? `· ${course.subcategory}` : ""} · {course.course_level ?? "-"} · {course.language ?? "-"}
           </p>
           <p className="mt-3 text-slate-700">{course.summary}</p>
+          <p className="mt-2 rounded border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-700">
+            Institute name and direct contact details are protected until successful enrollment.
+          </p>
         </div>
 
         <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
@@ -41,7 +45,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           <p>End date: {course.end_date ?? "-"}</p>
           <p>Admission deadline: {course.admission_deadline ?? "-"}</p>
           <p>Total seats: {course.total_seats ?? "-"}</p>
-          <p>Instructor: {course.instructor_name ?? "-"}</p>
+          <p>Faculty: {course.instructor_name ?? "-"}</p>
         </div>
 
         <section>
@@ -95,15 +99,12 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
       </article>
 
       <aside className="space-y-4">
+        <CoursePurchaseCard courseId={course.id} courseTitle={course.title} feeAmount={Number(course.fee_amount ?? 0)} />
         <div className="rounded-xl border bg-white p-4">
-          <p className="text-sm text-slate-600">Course Fee</p>
-          <p className="text-2xl font-semibold">₹{course.fee_amount}</p>
           <p className="mt-2 text-sm text-slate-600">
             Certificate: {course.certificate_available ? `Yes${course.certification_details ? ` (${course.certification_details})` : ""}` : "No"}
           </p>
-          <p className="mt-2 text-sm text-slate-600">Support email: {course.support_email ?? "-"}</p>
-          <p className="text-sm text-slate-600">Support phone: {course.support_phone ?? "-"}</p>
-          {course.instructor_qualification ? <p className="mt-2 text-sm text-slate-600">Instructor qualification: {course.instructor_qualification}</p> : null}
+          {course.instructor_qualification ? <p className="mt-2 text-sm text-slate-600">Faculty qualification: {course.instructor_qualification}</p> : null}
           {course.demo_video_url ? (
             <a href={course.demo_video_url} target="_blank" rel="noreferrer" className="mt-3 block text-sm text-brand-600 underline">
               Watch demo video

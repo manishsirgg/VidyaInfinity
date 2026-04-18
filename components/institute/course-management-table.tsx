@@ -34,6 +34,33 @@ export function CourseManagementTable({ courses }: Props) {
     totalSeats: "",
   });
 
+
+  async function handleResubmit(course: Course) {
+    setBusyId(course.id);
+    setError("");
+
+    const response = await fetch(`/api/institute/courses/${course.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: course.title,
+        summary: course.summary,
+        feeAmount: course.fee_amount,
+        startDate: course.start_date,
+        totalSeats: course.total_seats,
+      }),
+    });
+
+    const body = await response.json().catch(() => null);
+    setBusyId(null);
+
+    if (!response.ok) {
+      setError(body?.error ?? "Unable to resubmit course.");
+      return;
+    }
+
+    router.refresh();
+  }
   async function handleDelete(courseId: string) {
     if (!window.confirm("Delete this course? This cannot be undone.")) return;
 
@@ -180,6 +207,15 @@ export function CourseManagementTable({ courses }: Props) {
                   <button onClick={() => startEditing(course)} className="rounded border px-3 py-1.5 hover:bg-slate-50">
                     Edit
                   </button>
+                  {course.approval_status === "rejected" ? (
+                    <button
+                      disabled={isBusy}
+                      onClick={() => handleResubmit(course)}
+                      className="rounded border border-amber-300 px-3 py-1.5 text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                    >
+                      {isBusy ? "Submitting..." : "Resubmit"}
+                    </button>
+                  ) : null}
                   <button
                     disabled={isBusy}
                     onClick={() => handleDelete(course.id)}

@@ -25,12 +25,28 @@ export async function POST(request: Request) {
 
     const { data: course } = await admin.data
       .from("courses")
-      .select("id,institute_id,fee_amount,approval_status")
+      .select("id,institute_id,fee_amount,approval_status,admission_deadline")
       .eq("id", courseId)
       .eq("approval_status", "approved")
       .single();
 
     if (!course) return NextResponse.json({ error: "Invalid course" }, { status: 400 });
+
+    if (course.admission_deadline && new Date(course.admission_deadline).getTime() < Date.now()) {
+      return NextResponse.json({ error: "Admission deadline has passed for this course" }, { status: 400 });
+    }
+
+    const { data: existingPaidEnrollment } = await admin.data
+      .from("course_enrollments")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("course_id", course.id)
+      .eq("enrollment_status", "enrolled")
+      .maybeSingle();
+
+    if (existingPaidEnrollment) {
+      return NextResponse.json({ error: "You are already enrolled in this course" }, { status: 409 });
+    }
 
     const { data: settings } = await admin.data
       .from("platform_commission_settings")

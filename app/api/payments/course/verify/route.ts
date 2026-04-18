@@ -23,6 +23,16 @@ export async function POST(request: Request) {
     const admin = getSupabaseAdmin();
     if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
+    const { data: duplicateTransaction } = await admin.data
+      .from("razorpay_transactions")
+      .select("id,order_id")
+      .eq("razorpay_payment_id", paymentId)
+      .maybeSingle();
+
+    if (duplicateTransaction) {
+      return NextResponse.json({ ok: true, idempotent: true, duplicate: true });
+    }
+
     const { data: order, error: orderFetchError } = await admin.data
       .from("course_orders")
       .select("id,user_id,course_id,institute_id,payment_status,final_paid_amount,institute_receivable_amount,currency")
@@ -32,6 +42,10 @@ export async function POST(request: Request) {
 
     if (orderFetchError || !order) {
       return NextResponse.json({ error: "Order not found for this user" }, { status: 404 });
+    }
+
+    if (order.payment_status === "paid") {
+      return NextResponse.json({ ok: true, idempotent: true });
     }
 
     const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
@@ -55,7 +69,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: reconciled.error }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, idempotent: order.payment_status === "paid" });
+    return NextResponse.json({ ok: true, idempotent: false });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to verify course payment" },
