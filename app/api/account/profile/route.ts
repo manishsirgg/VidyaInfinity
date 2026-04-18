@@ -5,7 +5,7 @@ import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-do
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { getPublicFileUrl, uploadAvatar, uploadBlogMedia, uploadInstituteDocument, uploadUserDocument } from "@/lib/storage/uploads";
+import { getPublicFileUrl, uploadAvatar, uploadInstituteDocument, uploadInstituteMedia, uploadUserDocument } from "@/lib/storage/uploads";
 import { sendModerationExternalNotifications } from "@/lib/integrations/account-moderation";
 
 function val(form: FormData, key: string) {
@@ -37,19 +37,6 @@ function isMissingNotificationsTableError(error: { code?: string; message?: stri
   if (!error) return false;
   const message = String(error.message ?? "").toLowerCase();
   return error.code === "42P01" || (message.includes("notifications") && message.includes("does not exist"));
-}
-
-async function uploadInstituteShowcaseMedia({ userId, file }: { userId: string; file: File }) {
-  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
-    return { error: "Only image and video files are allowed for institute media", path: undefined };
-  }
-
-  return uploadBlogMedia({
-    userId,
-    blogId: "institute-showcase",
-    file,
-    mediaKind: "inline",
-  });
 }
 
 export async function GET() {
@@ -155,7 +142,7 @@ export async function GET() {
       auth.profile.role === "institute"
         ? (instituteMedia ?? []).map((media) => ({
             ...media,
-            publicUrl: getPublicFileUrl({ bucket: "blog-media", path: media.file_url }),
+            publicUrl: getPublicFileUrl({ bucket: "institute-media", path: media.file_url }) ?? getPublicFileUrl({ bucket: "blog-media", path: media.file_url }),
           }))
         : [],
   });
@@ -429,7 +416,7 @@ export async function PATCH(request: Request) {
           );
         }
 
-        const uploadedMedia = await uploadInstituteShowcaseMedia({ userId: auth.user.id, file: mediaFile });
+        const uploadedMedia = await uploadInstituteMedia({ userId: auth.user.id, file: mediaFile });
         if (uploadedMedia.error || !uploadedMedia.path) {
           return NextResponse.json({ error: uploadedMedia.error ?? "Unable to upload institute media file" }, { status: 400 });
         }
