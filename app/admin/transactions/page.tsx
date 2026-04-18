@@ -18,17 +18,17 @@ export default async function Page() {
   const [{ data: transactions }, { data: orders }, { data: enrollments }, { data: payouts }] = await Promise.all([
     supabase
       .from("razorpay_transactions")
-      .select("id,order_type,amount,status,razorpay_payment_id,created_at,order_id")
+      .select("id,order_kind,amount,payment_status,razorpay_payment_id,created_at,course_order_id,psychometric_order_id")
       .order("created_at", { ascending: false })
       .limit(100),
     supabase
       .from("course_orders")
-      .select("id,course_id,user_id,institute_id,payment_status,payout_status,gross_amount,platform_commission_amount,institute_receivable_amount,created_at")
+      .select("id,course_id,student_id,institute_id,payment_status,payout_status,gross_amount,platform_fee_amount,institute_receivable_amount,created_at")
       .order("created_at", { ascending: false })
       .limit(100),
     supabase
       .from("course_enrollments")
-      .select("id,user_id,course_id,institute_id,enrollment_status,created_at")
+      .select("id,student_id,course_id,institute_id,enrollment_status,created_at")
       .order("created_at", { ascending: false })
       .limit(100),
     supabase
@@ -50,7 +50,7 @@ export default async function Page() {
         <div className="mt-3 space-y-2">
           {transactions?.map((txn) => (
             <div key={txn.id} className="rounded border bg-white p-3 text-sm">
-              {txn.order_type} · ₹{txn.amount} · {toTitleCase(txn.status)} · Payment ID: {txn.razorpay_payment_id}
+              {txn.order_kind} · ₹{txn.amount} · {toTitleCase(txn.payment_status)} · Payment ID: {txn.razorpay_payment_id}
             </div>
           ))}
         </div>
@@ -61,7 +61,7 @@ export default async function Page() {
         <div className="mt-3 space-y-2">
           {orders?.map((order) => (
             <div key={order.id} className="rounded border bg-white p-3 text-sm">
-              Order {order.id.slice(0, 8)} · Course {order.course_id.slice(0, 8)} · Student {order.user_id.slice(0, 8)}
+              Order {order.id.slice(0, 8)} · Course {order.course_id.slice(0, 8)} · Student {order.student_id.slice(0, 8)}
               <div className="text-slate-700">
                 Payment: {toTitleCase(order.payment_status)} · Payout: {toTitleCase(order.payout_status)} · Gross ₹{order.gross_amount}
               </div>
@@ -75,8 +75,7 @@ export default async function Page() {
         <div className="mt-3 space-y-2">
           {enrollments?.map((enrollment) => (
             <div key={enrollment.id} className="rounded border bg-white p-3 text-sm">
-              Enrollment {enrollment.id.slice(0, 8)} · Student {enrollment.user_id.slice(0, 8)} · Course {enrollment.course_id.slice(0, 8)} ·
-              {" "}
+              Enrollment {enrollment.id.slice(0, 8)} · Student {enrollment.student_id.slice(0, 8)} · Course {enrollment.course_id.slice(0, 8)} · {" "}
               {toTitleCase(enrollment.enrollment_status)}
             </div>
           ))}

@@ -17,7 +17,7 @@ function one<T>(value: T | T[] | null | undefined): T | null {
 }
 
 export default async function Page() {
-  const { user } = await requireUser("institute");
+  const { user } = await requireUser("institute", { requireApproved: false });
   const supabase = await createClient();
   const { data: institute } = await supabase.from("institutes").select("id").eq("user_id", user.id).maybeSingle();
 
@@ -25,7 +25,7 @@ export default async function Page() {
     ? await supabase
         .from("course_enrollments")
         .select(
-          "id,user_id,course_id,enrollment_status,created_at,course:courses(title),order:course_orders(payment_status,final_paid_amount,paid_at),student:profiles(full_name,email,phone)"
+          "id,student_id,course_id,enrollment_status,created_at,course:courses(title),order:course_orders(payment_status,gross_amount,paid_at),student:profiles(full_name,email,phone)"
         )
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
@@ -51,7 +51,7 @@ export default async function Page() {
                   <p>Student: {student?.full_name ?? "-"}</p>
                   <p>Email: {student?.email ?? "-"}</p>
                   <p>Phone: {student?.phone ?? "-"}</p>
-                  <p>Amount: ₹{order?.final_paid_amount ?? 0}</p>
+                  <p>Amount: ₹{order?.gross_amount ?? 0}</p>
                 </div>
               ) : (
                 <p className="mt-2 text-xs text-slate-500">Student contact is shared only for paid enrollments.</p>

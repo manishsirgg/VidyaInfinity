@@ -7,15 +7,15 @@ import { createClient } from "@/lib/supabase/server";
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const supabase = await createClient();
-  const { data: course } = await supabase
-    .from("courses")
-    .select(
-      "id,title,summary,description,fee_amount,category,subcategory,course_level,language,delivery_mode,duration_value,duration_unit,weekly_schedule,start_date,end_date,eligibility,prerequisites,learning_outcomes,target_audience,syllabus,certificate_available,certification_details,total_seats,admission_deadline,support_email,support_phone,instructor_name,instructor_qualification,demo_video_url,brochure_url,approval_status,course_media(file_url,type)"
-    )
-    .eq("slug", slug)
-    .eq("approval_status", "approved")
-    .single();
 
+  const baseSelect = "id,title,summary,description,fees,category,subject,level,language,mode,duration,duration_value,duration_unit,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,course_media(file_url,type)";
+
+  const byId = await supabase.from("courses").select(baseSelect).eq("id", slug).eq("status", "approved").maybeSingle();
+  const byLegacySlug = byId.data
+    ? { data: byId.data }
+    : await supabase.from("courses").select(baseSelect).eq("slug", slug).eq("status", "approved").maybeSingle();
+
+  const course = byLegacySlug.data;
   if (!course) notFound();
 
   const imageMedia = course.course_media?.filter((media) => media.type === "image") ?? [];
@@ -27,36 +27,33 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
         <div>
           <h1 className="text-2xl font-semibold sm:text-3xl">{course.title}</h1>
           <p className="mt-2 text-sm text-slate-500">
-            {course.category ?? "General"} {course.subcategory ? `· ${course.subcategory}` : ""} · {course.course_level ?? "-"} · {course.language ?? "-"}
+            {course.category ?? "General"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.language ?? "-"}
           </p>
           <p className="mt-3 text-slate-700">{course.summary}</p>
           <p className="mt-2 rounded border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-700">
-            Institute name and direct contact details are protected until successful enrollment.
+            Institute details will be shared after successful enrollment.
           </p>
         </div>
 
         <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
-          <p>Delivery mode: {course.delivery_mode ?? "-"}</p>
-          <p>
-            Duration: {course.duration_value ?? "-"} {course.duration_unit ?? ""}
-          </p>
-          <p>Weekly schedule: {course.weekly_schedule ?? "-"}</p>
+          <p>Mode: {course.mode ?? "-"}</p>
+          <p>Duration: {course.duration ?? "-"}</p>
+          <p>Schedule: {course.schedule ?? "-"}</p>
           <p>Start date: {course.start_date ?? "-"}</p>
           <p>End date: {course.end_date ?? "-"}</p>
           <p>Admission deadline: {course.admission_deadline ?? "-"}</p>
-          <p>Total seats: {course.total_seats ?? "-"}</p>
-          <p>Faculty: {course.instructor_name ?? "-"}</p>
+          <p>Batch size: {course.batch_size ?? "-"}</p>
+          <p>Faculty: {course.faculty_name ?? "-"}</p>
         </div>
 
         <section>
           <h2 className="text-lg font-semibold">Description</h2>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.description}</p>
+          <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.description ?? "-"}</p>
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold">Eligibility & Prerequisites</h2>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700">Eligibility: {course.eligibility ?? "-"}</p>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700">Prerequisites: {course.prerequisites ?? "-"}</p>
+          <h2 className="text-lg font-semibold">Eligibility</h2>
+          <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.eligibility ?? "-"}</p>
         </section>
 
         <section>
@@ -67,11 +64,6 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
         <section>
           <h2 className="text-lg font-semibold">Target Audience</h2>
           <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.target_audience ?? "-"}</p>
-        </section>
-
-        <section>
-          <h2 className="text-lg font-semibold">Syllabus</h2>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.syllabus ?? "-"}</p>
         </section>
 
         <section>
@@ -99,22 +91,12 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
       </article>
 
       <aside className="space-y-4">
-        <CoursePurchaseCard courseId={course.id} courseTitle={course.title} feeAmount={Number(course.fee_amount ?? 0)} />
+        <CoursePurchaseCard courseId={course.id} courseTitle={course.title} feeAmount={Number(course.fees ?? 0)} />
         <div className="rounded-xl border bg-white p-4">
-          <p className="mt-2 text-sm text-slate-600">
-            Certificate: {course.certificate_available ? `Yes${course.certification_details ? ` (${course.certification_details})` : ""}` : "No"}
-          </p>
-          {course.instructor_qualification ? <p className="mt-2 text-sm text-slate-600">Faculty qualification: {course.instructor_qualification}</p> : null}
-          {course.demo_video_url ? (
-            <a href={course.demo_video_url} target="_blank" rel="noreferrer" className="mt-3 block text-sm text-brand-600 underline">
-              Watch demo video
-            </a>
-          ) : null}
-          {course.brochure_url ? (
-            <a href={course.brochure_url} target="_blank" rel="noreferrer" className="mt-2 block text-sm text-brand-600 underline">
-              Open brochure
-            </a>
-          ) : null}
+          <p className="mt-2 text-sm text-slate-600">Certificate: {course.certificate_status ?? "-"}</p>
+          {course.certificate_details ? <p className="mt-1 text-sm text-slate-600">{course.certificate_details}</p> : null}
+          {course.faculty_qualification ? <p className="mt-2 text-sm text-slate-600">Faculty qualification: {course.faculty_qualification}</p> : null}
+          <p className="mt-2 text-xs text-slate-500">Institute contact details stay hidden until payment is successful.</p>
         </div>
         <LeadForm courseId={course.id} />
       </aside>

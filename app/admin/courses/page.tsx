@@ -8,9 +8,7 @@ export default async function Page() {
 
   const { data: courses } = await supabase
     .from("courses")
-    .select(
-      "id,title,category,course_level,delivery_mode,language,summary,fee_amount,approval_status,instructor_name,total_seats,start_date,rejection_reason,course_media(id,type,file_url),created_at"
-    )
+    .select("id,title,category,subject,level,mode,language,summary,fees,status,faculty_name,batch_size,start_date,rejection_reason,course_media(id,type,file_url),created_at")
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -20,23 +18,17 @@ export default async function Page() {
       <div className="mt-4 space-y-3">
         {courses?.map((course) => (
           <div key={course.id} className="rounded border bg-white p-4 text-sm">
-            <p className="font-medium">
-              {course.title} · {course.approval_status}
-            </p>
-            <p className="text-slate-600">
-              {course.category ?? "-"} · {course.course_level ?? "-"} · {course.delivery_mode ?? "-"} · {course.language ?? "-"}
-            </p>
-            <p className="text-slate-600">₹{course.fee_amount} · Start date: {course.start_date ?? "-"} · Seats: {course.total_seats ?? "-"}</p>
+            <p className="font-medium">{course.title} · {course.status}</p>
+            <p className="text-slate-600">{course.category ?? "-"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.mode ?? "-"} · {course.language ?? "-"}</p>
+            <p className="text-slate-600">₹{course.fees} · Start date: {course.start_date ?? "-"} · Batch: {course.batch_size ?? "-"}</p>
             <p className="mt-1 text-slate-700">{course.summary}</p>
-            <p className="text-slate-600">Instructor: {course.instructor_name ?? "-"}</p>
+            <p className="text-slate-600">Faculty: {course.faculty_name ?? "-"}</p>
             <p className="text-slate-600">Media: {course.course_media?.length ?? 0} file(s)</p>
             {(course.course_media ?? []).slice(0, 4).map((media) => (
-              <p key={media.id} className="text-xs text-slate-500">
-                {media.type}: {media.file_url}
-              </p>
+              <p key={media.id} className="text-xs text-slate-500">{media.type}: {media.file_url}</p>
             ))}
             {course.rejection_reason && <p className="text-xs text-rose-600">Reason: {course.rejection_reason}</p>}
-            <ModerationActions targetType="courses" targetId={course.id} currentStatus={course.approval_status} />
+            <ModerationActions targetType="courses" targetId={course.id} currentStatus={course.status} />
           </div>
         ))}
       </div>

@@ -5,17 +5,18 @@ import { createClient } from "@/lib/supabase/server";
 type CompareCourse = {
   id: string;
   title: string;
-  slug: string;
   summary: string | null;
-  fee_amount: number | null;
-  duration_value: number | null;
-  duration_unit: string | null;
-  delivery_mode: string | null;
+  fees: number | null;
+  duration: string | null;
+  mode: string | null;
   category: string | null;
-  subcategory: string | null;
-  course_level: string | null;
+  subject: string | null;
+  level: string | null;
   language: string | null;
-  certificate_available: boolean | null;
+  certificate_status: string | null;
+  batch_size: number | null;
+  placement_support: string | null;
+  internship_support: string | null;
 };
 
 function val(value: unknown) {
@@ -35,11 +36,9 @@ export default async function CourseComparePage({ searchParams }: { searchParams
   const { data } = ids.length
     ? await supabase
         .from("courses")
-        .select(
-          "id,title,slug,summary,fee_amount,duration_value,duration_unit,delivery_mode,category,subcategory,course_level,language,certificate_available,approval_status"
-        )
+        .select("id,title,summary,fees,duration,mode,category,subject,level,language,certificate_status,batch_size,placement_support,internship_support,status")
         .in("id", ids)
-        .eq("approval_status", "approved")
+        .eq("status", "approved")
     : { data: [] };
 
   const courses: CompareCourse[] = (data ?? []) as CompareCourse[];
@@ -47,14 +46,17 @@ export default async function CourseComparePage({ searchParams }: { searchParams
   const rows: Array<[string, (course: CompareCourse) => string]> = [
     ["Course", (course) => course.title],
     ["Summary", (course) => val(course.summary)],
-    ["Fees", (course) => `₹${val(course.fee_amount)}`],
-    ["Duration", (course) => `${val(course.duration_value)} ${val(course.duration_unit)}`],
-    ["Mode", (course) => val(course.delivery_mode)],
-    ["Category", (course) => `${val(course.category)} / ${val(course.subcategory)}`],
-    ["Level", (course) => val(course.course_level)],
+    ["Fees", (course) => `₹${val(course.fees)}`],
+    ["Duration", (course) => val(course.duration)],
+    ["Mode", (course) => val(course.mode)],
+    ["Category", (course) => `${val(course.category)} / ${val(course.subject)}`],
+    ["Level", (course) => val(course.level)],
     ["Language", (course) => val(course.language)],
-    ["Certificate", (course) => (course.certificate_available ? "Yes" : "No")],
-    ["Support", () => "Revealed after enrollment"],
+    ["Certificate", (course) => val(course.certificate_status)],
+    ["Batch size", (course) => val(course.batch_size)],
+    ["Placement", (course) => val(course.placement_support)],
+    ["Internship", (course) => val(course.internship_support)],
+    ["Institute", () => "Shared after enrollment"],
   ];
 
   return (
@@ -74,11 +76,7 @@ export default async function CourseComparePage({ searchParams }: { searchParams
               <tr>
                 <th className="bg-slate-50 px-3 py-2 text-left">Field</th>
                 {courses.map((course) => (
-                  <th key={course.id} className="bg-slate-50 px-3 py-2 text-left">
-                    <Link href={`/courses/${course.slug}`} className="text-brand-600 underline">
-                      {course.title}
-                    </Link>
-                  </th>
+                  <th key={course.id} className="bg-slate-50 px-3 py-2 text-left">{course.title}</th>
                 ))}
               </tr>
             </thead>
@@ -87,9 +85,7 @@ export default async function CourseComparePage({ searchParams }: { searchParams
                 <tr key={label}>
                   <td className="px-3 py-2 font-medium text-slate-700">{label}</td>
                   {courses.map((course) => (
-                    <td key={`${label}-${course.id}`} className="px-3 py-2 text-slate-700">
-                      {getValue(course)}
-                    </td>
+                    <td key={`${label}-${course.id}`} className="px-3 py-2 text-slate-700">{getValue(course)}</td>
                   ))}
                 </tr>
               ))}

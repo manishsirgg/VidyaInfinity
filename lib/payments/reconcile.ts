@@ -14,10 +14,10 @@ export async function reconcileCourseOrderPaid({
   supabase: SupabaseClient;
   order: {
     id: string;
-    user_id: string;
+    student_id: string;
     course_id: string;
     institute_id: string;
-    final_paid_amount: number;
+    gross_amount: number;
     institute_receivable_amount: number;
     currency: string;
     payment_status: string;
@@ -45,16 +45,20 @@ export async function reconcileCourseOrderPaid({
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
-      order_type: "course",
-      order_id: order.id,
-      user_id: order.user_id,
+      order_kind: "course_enrollment",
+      course_order_id: order.id,
+      user_id: order.student_id,
+      institute_id: order.institute_id,
       razorpay_order_id: razorpayOrderId,
       razorpay_payment_id: razorpayPaymentId,
       razorpay_signature: razorpaySignature ?? null,
-      amount: order.final_paid_amount,
+      event_type: source === "webhook" ? "payment.captured" : "payment.verify",
+      payment_status: "paid",
+      amount: order.gross_amount,
       currency: order.currency,
-      status: "captured",
-      payload: { source },
+      verified: true,
+      verified_at: new Date().toISOString(),
+      gateway_response: { source },
     },
     { onConflict: "razorpay_payment_id" }
   );
@@ -63,14 +67,16 @@ export async function reconcileCourseOrderPaid({
 
   const { error: enrollError } = await supabase.from("course_enrollments").upsert(
     {
-      user_id: order.user_id,
+      course_order_id: order.id,
+      student_id: order.student_id,
       course_id: order.course_id,
       institute_id: order.institute_id,
       enrollment_status: "enrolled",
-      order_id: order.id,
       enrolled_at: new Date().toISOString(),
+      access_start_at: new Date().toISOString(),
+      metadata: { source },
     },
-    { onConflict: "user_id,course_id" }
+    { onConflict: "course_order_id" }
   );
 
   if (enrollError) return { error: enrollError.message };
@@ -94,13 +100,9 @@ export async function reconcileCourseOrderPaid({
 
   const [{ data: course }, { data: student }, { data: institute }, { data: admins }] = await Promise.all([
     supabase.from("courses").select("title").eq("id", order.course_id).maybeSingle(),
-    supabase.from("profiles").select("id,full_name,email,phone").eq("id", order.user_id).maybeSingle(),
-    supabase
-      .from("institutes")
-      .select("id,user_id,name,phone")
-      .eq("id", order.institute_id)
-      .maybeSingle(),
-    supabase.from("profiles").select("id").eq("role", "admin"),
+    supabase.from("profiles").select("id,full_name,email,phone").eq("id", order.student_id).maybeSingle(),
+    supabase.from("institutes").select("id,user_id,name,phone").eq("id", order.institute_id).maybeSingle(),
+    supabase.from("profiles").select("id").in("role", ["admin"]),
   ]);
 
   const instituteProfile = institute?.user_id
@@ -112,7 +114,7 @@ export async function reconcileCourseOrderPaid({
       orderId: order.id,
       paymentId: razorpayPaymentId,
       courseTitle: course.title ?? "Course",
-      amount: order.final_paid_amount,
+      amount: order.gross_amount,
       currency: order.currency,
       student: {
         id: student.id,
@@ -194,16 +196,19 @@ export async function reconcilePsychometricOrderPaid({
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
-      order_type: "psychometric",
-      order_id: order.id,
+      order_kind: "psychometric",
+      psychometric_order_id: order.id,
       user_id: order.user_id,
       razorpay_order_id: razorpayOrderId,
       razorpay_payment_id: razorpayPaymentId,
       razorpay_signature: razorpaySignature ?? null,
+      event_type: source === "webhook" ? "payment.captured" : "payment.verify",
+      payment_status: "paid",
       amount: order.final_paid_amount,
       currency: order.currency,
-      status: "captured",
-      payload: { source },
+      verified: true,
+      verified_at: new Date().toISOString(),
+      gateway_response: { source },
     },
     { onConflict: "razorpay_payment_id" }
   );
