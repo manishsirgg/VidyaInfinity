@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
 type Props = {
   role: "student" | "institute" | "admin";
@@ -19,23 +19,23 @@ export function ProfileSettingsForm({ role }: Props) {
   const [profile, setProfile] = useState<ProfilePayload>({});
   const [institute, setInstitute] = useState<ProfilePayload>({});
 
-  useEffect(() => {
-    async function loadProfile() {
-      setLoading(true);
-      setError("");
-      const response = await fetch("/api/account/profile");
-      const body = await response.json();
-      setLoading(false);
-      if (!response.ok) {
-        setError(body.error ?? "Unable to load profile");
-        return;
-      }
-      setProfile(body.profile ?? {});
-      setInstitute(body.institute ?? {});
+  const loadProfile = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    const response = await fetch("/api/account/profile");
+    const body = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(body.error ?? "Unable to load profile");
+      return;
     }
-
-    void loadProfile();
+    setProfile(body.profile ?? {});
+    setInstitute(body.institute ?? {});
   }, []);
+
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -58,6 +58,7 @@ export function ProfileSettingsForm({ role }: Props) {
     }
 
     setMessage("Profile updated successfully.");
+    void loadProfile();
   }
 
   async function savePassword(event: FormEvent<HTMLFormElement>) {
@@ -93,6 +94,22 @@ export function ProfileSettingsForm({ role }: Props) {
     <div className="mt-6 space-y-6">
       {loading ? <p className="text-sm text-slate-600">Loading profile...</p> : null}
       <form onSubmit={saveProfile} className="grid gap-3 rounded-xl border bg-white p-4">
+        <div className="flex items-center gap-4 rounded-lg border border-slate-200 p-3">
+          <div className="h-16 w-16 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+            {profile.avatar_url ? (
+              <img src={String(profile.avatar_url)} alt="Profile avatar" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-slate-500">No Avatar</div>
+            )}
+          </div>
+          <div className="grid gap-2">
+            <label className="text-sm font-medium text-slate-700" htmlFor="avatarUpload">
+              Update avatar
+            </label>
+            <input id="avatarUpload" name="avatar" type="file" accept="image/png,image/jpeg,image/webp" className="text-sm" />
+            <p className="text-xs text-slate-500">PNG, JPG or WEBP up to 3MB.</p>
+          </div>
+        </div>
         <input required name="fullName" defaultValue={String(profile.full_name ?? "")} placeholder="Full name" className="rounded border px-3 py-2" />
         <input required type="email" name="email" defaultValue={String(profile.email ?? "")} placeholder="Email" className="rounded border px-3 py-2" />
         <input name="phone" defaultValue={String(profile.phone ?? "")} placeholder="Phone number" className="rounded border px-3 py-2" />
