@@ -1,12 +1,30 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Props = {
   role: "student" | "institute" | "admin";
 };
 
 type GenericPayload = Record<string, string | number | null | undefined>;
+
+type UserDocument = {
+  id: string;
+  document_category: string;
+  document_type: string;
+  status: string;
+  rejection_reason: string | null;
+  created_at: string;
+};
+
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+};
 
 export function ProfileSettingsForm({ role }: Props) {
   const [loading, setLoading] = useState(false);
@@ -19,11 +37,13 @@ export function ProfileSettingsForm({ role }: Props) {
   const [profile, setProfile] = useState<GenericPayload>({});
   const [details, setDetails] = useState<GenericPayload>({});
   const [institute, setInstitute] = useState<GenericPayload>({});
+  const [userDocuments, setUserDocuments] = useState<UserDocument[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError("");
-    const response = await fetch("/api/account/profile");
+    const response = await fetch("/api/account/profile", { cache: "no-store" });
     const body = await response.json();
     setLoading(false);
     if (!response.ok) {
@@ -33,11 +53,50 @@ export function ProfileSettingsForm({ role }: Props) {
     setProfile(body.profile ?? {});
     setDetails(body.details ?? {});
     setInstitute(body.institute ?? {});
+    setUserDocuments(body.userDocuments ?? []);
+    setNotifications(body.notifications ?? []);
   }, []);
 
   useEffect(() => {
     void loadProfile();
   }, [loadProfile]);
+
+  const effectiveStatus = useMemo(() => {
+    if (role === "institute") {
+      return String(institute.status ?? profile.approval_status ?? "pending");
+    }
+
+    return String(profile.approval_status ?? "pending");
+  }, [role, institute.status, profile.approval_status]);
+
+  const effectiveRejectionReason = useMemo(() => {
+    if (role === "institute") {
+      return String(institute.rejection_reason ?? profile.rejection_reason ?? "");
+    }
+
+    return String(profile.rejection_reason ?? "");
+  }, [role, institute.rejection_reason, profile.rejection_reason]);
+
+  const isRejected = effectiveStatus === "rejected";
+  const isPending = effectiveStatus === "pending";
+
+  async function submitProfile(form: FormData, resubmit: boolean) {
+    if (resubmit) {
+      form.set("resubmit", "true");
+    }
+
+    const response = await fetch("/api/account/profile", {
+      method: "PATCH",
+      body: form,
+    });
+
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(body.error ?? "Unable to update profile");
+    }
+
+    return body;
+  }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,22 +104,18 @@ export function ProfileSettingsForm({ role }: Props) {
     setError("");
     setMessage("");
 
-    const formData = new FormData(event.currentTarget);
-    const response = await fetch("/api/account/profile", {
-      method: "PATCH",
-      body: formData,
-    });
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const workflow = submitter?.value === "resubmit" ? "resubmit" : "save";
 
-    const body = await response.json();
-    setSaving(false);
-
-    if (!response.ok) {
-      setError(body.error ?? "Unable to update profile");
-      return;
+    try {
+      await submitProfile(new FormData(event.currentTarget), workflow === "resubmit");
+      setMessage(workflow === "resubmit" ? "Resubmission sent. Your account is back under review." : "Profile updated successfully.");
+      await loadProfile();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : workflow === "resubmit" ? "Unable to resubmit profile" : "Unable to update profile");
+    } finally {
+      setSaving(false);
     }
-
-    setMessage("Profile updated successfully.");
-    void loadProfile();
   }
 
   async function savePassword(event: FormEvent<HTMLFormElement>) {
@@ -95,6 +150,15 @@ export function ProfileSettingsForm({ role }: Props) {
   return (
     <div className="mt-6 space-y-6">
       {loading ? <p className="text-sm text-slate-600">Loading profile...</p> : null}
+
+      <div className="rounded-xl border bg-white p-4 text-sm">
+        <p>
+          Account review status: <span className="font-semibold">{effectiveStatus}</span>
+        </p>
+        {effectiveRejectionReason ? <p className="mt-1 text-rose-700">Rejection reason: {effectiveRejectionReason}</p> : null}
+        {isPending ? <p className="mt-1 text-amber-700">Your account is pending moderation.</p> : null}
+      </div>
+
       <form onSubmit={saveProfile} className="grid gap-3 rounded-xl border bg-white p-4">
         <div className="flex items-center gap-4 rounded-lg border border-slate-200 p-3">
           <div className="h-16 w-16 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
@@ -142,6 +206,29 @@ export function ProfileSettingsForm({ role }: Props) {
           </>
         )}
 
+        <h3 className="mt-2 text-sm font-semibold text-slate-700">User documents</h3>
+        <select name="identityDocumentType" className="rounded border px-3 py-2">
+          <option value="">Select identity document type</option>
+          <option value="aadhaar_card">Aadhaar Card</option>
+          <option value="passport">Passport</option>
+          <option value="driving_license">Driving License</option>
+          <option value="voter_id">Voter ID</option>
+          <option value="employee_id">Employee ID</option>
+        </select>
+        <input name="identityDocument" type="file" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
+
+        {role === "admin" && (
+          <>
+            <select name="adminAuthorizationDocumentType" className="rounded border px-3 py-2">
+              <option value="">Select authorization document type</option>
+              <option value="authorization_letter">Authorization Letter</option>
+              <option value="employee_id">Employee ID</option>
+              <option value="appointment_letter">Appointment Letter</option>
+            </select>
+            <input name="adminAuthorizationDocument" type="file" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
+          </>
+        )}
+
         {role === "institute" && (
           <>
             <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute details</h3>
@@ -159,12 +246,27 @@ export function ProfileSettingsForm({ role }: Props) {
             <input name="totalStudents" type="number" min={0} defaultValue={String(institute.total_students ?? "")} placeholder="Total students" className="rounded border px-3 py-2" />
             <input name="totalStaff" type="number" min={0} defaultValue={String(institute.total_staff ?? "")} placeholder="Total staff" className="rounded border px-3 py-2" />
             <textarea name="description" defaultValue={String(institute.description ?? "")} placeholder="Institute description" className="min-h-24 rounded border px-3 py-2" />
+
+            <select name="instituteApprovalDocumentType" className="rounded border px-3 py-2">
+              <option value="">Select institute document type</option>
+              <option value="registration_certificate">Registration Certificate</option>
+              <option value="accreditation_letter">Accreditation Letter</option>
+              <option value="board_resolution">Board Resolution</option>
+            </select>
+            <input name="instituteApprovalDocument" type="file" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
           </>
         )}
 
-        <button disabled={saving} type="submit" className="rounded bg-brand-600 px-4 py-2 text-white">
-          {saving ? "Saving..." : "Save profile"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button disabled={saving} type="submit" value="save" className="rounded bg-brand-600 px-4 py-2 text-white">
+            {saving ? "Saving..." : "Save profile"}
+          </button>
+          {isRejected ? (
+            <button disabled={saving} type="submit" value="resubmit" className="rounded bg-emerald-600 px-4 py-2 text-white">
+              {saving ? "Resubmitting..." : "Resubmit for review"}
+            </button>
+          ) : null}
+        </div>
 
         {message && <p className="text-sm text-emerald-700">{message}</p>}
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -181,6 +283,35 @@ export function ProfileSettingsForm({ role }: Props) {
         {passwordMessage && <p className="text-sm text-emerald-700">{passwordMessage}</p>}
         {passwordError && <p className="text-sm text-red-600">{passwordError}</p>}
       </form>
+
+      <div className="rounded-xl border bg-white p-4">
+        <h3 className="text-sm font-semibold text-slate-700">Latest uploaded user documents</h3>
+        <div className="mt-3 space-y-2 text-sm">
+          {userDocuments.length === 0 ? <p className="text-slate-500">No documents uploaded yet.</p> : null}
+          {userDocuments.map((doc) => (
+            <div key={doc.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+              <p>
+                {doc.document_category} · {doc.document_type} · {doc.status}
+              </p>
+              {doc.rejection_reason ? <p className="text-rose-700">Reason: {doc.rejection_reason}</p> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border bg-white p-4">
+        <h3 className="text-sm font-semibold text-slate-700">Recent notifications</h3>
+        <div className="mt-3 space-y-2 text-sm">
+          {notifications.length === 0 ? <p className="text-slate-500">No notifications yet.</p> : null}
+          {notifications.map((item) => (
+            <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+              <p className="font-medium">{item.title}</p>
+              <p className="text-slate-700">{item.message}</p>
+              <p className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

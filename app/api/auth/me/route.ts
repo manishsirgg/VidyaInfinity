@@ -16,6 +16,12 @@ function getDashboardPath(role: string) {
   return "/student/dashboard";
 }
 
+function getApprovalStatusPath(role: string) {
+  if (role === "admin") return "/admin/approval-status";
+  if (role === "institute") return "/institute/approval-status";
+  return "/student/approval-status";
+}
+
 function getProfilePath(role: string) {
   if (role === "admin") return "/admin/profile";
   if (role === "institute") return "/institute/profile";
@@ -56,6 +62,10 @@ export async function GET() {
         ).data?.status ?? null;
     }
 
+    const approved =
+      profile.approval_status === "approved" &&
+      (profile.role !== "institute" || !instituteStatus || instituteStatus === "approved");
+
     return NextResponse.json({
       authenticated: true,
       user: {
@@ -68,7 +78,7 @@ export async function GET() {
         email: user.email,
       },
       routes: {
-        dashboard: getDashboardPath(profile.role),
+        dashboard: approved ? getDashboardPath(profile.role) : getApprovalStatusPath(profile.role),
         profile: getProfilePath(profile.role),
       },
     });

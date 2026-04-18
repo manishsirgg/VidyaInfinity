@@ -2,7 +2,7 @@ import { ProfileSettingsForm } from "@/components/profile/profile-settings-form"
 import { requireUser } from "@/lib/auth/get-session";
 
 export default async function InstituteProfilePage() {
-  await requireUser("institute");
+  await requireUser("institute", { requireApproved: false });
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-12">

@@ -12,11 +12,18 @@ type InstituteRow = {
   status: string;
 };
 
-function deniedForApproval(status: string | null | undefined) {
-  if (status === "rejected") {
-    return NextResponse.json({ error: "Your account was rejected by admin. Please contact support." }, { status: 403 });
-  }
-  return NextResponse.json({ error: "Your account is pending admin approval" }, { status: 403 });
+function deniedForApproval(role: Role, status: string | null | undefined) {
+  return NextResponse.json(
+    {
+      error:
+        status === "rejected"
+          ? "Your account is rejected. Please update your profile and resubmit."
+          : "Your account is pending admin approval.",
+      status: status ?? "pending",
+      redirectPath: `/${role}/approval-status`,
+    },
+    { status: 403 }
+  );
 }
 
 export async function requireApiUser(role?: Role, options?: { requireApproved?: boolean }) {
@@ -47,7 +54,7 @@ export async function requireApiUser(role?: Role, options?: { requireApproved?: 
   const requireApproved = options?.requireApproved ?? true;
 
   if (requireApproved && profile.approval_status !== "approved") {
-    return { error: deniedForApproval(profile.approval_status) };
+    return { error: deniedForApproval(profile.role, profile.approval_status) };
   }
 
   if (requireApproved && profile.role === "institute") {
@@ -58,7 +65,7 @@ export async function requireApiUser(role?: Role, options?: { requireApproved?: 
       .maybeSingle<InstituteRow>();
 
     if (institute && institute.status !== "approved") {
-      return { error: deniedForApproval(institute.status) };
+      return { error: deniedForApproval(profile.role, institute.status) };
     }
   }
 

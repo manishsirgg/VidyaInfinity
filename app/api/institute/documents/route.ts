@@ -11,9 +11,10 @@ function toFolderType(documentType: string): "approval" | "registration" | "accr
 }
 
 export async function POST(request: Request) {
-  const auth = await requireApiUser("institute");
+  const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
   const { user } = auth;
+
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });

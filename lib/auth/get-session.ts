@@ -9,6 +9,7 @@ type ProfileRow = {
   email: string;
   role: Role;
   approval_status: string | null;
+  rejection_reason: string | null;
   city: string | null;
   state: string | null;
   country: string | null;
@@ -16,6 +17,7 @@ type ProfileRow = {
 
 type InstituteRow = {
   status: string;
+  rejection_reason: string | null;
 };
 
 export async function getCurrentUserProfile() {
@@ -29,7 +31,7 @@ export async function getCurrentUserProfile() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id,full_name,email,role,approval_status,city,state,country")
+    .select("id,full_name,email,role,approval_status,rejection_reason,city,state,country")
     .eq("id", user.id)
     .maybeSingle<ProfileRow>();
 
@@ -40,7 +42,7 @@ export async function getCurrentUserProfile() {
       ? (
           await supabase
             .from("institutes")
-            .select("status")
+            .select("status,rejection_reason")
             .eq("user_id", user.id)
             .maybeSingle<InstituteRow>()
         ).data ?? null
@@ -49,11 +51,8 @@ export async function getCurrentUserProfile() {
   return { user, profile, institute };
 }
 
-function approvalRedirectPath(profileStatus: string | null | undefined) {
-  if (profileStatus === "rejected") {
-    return "/auth/login?status=rejected";
-  }
-  return "/auth/login?status=pending_approval";
+function roleStatusRedirect(role: Role) {
+  return `/${role}/approval-status`;
 }
 
 export async function requireUser(role?: Role, options?: { requireApproved?: boolean }) {
@@ -68,8 +67,7 @@ export async function requireUser(role?: Role, options?: { requireApproved?: boo
   const requireApproved = options?.requireApproved ?? true;
 
   if (requireApproved && result.profile.approval_status !== "approved") {
-    await (await createClient()).auth.signOut();
-    redirect(approvalRedirectPath(result.profile.approval_status));
+    redirect(roleStatusRedirect(result.profile.role));
   }
 
   if (
@@ -78,8 +76,7 @@ export async function requireUser(role?: Role, options?: { requireApproved?: boo
     result.institute &&
     result.institute.status !== "approved"
   ) {
-    await (await createClient()).auth.signOut();
-    redirect(approvalRedirectPath(result.institute.status));
+    redirect(roleStatusRedirect(result.profile.role));
   }
 
   return result;
