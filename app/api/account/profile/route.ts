@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { uploadAvatar } from "@/lib/storage/uploads";
 
 function val(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
@@ -83,6 +84,20 @@ export async function PATCH(request: Request) {
     organization_type: val(form, "organizationType") || null,
     designation: val(form, "designation") || null,
   };
+
+  const avatarFile = form.get("avatar");
+  let avatarUrl: string | null = null;
+  let avatarPath: string | null = null;
+
+  if (avatarFile instanceof File && avatarFile.size > 0) {
+    const uploadedAvatar = await uploadAvatar({ userId: auth.user.id, file: avatarFile });
+    if (uploadedAvatar.error) {
+      return NextResponse.json({ error: uploadedAvatar.error }, { status: 400 });
+    }
+
+    avatarUrl = uploadedAvatar.publicUrl ?? null;
+    avatarPath = uploadedAvatar.path ?? null;
+  }
 
   const profileUpdate =
     avatarUrl && avatarPath
