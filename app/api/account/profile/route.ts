@@ -99,23 +99,33 @@ export async function PATCH(request: Request) {
     avatarPath = uploadedAvatar.path ?? null;
   }
 
-  const profileUpdate =
+  const profileUpdateWithAvatar = avatarUrl
+    ? {
+        ...profileUpdateBase,
+        avatar_url: avatarUrl,
+      }
+    : profileUpdateBase;
+
+  const profileUpdateWithAvatarAndPath =
     avatarUrl && avatarPath
       ? {
-          ...profileUpdateBase,
-          avatar_url: avatarUrl,
+          ...profileUpdateWithAvatar,
           avatar_storage_path: avatarPath,
         }
-      : profileUpdateBase;
+      : profileUpdateWithAvatar;
 
-  let { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
+  let { error: profileError } = await admin.data.from("profiles").update(profileUpdateWithAvatarAndPath).eq("id", auth.user.id);
 
   if (
     profileError &&
     avatarUrl &&
     avatarPath &&
-    /column\s+profiles\.avatar_(url|storage_path)\s+does\s+not\s+exist/i.test(profileError.message)
+    /column\s+profiles\.avatar_storage_path\s+does\s+not\s+exist/i.test(profileError.message)
   ) {
+    ({ error: profileError } = await admin.data.from("profiles").update(profileUpdateWithAvatar).eq("id", auth.user.id));
+  }
+
+  if (profileError && avatarUrl && /column\s+profiles\.avatar_url\s+does\s+not\s+exist/i.test(profileError.message)) {
     ({ error: profileError } = await admin.data.from("profiles").update(profileUpdateBase).eq("id", auth.user.id));
   }
 
