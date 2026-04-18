@@ -20,8 +20,9 @@ function text(form: FormData, key: string) {
 
 function parseOptionalInteger(value: string) {
   if (!value) return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null;
+  if (!/^-?\d+$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return null;
   return parsed;
 }
 
@@ -176,6 +177,8 @@ export async function POST(request: Request) {
     const establishedYear = parseOptionalInteger(text(form, "establishedYear"));
     const totalStudents = parseOptionalInteger(text(form, "totalStudents"));
     const totalStaff = parseOptionalInteger(text(form, "totalStaff"));
+    const instituteName = text(form, "organizationName");
+    const instituteOrganizationType = text(form, "organizationType");
 
     if (role === "institute") {
       const yearNow = new Date().getUTCFullYear();
@@ -223,8 +226,8 @@ export async function POST(request: Request) {
       state: state || null,
       country: country || null,
       designation: role === "admin" || role === "institute" ? text(form, "designation") || null : null,
-      organization_name: role === "institute" ? text(form, "organizationName") || null : null,
-      organization_type: role === "institute" ? text(form, "organizationType") || null : null,
+      organization_name: role === "institute" ? instituteName || null : null,
+      organization_type: role === "institute" ? instituteOrganizationType || null : null,
     });
 
     if (profileError) throw new Error(profileError.message);
@@ -250,11 +253,11 @@ export async function POST(request: Request) {
         .from("institutes")
         .insert({
           user_id: createdUserId,
-          name: text(form, "organizationName"),
+          name: instituteName,
           status: "pending",
           verified: false,
           legal_entity_name: text(form, "legalEntityName") || null,
-          organization_type: text(form, "organizationType") || null,
+          organization_type: instituteOrganizationType || null,
           registration_number: text(form, "registrationNumber") || null,
           accreditation_affiliation_number: text(form, "accreditationAffiliationNumber") || null,
           website_url: text(form, "websiteUrl") || null,

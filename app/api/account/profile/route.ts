@@ -11,8 +11,9 @@ function val(form: FormData, key: string) {
 
 function parseOptionalInt(value: string) {
   if (!value) return null;
-  const parsed = Number(value);
-  return Number.isInteger(parsed) ? parsed : null;
+  if (!/^-?\d+$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function parseOptionalDob(value: string) {
@@ -72,9 +73,45 @@ export async function PATCH(request: Request) {
 
   const nextEmail = val(form, "email").toLowerCase();
   const fullName = val(form, "fullName");
+  const organizationType = val(form, "organizationType");
+  const instituteName = val(form, "instituteName") || val(form, "organizationName");
+  const organizationName = auth.profile.role === "institute" ? instituteName : val(form, "organizationName");
 
   if (!nextEmail || !fullName) {
     return NextResponse.json({ error: "fullName and email are required" }, { status: 400 });
+  }
+
+  if (auth.profile.role === "institute") {
+    if (!instituteName) {
+      return NextResponse.json({ error: "organizationName is required for institute profiles" }, { status: 400 });
+    }
+    if (!organizationType) {
+      return NextResponse.json({ error: "organizationType is required for institute profiles" }, { status: 400 });
+    }
+  }
+
+  const dob = val(form, "dob");
+  if ((auth.profile.role === "student" || auth.profile.role === "institute") && dob && !parseOptionalDob(dob)) {
+    return NextResponse.json({ error: "dob must be a valid YYYY-MM-DD date" }, { status: 400 });
+  }
+
+  const establishedYear = parseOptionalInt(val(form, "establishedYear"));
+  const totalStudents = parseOptionalInt(val(form, "totalStudents"));
+  const totalStaff = parseOptionalInt(val(form, "totalStaff"));
+
+  if (auth.profile.role === "institute") {
+    const currentYear = new Date().getUTCFullYear();
+    if (val(form, "establishedYear") && (establishedYear === null || establishedYear < 1800 || establishedYear > currentYear)) {
+      return NextResponse.json({ error: "establishedYear must be a valid year" }, { status: 400 });
+    }
+
+    if (val(form, "totalStudents") && (totalStudents === null || totalStudents < 0)) {
+      return NextResponse.json({ error: "totalStudents must be a non-negative integer" }, { status: 400 });
+    }
+
+    if (val(form, "totalStaff") && (totalStaff === null || totalStaff < 0)) {
+      return NextResponse.json({ error: "totalStaff must be a non-negative integer" }, { status: 400 });
+    }
   }
 
   if (nextEmail !== (auth.user.email ?? "").toLowerCase()) {
@@ -98,8 +135,8 @@ export async function PATCH(request: Request) {
     city: val(form, "city") || null,
     state: val(form, "state") || null,
     country: val(form, "country") || null,
-    organization_name: val(form, "organizationName") || null,
-    organization_type: val(form, "organizationType") || null,
+    organization_name: organizationName || null,
+    organization_type: organizationType || null,
     designation: val(form, "designation") || null,
   };
 
@@ -119,11 +156,6 @@ export async function PATCH(request: Request) {
   if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
 
   if (auth.profile.role === "student" || auth.profile.role === "institute") {
-    const dob = val(form, "dob");
-    if (dob && !parseOptionalDob(dob)) {
-      return NextResponse.json({ error: "dob must be a valid YYYY-MM-DD date" }, { status: 400 });
-    }
-
     const detailsUpdate = {
       alternate_phone: val(form, "alternatePhone") || null,
       dob: parseOptionalDob(dob),
@@ -146,30 +178,13 @@ export async function PATCH(request: Request) {
   }
 
   if (auth.profile.role === "institute") {
-    const establishedYear = parseOptionalInt(val(form, "establishedYear"));
-    const totalStudents = parseOptionalInt(val(form, "totalStudents"));
-    const totalStaff = parseOptionalInt(val(form, "totalStaff"));
-
-    const currentYear = new Date().getUTCFullYear();
-    if (val(form, "establishedYear") && (establishedYear === null || establishedYear < 1800 || establishedYear > currentYear)) {
-      return NextResponse.json({ error: "establishedYear must be a valid year" }, { status: 400 });
-    }
-
-    if (val(form, "totalStudents") && (totalStudents === null || totalStudents < 0)) {
-      return NextResponse.json({ error: "totalStudents must be a non-negative integer" }, { status: 400 });
-    }
-
-    if (val(form, "totalStaff") && (totalStaff === null || totalStaff < 0)) {
-      return NextResponse.json({ error: "totalStaff must be a non-negative integer" }, { status: 400 });
-    }
-
     const { error: instituteError } = await admin.data
       .from("institutes")
       .update({
-        name: val(form, "instituteName") || val(form, "organizationName") || null,
+        name: organizationName || null,
         description: val(form, "description") || null,
         legal_entity_name: val(form, "legalEntityName") || null,
-        organization_type: val(form, "organizationType") || null,
+        organization_type: organizationType || null,
         registration_number: val(form, "registrationNumber") || null,
         accreditation_affiliation_number: val(form, "accreditationAffiliationNumber") || null,
         website_url: val(form, "websiteUrl") || null,
