@@ -7,12 +7,13 @@ import {
   deleteFromBucket,
   uploadAvatar,
   uploadInstituteDocument,
+  uploadInstituteMedia,
   uploadUserDocument,
 } from "@/lib/storage/uploads";
 
 type RegisterRole = "student" | "institute" | "admin";
 type UploadRef = {
-  bucket: keyof Pick<typeof STORAGE_BUCKETS, "userDocuments" | "instituteDocuments" | "avatars">;
+  bucket: keyof Pick<typeof STORAGE_BUCKETS, "userDocuments" | "instituteDocuments" | "avatars" | "blogMedia">;
   path: string;
 };
 
@@ -198,6 +199,9 @@ export async function POST(request: Request) {
     const instituteName = text(form, "instituteName");
     const organizationName = text(form, "organizationName");
     const instituteOrganizationType = text(form, "organizationType");
+    const instituteMediaFiles = form
+      .getAll("instituteMedia")
+      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
 
     if (role === "institute") {
       const yearNow = new Date().getUTCFullYear();
@@ -209,6 +213,9 @@ export async function POST(request: Request) {
       }
       if (text(form, "totalStaff") && (totalStaff === null || totalStaff < 0)) {
         return NextResponse.json({ error: "totalStaff must be a non-negative integer" }, { status: 400 });
+      }
+      if (instituteMediaFiles.length > 6) {
+        return NextResponse.json({ error: "You can upload up to 6 institute media files" }, { status: 400 });
       }
     }
 
@@ -375,6 +382,31 @@ export async function POST(request: Request) {
       });
 
       if (instituteDocError) throw new Error(instituteDocError.message);
+    }
+
+    if (role === "institute" && instituteId && instituteMediaFiles.length > 0) {
+      for (const mediaFile of instituteMediaFiles) {
+        const mediaUpload = await uploadInstituteMedia({
+          userId: createdUserId,
+          file: mediaFile,
+        });
+
+        if (mediaUpload.error || !mediaUpload.path) {
+          throw new Error(mediaUpload.error ?? "Failed to upload institute media file");
+        }
+
+        uploadedPaths.push({ bucket: "blogMedia", path: mediaUpload.path });
+
+        const { error: mediaInsertError } = await admin.data.from("institute_media").insert({
+          institute_id: instituteId,
+          media_type: mediaFile.type.startsWith("video/") ? "video" : "image",
+          file_url: mediaUpload.path,
+          file_name: mediaFile.name || null,
+          file_size: mediaFile.size,
+        });
+
+        if (mediaInsertError) throw new Error(mediaInsertError.message);
+      }
     }
 
     return NextResponse.json({
