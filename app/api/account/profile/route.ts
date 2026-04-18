@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-documents";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -24,13 +25,6 @@ function parseOptionalDob(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return value;
-}
-
-function toInstituteFolderType(documentType: string): "approval" | "registration" | "accreditation" {
-  const lower = documentType.toLowerCase();
-  if (lower.includes("accredit")) return "accreditation";
-  if (lower.includes("registr")) return "registration";
-  return "approval";
 }
 
 function isMissingNotificationsTableError(error: { code?: string; message?: string } | null) {
@@ -94,12 +88,12 @@ export async function GET() {
     return NextResponse.json({ error: notificationsError.message }, { status: 500 });
   }
 
-  let instituteDocuments: Array<{ id: string; type: string; status: string; created_at: string }> = [];
+  let instituteDocuments: Array<{ id: string; type: string; subtype: string | null; status: string; created_at: string }> = [];
 
   if (auth.profile.role === "institute" && institute?.id) {
     const { data, error } = await admin.data
       .from("institute_documents")
-      .select("id,type,status,created_at")
+      .select("id,type,subtype,status,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false });
 
@@ -316,11 +310,14 @@ export async function PATCH(request: Request) {
       if (!instituteApprovalDocumentType) {
         return NextResponse.json({ error: "instituteApprovalDocumentType is required when uploading instituteApprovalDocument" }, { status: 400 });
       }
+      if (!isInstituteApprovalDocumentSubtype(instituteApprovalDocumentType)) {
+        return NextResponse.json({ error: "Invalid instituteApprovalDocumentType" }, { status: 400 });
+      }
 
       const approvalUpload = await uploadInstituteDocument({
         userId: auth.user.id,
         file: instituteApprovalDocument,
-        type: toInstituteFolderType(instituteApprovalDocumentType),
+        type: "approval",
       });
 
       if (approvalUpload.error || !approvalUpload.path) {
@@ -329,7 +326,8 @@ export async function PATCH(request: Request) {
 
       const { error: instituteDocInsertError } = await admin.data.from("institute_documents").insert({
         institute_id: institute.id,
-        type: instituteApprovalDocumentType,
+        type: "approval",
+        subtype: instituteApprovalDocumentType,
         document_url: approvalUpload.path,
         status: "pending",
       });

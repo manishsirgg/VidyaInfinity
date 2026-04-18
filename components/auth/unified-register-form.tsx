@@ -3,6 +3,8 @@
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { INSTITUTE_APPROVAL_DOCUMENT_OPTIONS } from "@/lib/constants/institute-documents";
+
 type Role = "student" | "institute" | "admin";
 
 export function UnifiedRegisterForm() {
@@ -129,10 +131,11 @@ export function UnifiedRegisterForm() {
           <label className="text-sm font-medium text-slate-700">Institute approval document type</label>
           <select required name="instituteApprovalDocumentType" className="rounded border px-3 py-2">
             <option value="">Select approval document</option>
-            <option value="registration_certificate">Registration Certificate</option>
-            <option value="accreditation_letter">Accreditation Letter</option>
-            <option value="board_resolution">Board Resolution / Authorization</option>
-            <option value="government_approval">Government Approval Document</option>
+            {INSTITUTE_APPROVAL_DOCUMENT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
           <input required type="file" name="instituteApprovalDocument" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
         </>

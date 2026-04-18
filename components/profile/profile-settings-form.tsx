@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+import { INSTITUTE_APPROVAL_DOCUMENT_OPTIONS, getInstituteApprovalSubtypeLabel } from "@/lib/constants/institute-documents";
+
 type Props = {
   role: "student" | "institute" | "admin";
 };
@@ -20,6 +22,7 @@ type UserDocument = {
 type InstituteDocument = {
   id: string;
   type: string;
+  subtype: string | null;
   status: string;
   created_at: string;
 };
@@ -306,9 +309,11 @@ export function ProfileSettingsForm({ role }: Props) {
             <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute approval document</h3>
             <select name="instituteApprovalDocumentType" className="rounded border px-3 py-2">
               <option value="">Select institute document type</option>
-              <option value="registration_certificate">Registration Certificate</option>
-              <option value="accreditation_letter">Accreditation Letter</option>
-              <option value="board_resolution">Board Resolution</option>
+              {INSTITUTE_APPROVAL_DOCUMENT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
             <input name="instituteApprovalDocument" type="file" accept="application/pdf,image/png,image/jpeg" className="rounded border px-3 py-2" />
           </>
@@ -383,7 +388,7 @@ export function ProfileSettingsForm({ role }: Props) {
             {instituteDocuments.map((doc) => (
               <div key={doc.id} className="rounded border border-slate-200 bg-slate-50 p-2">
                 <p>
-                  {doc.type} · {doc.status}
+                  {doc.type} · {getInstituteApprovalSubtypeLabel(doc.subtype)} · {doc.status}
                 </p>
                 <p className="text-xs text-slate-500">Uploaded: {formatDateTime(doc.created_at)}</p>
               </div>

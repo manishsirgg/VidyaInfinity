@@ -1,5 +1,6 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
 import { requireUser } from "@/lib/auth/get-session";
+import { getInstituteApprovalSubtypeLabel } from "@/lib/constants/institute-documents";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 import { createClient } from "@/lib/supabase/server";
 
@@ -25,6 +26,7 @@ type InstituteDocWithLink = {
   id: string;
   institute_id: string;
   type: string;
+  subtype: string | null;
   document_url: string;
   status: string;
   created_at: string;
@@ -74,7 +76,7 @@ export default async function Page() {
   const { data: instituteDocs } = instituteIds.length
     ? await supabase
         .from("institute_documents")
-        .select("id,institute_id,type,document_url,status,created_at")
+        .select("id,institute_id,type,subtype,document_url,status,created_at")
         .in("institute_id", instituteIds)
         .order("created_at", { ascending: false })
     : { data: [] };
@@ -123,7 +125,7 @@ export default async function Page() {
   function renderInstituteDoc(doc: InstituteDocWithLink) {
     return (
       <li key={doc.id}>
-        {doc.type} · {doc.status} ·{" "}
+        {doc.type} · {getInstituteApprovalSubtypeLabel(doc.subtype)} · {doc.status} ·{" "}
         {doc.signedUrl ? (
           <a className="text-brand-700 underline" href={doc.signedUrl} target="_blank" rel="noreferrer">
             view
