@@ -1,11 +1,15 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
 import { requireUser } from "@/lib/auth/get-session";
-import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 
 export default async function Page() {
   await requireUser("admin");
-  const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) {
+    throw new Error(admin.error);
+  }
+  const supabase = admin.data;
 
   const { data: users } = await supabase
     .from("profiles")

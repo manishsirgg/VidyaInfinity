@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
-import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const adminModules = [
   { href: "/admin/users", label: "Users" },
@@ -19,7 +19,11 @@ const adminModules = [
 
 export default async function AdminDashboardPage() {
   await requireUser("admin");
-  const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) {
+    throw new Error(admin.error);
+  }
+  const supabase = admin.data;
 
   const [
     { count: users },
