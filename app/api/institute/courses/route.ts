@@ -95,12 +95,12 @@ export async function POST(request: Request) {
 
   const { data: institute } = await admin.data
     .from("institutes")
-    .select("id,approval_status")
+    .select("id,status")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (!institute) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
-  if (institute.approval_status !== "approved") {
+  if (institute.status !== "approved") {
     return NextResponse.json({ error: "Institute approval is pending. Courses can be listed only after admin approval." }, { status: 403 });
   }
 

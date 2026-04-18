@@ -6,7 +6,7 @@ type Props = {
   role: "student" | "institute" | "admin";
 };
 
-type ProfilePayload = Record<string, string | number | null | undefined>;
+type GenericPayload = Record<string, string | number | null | undefined>;
 
 export function ProfileSettingsForm({ role }: Props) {
   const [loading, setLoading] = useState(false);
@@ -16,8 +16,9 @@ export function ProfileSettingsForm({ role }: Props) {
   const [error, setError] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordError, setPasswordError] = useState("");
-  const [profile, setProfile] = useState<ProfilePayload>({});
-  const [institute, setInstitute] = useState<ProfilePayload>({});
+  const [profile, setProfile] = useState<GenericPayload>({});
+  const [details, setDetails] = useState<GenericPayload>({});
+  const [institute, setInstitute] = useState<GenericPayload>({});
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -30,6 +31,7 @@ export function ProfileSettingsForm({ role }: Props) {
       return;
     }
     setProfile(body.profile ?? {});
+    setDetails(body.details ?? {});
     setInstitute(body.institute ?? {});
   }, []);
 
@@ -110,6 +112,7 @@ export function ProfileSettingsForm({ role }: Props) {
             <p className="text-xs text-slate-500">PNG, JPG or WEBP up to 3MB.</p>
           </div>
         </div>
+
         <input required name="fullName" defaultValue={String(profile.full_name ?? "")} placeholder="Full name" className="rounded border px-3 py-2" />
         <input required type="email" name="email" defaultValue={String(profile.email ?? "")} placeholder="Email" className="rounded border px-3 py-2" />
         <input name="phone" defaultValue={String(profile.phone ?? "")} placeholder="Phone number" className="rounded border px-3 py-2" />
@@ -121,17 +124,40 @@ export function ProfileSettingsForm({ role }: Props) {
         <input name="organizationType" defaultValue={String(profile.organization_type ?? "")} placeholder="Organization type" className="rounded border px-3 py-2" />
         <input name="designation" defaultValue={String(profile.designation ?? "")} placeholder="Designation" className="rounded border px-3 py-2" />
 
+        {(role === "student" || role === "institute") && (
+          <>
+            <h3 className="mt-2 text-sm font-semibold text-slate-700">Personal details</h3>
+            <input name="alternatePhone" defaultValue={String(details.alternate_phone ?? "")} placeholder="Alternate phone" className="rounded border px-3 py-2" />
+            <input name="dob" type="date" defaultValue={String(details.dob ?? "")} className="rounded border px-3 py-2" />
+            <select name="gender" defaultValue={String(details.gender ?? "")} className="rounded border px-3 py-2">
+              <option value="">Select gender</option>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="other">Other</option>
+              <option value="prefer_not_to_say">Prefer not to say</option>
+            </select>
+            <input name="addressLine1" defaultValue={String(details.address_line_1 ?? "")} placeholder="Address line 1" className="rounded border px-3 py-2" />
+            <input name="addressLine2" defaultValue={String(details.address_line_2 ?? "")} placeholder="Address line 2" className="rounded border px-3 py-2" />
+            <input name="postalCode" defaultValue={String(details.postal_code ?? "")} placeholder="Postal code" className="rounded border px-3 py-2" />
+          </>
+        )}
+
         {role === "institute" && (
           <>
             <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute details</h3>
             <input name="instituteName" defaultValue={String(institute.name ?? "")} placeholder="Institute name" className="rounded border px-3 py-2" />
-            <input name="legalName" defaultValue={String(institute.legal_name ?? "")} placeholder="Legal name" className="rounded border px-3 py-2" />
+            <input name="legalEntityName" defaultValue={String(institute.legal_entity_name ?? "")} placeholder="Legal entity name" className="rounded border px-3 py-2" />
             <input name="registrationNumber" defaultValue={String(institute.registration_number ?? "")} placeholder="Registration number" className="rounded border px-3 py-2" />
-            <input name="accreditationNumber" defaultValue={String(institute.accreditation_number ?? "")} placeholder="Accreditation number" className="rounded border px-3 py-2" />
+            <input
+              name="accreditationAffiliationNumber"
+              defaultValue={String(institute.accreditation_affiliation_number ?? "")}
+              placeholder="Accreditation / affiliation number"
+              className="rounded border px-3 py-2"
+            />
             <input name="websiteUrl" defaultValue={String(institute.website_url ?? "")} placeholder="Website URL" className="rounded border px-3 py-2" />
-            <input name="establishedYear" type="number" defaultValue={String(institute.established_year ?? "")} placeholder="Established year" className="rounded border px-3 py-2" />
-            <input name="studentStrength" type="number" defaultValue={String(institute.student_strength ?? "")} placeholder="Student strength" className="rounded border px-3 py-2" />
-            <input name="staffStrength" type="number" defaultValue={String(institute.staff_strength ?? "")} placeholder="Staff strength" className="rounded border px-3 py-2" />
+            <input name="establishedYear" type="number" min={1800} max={new Date().getFullYear()} defaultValue={String(institute.established_year ?? "")} placeholder="Established year" className="rounded border px-3 py-2" />
+            <input name="totalStudents" type="number" min={0} defaultValue={String(institute.total_students ?? "")} placeholder="Total students" className="rounded border px-3 py-2" />
+            <input name="totalStaff" type="number" min={0} defaultValue={String(institute.total_staff ?? "")} placeholder="Total staff" className="rounded border px-3 py-2" />
             <textarea name="description" defaultValue={String(institute.description ?? "")} placeholder="Institute description" className="min-h-24 rounded border px-3 py-2" />
           </>
         )}

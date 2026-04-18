@@ -26,20 +26,36 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .from("institutes")
     .update({
       status,
+      verified: status === "approved",
       rejection_reason: status === "rejected" ? rejectionReason : null,
+      updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .select("id,name,status,rejection_reason")
+    .select("id,user_id,name,status,rejection_reason")
     .single();
 
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 });
+  if (result.error || !result.data) {
+    return NextResponse.json({ error: result.error?.message ?? "Institute not found" }, { status: 500 });
+  }
+
+  const { error: profileUpdateError } = await admin.data
+    .from("profiles")
+    .update({
+      approval_status: status,
+      rejection_reason: status === "rejected" ? rejectionReason : null,
+    })
+    .eq("id", result.data.user_id);
+
+  if (profileUpdateError) {
+    return NextResponse.json({ error: profileUpdateError.message }, { status: 500 });
+  }
 
   await writeAdminAuditLog({
     adminUserId: auth.user.id,
     action: status === "approved" ? "INSTITUTE_APPROVED" : status === "rejected" ? "INSTITUTE_REJECTED" : "INSTITUTE_MARKED_PENDING",
     targetTable: "institutes",
     targetId: id,
-    metadata: { status, rejectionReason: rejectionReason ?? null, instituteName: result.data?.name ?? null },
+    metadata: { status, rejectionReason: rejectionReason ?? null, instituteName: result.data.name ?? null },
   });
 
   return NextResponse.json({ ok: true, institute: result.data });

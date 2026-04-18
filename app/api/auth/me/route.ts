@@ -7,7 +7,7 @@ type ProfileRow = {
   full_name: string | null;
   role: "student" | "institute" | "admin";
   avatar_url?: string | null;
-  approval_status: string;
+  approval_status: string | null;
 };
 
 function getDashboardPath(role: string) {
@@ -34,38 +34,26 @@ export async function GET() {
       return NextResponse.json({ authenticated: false });
     }
 
-    const getProfileById = async () => {
-      const withAvatar = await supabase
-        .from("profiles")
-        .select("id,full_name,role,avatar_url,approval_status")
-        .eq("id", user.id)
-        .maybeSingle<ProfileRow>();
-
-      if (!withAvatar.error) return withAvatar;
-
-      const withoutAvatar = await supabase
-        .from("profiles")
-        .select("id,full_name,role,approval_status")
-        .eq("id", user.id)
-        .maybeSingle<ProfileRow>();
-
-      return withoutAvatar;
-    };
-
-    let { data: profile } = await getProfileById();
-
-    if (!profile && user.email) {
-      const { data: byEmail } = await supabase
-        .from("profiles")
-        .select("id,full_name,role,approval_status")
-        .ilike("email", user.email)
-        .maybeSingle<ProfileRow>();
-
-      profile = byEmail;
-    }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id,full_name,role,avatar_url,approval_status")
+      .eq("id", user.id)
+      .maybeSingle<ProfileRow>();
 
     if (!profile) {
       return NextResponse.json({ authenticated: false });
+    }
+
+    let instituteStatus: string | null = null;
+    if (profile.role === "institute") {
+      instituteStatus =
+        (
+          await supabase
+            .from("institutes")
+            .select("status")
+            .eq("user_id", profile.id)
+            .maybeSingle<{ status: string }>()
+        ).data?.status ?? null;
     }
 
     return NextResponse.json({
@@ -76,6 +64,7 @@ export async function GET() {
         role: profile.role,
         avatarUrl: profile.avatar_url ?? null,
         approvalStatus: profile.approval_status,
+        instituteStatus,
         email: user.email,
       },
       routes: {

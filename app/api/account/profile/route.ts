@@ -1,22 +1,26 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { uploadAvatar } from "@/lib/storage/uploads";
 
 function val(form: FormData, key: string) {
   return String(form.get(key) ?? "").trim();
 }
 
-function hasMissingProfileColumn(errorMessage: string, columnName: "avatar_url" | "avatar_storage_path") {
-  const normalized = errorMessage.toLowerCase();
-  return (
-    new RegExp(`column\\s+profiles\\.${columnName}\\s+does\\s+not\\s+exist`, "i").test(errorMessage) ||
-    (normalized.includes(columnName) &&
-      normalized.includes("profiles") &&
-      (normalized.includes("schema cache") || normalized.includes("could not find the")))
-  );
+function parseOptionalInt(value: string) {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function parseOptionalDob(value: string) {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return value;
 }
 
 export async function GET() {
@@ -26,31 +30,34 @@ export async function GET() {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const profileWithAvatar = await admin.data
-    .from("profiles")
-    .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation,avatar_url")
-    .eq("id", auth.user.id)
-    .maybeSingle();
-
-  const profileFallback = profileWithAvatar.error
-    ? await admin.data
+  const [{ data: profile, error: profileError }, { data: details, error: detailsError }, { data: institute, error: instituteError }] =
+    await Promise.all([
+      admin.data
         .from("profiles")
-        .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation")
+        .select("id,full_name,email,role,approval_status,phone,city,state,country,organization_name,organization_type,designation,avatar_url")
         .eq("id", auth.user.id)
-        .maybeSingle()
-    : null;
-
-  const profile = profileWithAvatar.data ?? profileFallback?.data ?? null;
-  const profileError = profileWithAvatar.error ?? profileFallback?.error ?? null;
+        .maybeSingle(),
+      admin.data
+        .from("user_additional_details")
+        .select("alternate_phone,dob,gender,address_line_1,address_line_2,postal_code")
+        .eq("user_id", auth.user.id)
+        .maybeSingle(),
+      auth.profile.role === "institute"
+        ? admin.data
+            .from("institutes")
+            .select(
+              "id,name,description,status,rejection_reason,legal_entity_name,organization_type,registration_number,accreditation_affiliation_number,website_url,established_year,total_students,total_staff"
+            )
+            .eq("user_id", auth.user.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
 
   if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
+  if (detailsError) return NextResponse.json({ error: detailsError.message }, { status: 500 });
+  if (instituteError) return NextResponse.json({ error: instituteError.message }, { status: 500 });
 
-  const institute =
-    auth.profile.role === "institute"
-      ? (await admin.data.from("institutes").select("*").eq("user_id", auth.user.id).maybeSingle()).data
-      : null;
-
-  return NextResponse.json({ profile, institute });
+  return NextResponse.json({ profile, details, institute });
 }
 
 export async function PATCH(request: Request) {
@@ -70,7 +77,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "fullName and email are required" }, { status: 400 });
   }
 
-  if (nextEmail !== auth.user.email) {
+  if (nextEmail !== (auth.user.email ?? "").toLowerCase()) {
     const { error: emailError } = await supabase.auth.updateUser({ email: nextEmail });
     if (emailError) return NextResponse.json({ error: emailError.message }, { status: 400 });
   }
@@ -83,7 +90,8 @@ export async function PATCH(request: Request) {
   });
   if (metaError) return NextResponse.json({ error: metaError.message }, { status: 400 });
 
-  const profileUpdateBase = {
+  const profileUpdate = {
+    name: fullName,
     full_name: fullName,
     email: nextEmail,
     phone: val(form, "phone") || null,
@@ -96,73 +104,82 @@ export async function PATCH(request: Request) {
   };
 
   const avatarFile = form.get("avatar");
-  let avatarUrl: string | null = null;
-  let avatarPath: string | null = null;
-
   if (avatarFile instanceof File && avatarFile.size > 0) {
     const uploadedAvatar = await uploadAvatar({ userId: auth.user.id, file: avatarFile });
     if (uploadedAvatar.error) {
       return NextResponse.json({ error: uploadedAvatar.error }, { status: 400 });
     }
 
-    avatarUrl = uploadedAvatar.publicUrl ?? null;
-    avatarPath = uploadedAvatar.path ?? null;
+    if (uploadedAvatar.publicUrl) {
+      Object.assign(profileUpdate, { avatar_url: uploadedAvatar.publicUrl });
+    }
   }
 
-  const profileUpdateWithAvatar = avatarUrl
-    ? {
-        ...profileUpdateBase,
-        avatar_url: avatarUrl,
-      }
-    : profileUpdateBase;
-
-  const profileUpdateWithAvatarAndPath =
-    avatarUrl && avatarPath
-      ? {
-          ...profileUpdateWithAvatar,
-          avatar_storage_path: avatarPath,
-        }
-      : profileUpdateWithAvatar;
-
-  let { error: profileError } = await admin.data.from("profiles").update(profileUpdateWithAvatarAndPath).eq("id", auth.user.id);
-
-  if (
-    profileError &&
-    avatarUrl &&
-    avatarPath &&
-    hasMissingProfileColumn(profileError.message, "avatar_storage_path")
-  ) {
-    ({ error: profileError } = await admin.data.from("profiles").update(profileUpdateWithAvatar).eq("id", auth.user.id));
-  }
-
-  if (profileError && avatarUrl && hasMissingProfileColumn(profileError.message, "avatar_url")) {
-    ({ error: profileError } = await admin.data.from("profiles").update(profileUpdateBase).eq("id", auth.user.id));
-  }
-
+  const { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
   if (profileError) return NextResponse.json({ error: profileError.message }, { status: 500 });
 
-  if (auth.profile.role === "institute") {
-    const instituteUpdate = {
-      name: val(form, "instituteName") || val(form, "organizationName") || null,
-      legal_name: val(form, "legalName") || null,
-      institute_type: val(form, "organizationType") || null,
-      registration_number: val(form, "registrationNumber") || null,
-      accreditation_number: val(form, "accreditationNumber") || null,
-      website_url: val(form, "websiteUrl") || null,
-      established_year: val(form, "establishedYear") ? Number(val(form, "establishedYear")) : null,
-      city: val(form, "city") || null,
-      state: val(form, "state") || null,
-      country: val(form, "country") || null,
-      contact_email: nextEmail,
-      contact_phone: val(form, "phone") || null,
-      authorized_person_name: fullName,
-      authorized_person_designation: val(form, "designation") || null,
-      student_strength: val(form, "studentStrength") ? Number(val(form, "studentStrength")) : null,
-      staff_strength: val(form, "staffStrength") ? Number(val(form, "staffStrength")) : null,
-      description: val(form, "description") || null,
+  if (auth.profile.role === "student" || auth.profile.role === "institute") {
+    const dob = val(form, "dob");
+    if (dob && !parseOptionalDob(dob)) {
+      return NextResponse.json({ error: "dob must be a valid YYYY-MM-DD date" }, { status: 400 });
+    }
+
+    const detailsUpdate = {
+      alternate_phone: val(form, "alternatePhone") || null,
+      dob: parseOptionalDob(dob),
+      gender: val(form, "gender") || null,
+      address_line_1: val(form, "addressLine1") || null,
+      address_line_2: val(form, "addressLine2") || null,
+      postal_code: val(form, "postalCode") || null,
+      updated_at: new Date().toISOString(),
     };
 
-    const { error: instituteError } = await admin.data.from("institutes").update(instituteUpdate).eq("user_id", auth.user.id);
+    const { error: detailsError } = await admin.data.from("user_additional_details").upsert(
+      {
+        user_id: auth.user.id,
+        ...detailsUpdate,
+      },
+      { onConflict: "user_id" }
+    );
+
+    if (detailsError) return NextResponse.json({ error: detailsError.message }, { status: 500 });
+  }
+
+  if (auth.profile.role === "institute") {
+    const establishedYear = parseOptionalInt(val(form, "establishedYear"));
+    const totalStudents = parseOptionalInt(val(form, "totalStudents"));
+    const totalStaff = parseOptionalInt(val(form, "totalStaff"));
+
+    const currentYear = new Date().getUTCFullYear();
+    if (val(form, "establishedYear") && (establishedYear === null || establishedYear < 1800 || establishedYear > currentYear)) {
+      return NextResponse.json({ error: "establishedYear must be a valid year" }, { status: 400 });
+    }
+
+    if (val(form, "totalStudents") && (totalStudents === null || totalStudents < 0)) {
+      return NextResponse.json({ error: "totalStudents must be a non-negative integer" }, { status: 400 });
+    }
+
+    if (val(form, "totalStaff") && (totalStaff === null || totalStaff < 0)) {
+      return NextResponse.json({ error: "totalStaff must be a non-negative integer" }, { status: 400 });
+    }
+
+    const { error: instituteError } = await admin.data
+      .from("institutes")
+      .update({
+        name: val(form, "instituteName") || val(form, "organizationName") || null,
+        description: val(form, "description") || null,
+        legal_entity_name: val(form, "legalEntityName") || null,
+        organization_type: val(form, "organizationType") || null,
+        registration_number: val(form, "registrationNumber") || null,
+        accreditation_affiliation_number: val(form, "accreditationAffiliationNumber") || null,
+        website_url: val(form, "websiteUrl") || null,
+        established_year: establishedYear,
+        total_students: totalStudents,
+        total_staff: totalStaff,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", auth.user.id);
+
     if (instituteError) return NextResponse.json({ error: instituteError.message }, { status: 500 });
   }
 

@@ -7,8 +7,8 @@ export default async function InstitutesPage() {
   const supabase = await createClient();
   const { data: institutes } = await supabase
     .from("institutes")
-    .select("id,name,slug,city,approval_status")
-    .eq("approval_status", "approved")
+    .select("id,name,description,status")
+    .eq("status", "approved")
     .order("created_at", { ascending: false });
 
   return (
@@ -18,8 +18,8 @@ export default async function InstitutesPage() {
         {institutes?.map((institute) => (
           <article key={institute.id} className="rounded-xl border bg-white p-5">
             <h2 className="text-lg font-medium">{institute.name}</h2>
-            <p className="mt-2 text-sm text-slate-600">{institute.city}</p>
-            <Link href={`/institutes/${institute.slug}` as Route} className="mt-4 inline-block text-brand-600">
+            <p className="mt-2 text-sm text-slate-600 line-clamp-2">{institute.description ?? "No description available"}</p>
+            <Link href={`/institutes/${institute.id}` as Route} className="mt-4 inline-block text-brand-600">
               View Institute
             </Link>
           </article>
