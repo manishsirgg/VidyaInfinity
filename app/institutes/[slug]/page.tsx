@@ -9,29 +9,50 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
 
   const statusAwareResponse = await admin.data
     .from("institutes")
-    .select("id,name,description,slug,status")
+    .select(
+      "id,user_id,name,description,slug,status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
+    )
     .or(`id.eq.${slug},slug.eq.${slug}`)
     .eq("status", "approved")
     .maybeSingle();
   const instituteResponse = statusAwareResponse.error
     ? await admin.data
         .from("institutes")
-        .select("id,name,description,slug,approval_status")
+        .select(
+          "id,user_id,name,description,slug,approval_status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
+        )
         .or(`id.eq.${slug},slug.eq.${slug}`)
         .eq("approval_status", "approved")
         .maybeSingle()
     : statusAwareResponse;
+  const instituteRecord = instituteResponse.data;
+  const fallbackProfile =
+    instituteRecord
+      ? null
+      : (
+          await admin.data
+            .from("profiles")
+            .select("id,name,full_name,organization_name,organization_type,email,phone,city,state,country,approval_status,role")
+            .eq("id", slug)
+            .eq("role", "institute")
+            .eq("approval_status", "approved")
+            .maybeSingle()
+        ).data;
+
+  const ownerProfile =
+    instituteRecord?.user_id
+      ? (
+          await admin.data
+            .from("profiles")
+            .select("id,name,full_name,organization_name,organization_type,email,phone,city,state,country")
+            .eq("id", instituteRecord.user_id)
+            .maybeSingle()
+        ).data
+      : fallbackProfile;
+
   const institute =
     instituteResponse.data ??
-    (
-      await admin.data
-        .from("profiles")
-        .select("id,name,full_name,organization_name,approval_status,role")
-        .eq("id", slug)
-        .eq("role", "institute")
-        .eq("approval_status", "approved")
-        .maybeSingle()
-    ).data;
+    fallbackProfile;
 
   if (!institute) notFound();
   const instituteName =
@@ -40,12 +61,62 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
     ("full_name" in institute ? institute.full_name : null) ??
     "Institute";
   const instituteDescription = "description" in institute ? institute.description : null;
+  const instituteWebsite = "website_url" in institute ? institute.website_url : null;
+  const instituteType =
+    ("organization_type" in institute ? institute.organization_type : null) ?? ownerProfile?.organization_type ?? null;
+  const instituteLegal = "legal_entity_name" in institute ? institute.legal_entity_name : null;
+  const instituteRegistration = "registration_number" in institute ? institute.registration_number : null;
+  const instituteAccreditation =
+    "accreditation_affiliation_number" in institute ? institute.accreditation_affiliation_number : null;
+  const instituteYear = "established_year" in institute ? institute.established_year : null;
+  const instituteStudents = "total_students" in institute ? institute.total_students : null;
+  const instituteStaff = "total_staff" in institute ? institute.total_staff : null;
+  const instituteVerified = "verified" in institute ? institute.verified : null;
+  const location = [ownerProfile?.city, ownerProfile?.state, ownerProfile?.country].filter(Boolean).join(", ");
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12">
       <article className="rounded-xl border bg-white p-8">
         <h1 className="text-3xl font-semibold">{instituteName}</h1>
         <p className="mt-6 text-slate-700">{instituteDescription ?? "No description available."}</p>
+        <div className="mt-6 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
+          <p>
+            <span className="font-medium">Type:</span> {instituteType ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Location:</span> {location || "-"}
+          </p>
+          <p>
+            <span className="font-medium">Established:</span> {instituteYear ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Website:</span> {instituteWebsite ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Email:</span> {ownerProfile?.email ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Phone:</span> {ownerProfile?.phone ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Students:</span> {instituteStudents ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Staff:</span> {instituteStaff ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Verified:</span> {instituteVerified == null ? "-" : instituteVerified ? "Yes" : "No"}
+          </p>
+          <p>
+            <span className="font-medium">Legal entity:</span> {instituteLegal ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Registration #:</span> {instituteRegistration ?? "-"}
+          </p>
+          <p>
+            <span className="font-medium">Accreditation #:</span> {instituteAccreditation ?? "-"}
+          </p>
+        </div>
       </article>
     </div>
   );
