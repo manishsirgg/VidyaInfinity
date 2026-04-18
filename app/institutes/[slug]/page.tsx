@@ -2,6 +2,18 @@ import { notFound } from "next/navigation";
 
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+function toPublicMediaUrl(
+  adminClient: { storage: { from: (bucket: string) => { getPublicUrl: (path: string) => { data: { publicUrl: string } } } } },
+  fileUrl: string | null | undefined
+) {
+  if (!fileUrl) return null;
+  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+  const normalized = fileUrl.replace(/^\/+/, "");
+  const instituteMediaUrl = adminClient.storage.from("institute-media").getPublicUrl(normalized).data.publicUrl;
+  const blogMediaUrl = adminClient.storage.from("blog-media").getPublicUrl(normalized).data.publicUrl;
+  return instituteMediaUrl || blogMediaUrl || null;
+}
+
 export default async function InstituteDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const admin = getSupabaseAdmin();
@@ -15,7 +27,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
     .or(`id.eq.${slug},slug.eq.${slug}`)
     .eq("status", "approved")
     .maybeSingle();
-  const instituteResponse = statusAwareResponse.error
+  const approvalStatusResponse = statusAwareResponse.error
     ? await admin.data
         .from("institutes")
         .select(
@@ -25,6 +37,26 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
         .eq("approval_status", "approved")
         .maybeSingle()
     : statusAwareResponse;
+  const statusWithoutSlugResponse = approvalStatusResponse.error
+    ? await admin.data
+        .from("institutes")
+        .select(
+          "id,user_id,name,description,status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
+        )
+        .eq("id", slug)
+        .eq("status", "approved")
+        .maybeSingle()
+    : approvalStatusResponse;
+  const instituteResponse = statusWithoutSlugResponse.error
+    ? await admin.data
+        .from("institutes")
+        .select(
+          "id,user_id,name,description,approval_status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
+        )
+        .eq("id", slug)
+        .eq("approval_status", "approved")
+        .maybeSingle()
+    : statusWithoutSlugResponse;
   const instituteRecord = instituteResponse.data;
   const fallbackProfile =
     instituteRecord
@@ -73,11 +105,41 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
   const instituteStaff = "total_staff" in institute ? institute.total_staff : null;
   const instituteVerified = "verified" in institute ? institute.verified : null;
   const location = [ownerProfile?.city, ownerProfile?.state, ownerProfile?.country].filter(Boolean).join(", ");
+  const mediaRows =
+    "id" in institute
+      ? (
+          await admin.data
+            .from("institute_media")
+            .select("id,media_type,file_url,file_name")
+            .eq("institute_id", institute.id)
+            .order("created_at", { ascending: false })
+        ).data ?? []
+      : [];
+  const mediaItems = mediaRows.map((item) => ({
+    id: item.id,
+    mediaType: item.media_type,
+    url: toPublicMediaUrl(admin.data, item.file_url),
+    fileName: item.file_name,
+  }));
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-12">
       <article className="rounded-xl border bg-white p-8">
         <h1 className="text-3xl font-semibold">{instituteName}</h1>
+        {mediaItems.length > 0 ? (
+          <div className="mt-6 grid gap-3 md:grid-cols-2">
+            {mediaItems.map((item) => (
+              <div key={item.id} className="overflow-hidden rounded-md border">
+                {item.mediaType === "video" ? (
+                  <video className="h-56 w-full object-cover" controls src={item.url ?? undefined} />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="h-56 w-full object-cover" src={item.url ?? ""} alt={item.fileName ?? `${instituteName} media`} />
+                )}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <p className="mt-6 text-slate-700">{instituteDescription ?? "No description available."}</p>
         <div className="mt-6 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
           <p>

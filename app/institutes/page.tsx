@@ -6,7 +6,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 type InstituteRecord = {
   id: string;
   user_id: string | null;
-  slug: string | null;
+  slug?: string | null;
   name: string | null;
   description: string | null;
   website_url: string | null;
@@ -33,6 +33,26 @@ type ProfileRecord = {
   country: string | null;
 };
 
+type InstituteMediaRecord = {
+  id: string;
+  institute_id: string;
+  media_type: "image" | "video";
+  file_url: string;
+  file_name: string | null;
+};
+
+function toPublicMediaUrl(
+  adminClient: { storage: { from: (bucket: string) => { getPublicUrl: (path: string) => { data: { publicUrl: string } } } } },
+  fileUrl: string | null | undefined
+) {
+  if (!fileUrl) return null;
+  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+  const normalized = fileUrl.replace(/^\/+/, "");
+  const instituteMediaUrl = adminClient.storage.from("institute-media").getPublicUrl(normalized).data.publicUrl;
+  const blogMediaUrl = adminClient.storage.from("blog-media").getPublicUrl(normalized).data.publicUrl;
+  return instituteMediaUrl || blogMediaUrl || null;
+}
+
 export default async function InstitutesPage() {
   const admin = getSupabaseAdmin();
   if (!admin.ok) {
@@ -51,7 +71,7 @@ export default async function InstitutesPage() {
     )
     .eq("status", "approved")
     .order("created_at", { ascending: false });
-  const institutesResponse = statusAwareResponse.error
+  const approvalStatusResponse = statusAwareResponse.error
     ? await admin.data
         .from("institutes")
         .select(
@@ -60,7 +80,41 @@ export default async function InstitutesPage() {
         .eq("approval_status", "approved")
         .order("created_at", { ascending: false })
     : statusAwareResponse;
+  const statusWithoutSlugResponse = approvalStatusResponse.error
+    ? await admin.data
+        .from("institutes")
+        .select(
+          "id,user_id,name,description,status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
+        )
+        .eq("status", "approved")
+        .order("created_at", { ascending: false })
+    : approvalStatusResponse;
+  const institutesResponse = statusWithoutSlugResponse.error
+    ? await admin.data
+        .from("institutes")
+        .select(
+          "id,user_id,name,description,approval_status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
+        )
+        .eq("approval_status", "approved")
+        .order("created_at", { ascending: false })
+    : statusWithoutSlugResponse;
   const instituteRows = (institutesResponse.data ?? []) as InstituteRecord[];
+  const instituteIds = instituteRows.map((item) => item.id);
+  const mediaRows = instituteIds.length
+    ? (
+        await admin.data
+          .from("institute_media")
+          .select("id,institute_id,media_type,file_url,file_name")
+          .in("institute_id", instituteIds)
+          .order("created_at", { ascending: false })
+      ).data ?? []
+    : [];
+  const mediaByInstituteId = new Map<string, InstituteMediaRecord[]>();
+  for (const media of mediaRows as InstituteMediaRecord[]) {
+    const existing = mediaByInstituteId.get(media.institute_id) ?? [];
+    existing.push(media);
+    mediaByInstituteId.set(media.institute_id, existing);
+  }
 
   const profileIds = [...new Set(instituteRows.map((institute) => institute.user_id).filter(Boolean))] as string[];
   const profileRows = profileIds.length
@@ -77,7 +131,7 @@ export default async function InstitutesPage() {
     const profile = institute.user_id ? profileById.get(institute.user_id) : undefined;
     return {
       id: institute.id,
-      slug: institute.slug,
+      slug: institute.slug ?? null,
       name: institute.name || profile?.organization_name || profile?.full_name || profile?.name || "Institute",
       description: institute.description,
       websiteUrl: institute.website_url,
@@ -94,6 +148,12 @@ export default async function InstitutesPage() {
       city: profile?.city ?? null,
       state: profile?.state ?? null,
       country: profile?.country ?? null,
+      media: (mediaByInstituteId.get(institute.id) ?? []).map((item) => ({
+        id: item.id,
+        mediaType: item.media_type,
+        url: toPublicMediaUrl(admin.data, item.file_url),
+        fileName: item.file_name,
+      })),
     };
   });
 
@@ -129,6 +189,7 @@ export default async function InstitutesPage() {
         city: profile.city ?? null,
         state: profile.state ?? null,
         country: profile.country ?? null,
+        media: [] as { id: string; mediaType: "image" | "video"; url: string | null; fileName: string | null }[],
       }));
 
   return (
@@ -138,6 +199,23 @@ export default async function InstitutesPage() {
         {instituteCards.map((institute) => (
           <article key={institute.id} className="rounded-xl border bg-white p-5">
             <h2 className="text-lg font-medium">{institute.name}</h2>
+            {institute.media.length > 0 ? (
+              <div className="mt-3">
+                {institute.media[0].mediaType === "video" ? (
+                  <video className="h-44 w-full rounded-md border object-cover" controls src={institute.media[0].url ?? undefined} />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="h-44 w-full rounded-md border object-cover"
+                    src={institute.media[0].url ?? ""}
+                    alt={institute.media[0].fileName ?? `${institute.name} media`}
+                  />
+                )}
+                {institute.media.length > 1 ? (
+                  <p className="mt-1 text-xs text-slate-500">+{institute.media.length - 1} more media file(s)</p>
+                ) : null}
+              </div>
+            ) : null}
             <p className="mt-2 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
             <div className="mt-3 space-y-1 text-xs text-slate-600">
               <p>Type: {institute.organizationType ?? "-"}</p>
