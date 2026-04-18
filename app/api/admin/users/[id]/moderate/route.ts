@@ -6,6 +6,8 @@ import { sendModerationExternalNotifications } from "@/lib/integrations/account-
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+type UserRole = "student" | "institute" | "admin";
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
   if ("error" in auth) return auth.error;
@@ -28,12 +30,37 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: existingProfile, error: profileLookupError } = await admin.data
     .from("profiles")
-    .select("id,role,email,full_name,phone")
+    .select("id,role,email,full_name,phone,approval_status")
     .eq("id", id)
-    .maybeSingle<{ id: string; role: "student" | "institute" | "admin"; email: string; full_name: string | null; phone: string | null }>();
+    .maybeSingle<{
+      id: string;
+      role: UserRole;
+      email: string;
+      full_name: string | null;
+      phone: string | null;
+      approval_status: string | null;
+    }>();
 
   if (profileLookupError || !existingProfile) {
     return NextResponse.json({ error: profileLookupError?.message ?? "User not found" }, { status: 404 });
+  }
+
+  if (existingProfile.approval_status !== "pending") {
+    return NextResponse.json({ error: "No active pending submission for this user" }, { status: 409 });
+  }
+
+  const { data: pendingUserDocuments, error: pendingDocsError } = await admin.data
+    .from("user_documents")
+    .select("id")
+    .eq("user_id", id)
+    .eq("status", "pending");
+
+  if (pendingDocsError) {
+    return NextResponse.json({ error: pendingDocsError.message }, { status: 500 });
+  }
+
+  if (!pendingUserDocuments?.length) {
+    return NextResponse.json({ error: "No active pending documents to moderate" }, { status: 409 });
   }
 
   const { data: profile, error: profileError } = await admin.data
@@ -44,7 +71,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     })
     .eq("id", id)
     .select("id,role,email,approval_status,rejection_reason")
-    .single();
+    .single<{ id: string; role: UserRole; email: string; approval_status: string | null; rejection_reason: string | null }>();
 
   if (profileError || !profile) {
     return NextResponse.json({ error: profileError?.message ?? "Unable to update profile status" }, { status: 500 });
@@ -56,7 +83,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       status,
       rejection_reason: status === "rejected" ? rejectionReason : null,
     })
-    .eq("user_id", id);
+    .eq("user_id", id)
+    .eq("status", "pending");
 
   if (userDocumentsError) {
     return NextResponse.json({ error: userDocumentsError.message }, { status: 500 });
@@ -87,7 +115,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: instituteError.message }, { status: 500 });
     }
 
-    const { error: instituteDocsError } = await admin.data.from("institute_documents").update({ status }).eq("institute_id", institute.id);
+    const { error: instituteDocsError } = await admin.data
+      .from("institute_documents")
+      .update({ status })
+      .eq("institute_id", institute.id)
+      .eq("status", "pending");
+
     if (instituteDocsError) {
       return NextResponse.json({ error: instituteDocsError.message }, { status: 500 });
     }

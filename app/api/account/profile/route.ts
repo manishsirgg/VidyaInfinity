@@ -133,6 +133,9 @@ export async function PATCH(request: Request) {
   const form = await request.formData();
 
   const resubmit = val(form, "resubmit") === "true";
+  let uploadedIdentityDocument = false;
+  let uploadedAuthorizationDocument = false;
+  let uploadedInstituteDocument = false;
   const nextEmail = val(form, "email").toLowerCase();
   const fullName = val(form, "fullName");
   const organizationType = val(form, "organizationType");
@@ -241,6 +244,8 @@ export async function PATCH(request: Request) {
     });
 
     if (docInsertError) return NextResponse.json({ error: docInsertError.message }, { status: 500 });
+
+    uploadedIdentityDocument = true;
   }
 
   const authorizationDocument = form.get("adminAuthorizationDocument");
@@ -265,6 +270,8 @@ export async function PATCH(request: Request) {
     });
 
     if (docInsertError) return NextResponse.json({ error: docInsertError.message }, { status: 500 });
+
+    uploadedAuthorizationDocument = true;
   }
 
   const { error: profileError } = await admin.data.from("profiles").update(profileUpdate).eq("id", auth.user.id);
@@ -328,6 +335,8 @@ export async function PATCH(request: Request) {
       });
 
       if (instituteDocInsertError) return NextResponse.json({ error: instituteDocInsertError.message }, { status: 500 });
+
+      uploadedInstituteDocument = true;
     }
 
     const instituteUpdate: Record<string, string | number | null | boolean> = {
@@ -354,26 +363,83 @@ export async function PATCH(request: Request) {
 
     if (instituteError) return NextResponse.json({ error: instituteError.message }, { status: 500 });
 
-    if (resubmit) {
-      const { error: instituteDocsResetError } = await admin.data
+    if (resubmit && !uploadedInstituteDocument) {
+      const { data: latestInstituteDoc, error: instituteDocLookupError } = await admin.data
         .from("institute_documents")
-        .update({ status: "pending" })
-        .eq("institute_id", institute.id);
+        .select("id")
+        .eq("institute_id", institute.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ id: string }>();
 
-      if (instituteDocsResetError) {
-        return NextResponse.json({ error: instituteDocsResetError.message }, { status: 500 });
+      if (instituteDocLookupError) {
+        return NextResponse.json({ error: instituteDocLookupError.message }, { status: 500 });
+      }
+
+      if (latestInstituteDoc?.id) {
+        const { error: instituteDocResetError } = await admin.data
+          .from("institute_documents")
+          .update({ status: "pending" })
+          .eq("id", latestInstituteDoc.id);
+
+        if (instituteDocResetError) {
+          return NextResponse.json({ error: instituteDocResetError.message }, { status: 500 });
+        }
       }
     }
   }
 
   if (resubmit) {
-    const { error: userDocsResetError } = await admin.data
-      .from("user_documents")
-      .update({ status: "pending", rejection_reason: null })
-      .eq("user_id", auth.user.id);
+    if (!uploadedIdentityDocument) {
+      const { data: latestIdentityDoc, error: identityLookupError } = await admin.data
+        .from("user_documents")
+        .select("id")
+        .eq("user_id", auth.user.id)
+        .eq("document_category", "identity")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ id: string }>();
 
-    if (userDocsResetError) {
-      return NextResponse.json({ error: userDocsResetError.message }, { status: 500 });
+      if (identityLookupError) {
+        return NextResponse.json({ error: identityLookupError.message }, { status: 500 });
+      }
+
+      if (latestIdentityDoc?.id) {
+        const { error: identityResetError } = await admin.data
+          .from("user_documents")
+          .update({ status: "pending", rejection_reason: null })
+          .eq("id", latestIdentityDoc.id);
+
+        if (identityResetError) {
+          return NextResponse.json({ error: identityResetError.message }, { status: 500 });
+        }
+      }
+    }
+
+    if (auth.profile.role === "admin" && !uploadedAuthorizationDocument) {
+      const { data: latestAuthorizationDoc, error: authorizationLookupError } = await admin.data
+        .from("user_documents")
+        .select("id")
+        .eq("user_id", auth.user.id)
+        .eq("document_category", "authorization")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ id: string }>();
+
+      if (authorizationLookupError) {
+        return NextResponse.json({ error: authorizationLookupError.message }, { status: 500 });
+      }
+
+      if (latestAuthorizationDoc?.id) {
+        const { error: authorizationResetError } = await admin.data
+          .from("user_documents")
+          .update({ status: "pending", rejection_reason: null })
+          .eq("id", latestAuthorizationDoc.id);
+
+        if (authorizationResetError) {
+          return NextResponse.json({ error: authorizationResetError.message }, { status: 500 });
+        }
+      }
     }
 
     await createAccountNotification({
