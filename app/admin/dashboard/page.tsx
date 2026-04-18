@@ -14,11 +14,18 @@ const adminModules = [
   { href: "/admin/coupons", label: "Coupons" },
   { href: "/admin/crm", label: "CRM Leads" },
   { href: "/admin/psychometric-tests", label: "Psychometric Tests" },
+  { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/profile", label: "Admin Profile" },
 ];
 
+function formatDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
+
 export default async function AdminDashboardPage() {
-  await requireUser("admin");
+  const { user } = await requireUser("admin");
   const admin = getSupabaseAdmin();
   if (!admin.ok) {
     throw new Error(admin.error);
@@ -36,6 +43,8 @@ export default async function AdminDashboardPage() {
     { count: coupons },
     { count: leads },
     { count: tests },
+    { count: unreadNotifications },
+    { data: recentNotifications },
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("institutes").select("id", { count: "exact", head: true }),
@@ -47,6 +56,13 @@ export default async function AdminDashboardPage() {
     supabase.from("coupons").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("crm_leads").select("id", { count: "exact", head: true }),
     supabase.from("psychometric_tests").select("id", { count: "exact", head: true }).eq("is_active", true),
+    supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
+    supabase
+      .from("notifications")
+      .select("id,title,message,type,is_read,created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(5),
   ]);
 
   return (
@@ -77,6 +93,9 @@ export default async function AdminDashboardPage() {
         <Link href="/admin/psychometric-tests" className="rounded border bg-white p-4">
           Active tests: {tests ?? 0}
         </Link>
+        <Link href="/admin/notifications" className="rounded border bg-white p-4">
+          Unread notifications: {unreadNotifications ?? 0}
+        </Link>
       </div>
 
       <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -86,6 +105,27 @@ export default async function AdminDashboardPage() {
           </Link>
         ))}
       </div>
+
+      <section className="mt-8 rounded border bg-white p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">Recent Notifications</h2>
+          <Link href="/admin/notifications" className="text-sm text-brand-700">
+            View all notifications
+          </Link>
+        </div>
+        <div className="mt-3 space-y-2 text-sm">
+          {(recentNotifications ?? []).length === 0 ? <p className="text-slate-600">No notifications yet.</p> : null}
+          {(recentNotifications ?? []).map((item) => (
+            <div key={item.id} className="rounded border px-3 py-2">
+              <p className="font-medium">{item.title}</p>
+              <p className="text-slate-700">{item.message}</p>
+              <p className="text-xs text-slate-500">
+                {item.is_read ? "Read" : "Unread"} · {formatDate(item.created_at)}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
