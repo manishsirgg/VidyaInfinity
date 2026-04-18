@@ -47,25 +47,51 @@ export function CourseCreateForm() {
     }
 
     setState("submitting");
-    const formData = new FormData(event.currentTarget);
+    try {
+      const formData = new FormData(event.currentTarget);
+      formData.delete("mediaFiles");
 
-    const response = await fetch("/api/institute/courses", {
-      method: "POST",
-      body: formData,
-    });
+      const createResponse = await fetch("/api/institute/courses", {
+        method: "POST",
+        body: formData,
+      });
 
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
+      const createBody = await createResponse.json().catch(() => null);
+      if (!createResponse.ok || !createBody?.courseId) {
+        setState("error");
+        setError(createBody?.error ?? "Failed to submit course");
+        return;
+      }
+
+      const courseId = String(createBody.courseId);
+
+      for (const file of mediaFiles) {
+        const mediaPayload = new FormData();
+        mediaPayload.append("file", file);
+
+        const mediaResponse = await fetch(`/api/institute/courses/${courseId}/media`, {
+          method: "POST",
+          body: mediaPayload,
+        });
+
+        if (!mediaResponse.ok) {
+          const mediaBody = await mediaResponse.json().catch(() => null);
+          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
+          setState("error");
+          setError(mediaBody?.error ?? "Failed to upload course media");
+          return;
+        }
+      }
+
+      setState("success");
+      setMessage("Course submitted for admin approval.");
+      setMediaFiles([]);
+      setDates({ startDate: "", endDate: "", admissionDeadline: "" });
+      event.currentTarget.reset();
+    } catch {
       setState("error");
-      setError(body?.error ?? "Failed to submit course");
-      return;
+      setError("Failed to submit course");
     }
-
-    setState("success");
-    setMessage(body?.message ?? "Course submitted for approval");
-    setMediaFiles([]);
-    setDates({ startDate: "", endDate: "", admissionDeadline: "" });
-    event.currentTarget.reset();
   }
 
   return (
