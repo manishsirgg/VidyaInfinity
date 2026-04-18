@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type Props = {
@@ -9,6 +10,7 @@ type Props = {
 };
 
 export function ModerationActions({ targetType, targetId, currentStatus }: Props) {
+  const router = useRouter();
   const [status, setStatus] = useState(currentStatus);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,11 +20,12 @@ export function ModerationActions({ targetType, targetId, currentStatus }: Props
     setError("");
     const rejectionReason =
       nextStatus === "rejected"
-        ? window.prompt("Enter rejection reason", "Insufficient compliance documentation")
+        ? window.prompt("Enter rejection reason", "Insufficient compliance documentation")?.trim()
         : undefined;
 
     if (nextStatus === "rejected" && !rejectionReason) {
       setLoading(false);
+      setError("Rejection reason is required.");
       return;
     }
 
@@ -41,6 +44,7 @@ export function ModerationActions({ targetType, targetId, currentStatus }: Props
     }
 
     setStatus(nextStatus);
+    router.refresh();
   }
 
   return (

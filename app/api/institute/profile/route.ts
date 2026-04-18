@@ -4,7 +4,7 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function GET() {
-  const auth = await requireApiUser("institute");
+  const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
 
   const admin = getSupabaseAdmin();
@@ -24,7 +24,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireApiUser("institute");
+  const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
 
   const admin = getSupabaseAdmin();

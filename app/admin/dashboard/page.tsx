@@ -24,6 +24,8 @@ export default async function AdminDashboardPage() {
   const [
     { count: users },
     { count: institutes },
+    { count: pendingUsers },
+    { count: pendingInstitutes },
     { count: orders },
     { count: refunds },
     { count: blogs },
@@ -33,6 +35,8 @@ export default async function AdminDashboardPage() {
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("institutes").select("id", { count: "exact", head: true }),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).in("role", ["student", "admin"]).eq("approval_status", "pending"),
+    supabase.from("institutes").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("course_orders").select("id", { count: "exact", head: true }),
     supabase.from("refunds").select("id", { count: "exact", head: true }).eq("status", "requested"),
     supabase.from("blogs").select("id", { count: "exact", head: true }),
@@ -47,6 +51,12 @@ export default async function AdminDashboardPage() {
       <div className="mt-6 grid gap-4 md:grid-cols-4">
         <div className="rounded border bg-white p-4">Profiles: {users ?? 0}</div>
         <div className="rounded border bg-white p-4">Institutes: {institutes ?? 0}</div>
+        <Link href="/admin/users" className="rounded border bg-white p-4">
+          Pending user approvals: {pendingUsers ?? 0}
+        </Link>
+        <Link href="/admin/institutes" className="rounded border bg-white p-4">
+          Pending institute approvals: {pendingInstitutes ?? 0}
+        </Link>
         <div className="rounded border bg-white p-4">Course orders: {orders ?? 0}</div>
         <Link href="/admin/refunds" className="rounded border bg-white p-4">
           Pending refunds: {refunds ?? 0}

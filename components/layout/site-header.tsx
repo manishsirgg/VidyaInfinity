@@ -17,6 +17,11 @@ type AuthUser = {
   email?: string;
 };
 
+type AuthRoutes = {
+  dashboard: Route;
+  profile: Route;
+};
+
 type SearchItem = {
   id: string;
   title: string;
@@ -33,17 +38,6 @@ const links: Array<{ href: Route; label: string }> = [
   { href: "/contact", label: "Contact" },
 ];
 
-function getDashboardPath(role: AuthUser["role"]): Route {
-  if (role === "admin") return "/admin/dashboard";
-  if (role === "institute") return "/institute/dashboard";
-  return "/student/dashboard";
-}
-
-function getProfilePath(role: AuthUser["role"]): Route {
-  if (role === "admin") return "/admin/profile";
-  if (role === "institute") return "/institute/profile";
-  return "/student/profile";
-}
 
 function initials(name: string) {
   return name
@@ -61,6 +55,7 @@ export function SiteHeader() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authRoutes, setAuthRoutes] = useState<AuthRoutes | null>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -69,15 +64,9 @@ export function SiteHeader() {
   const accountRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
 
-  const dashboardPath = useMemo(() => {
-    if (!authUser) return "/auth/login" as Route;
-    return getDashboardPath(authUser.role);
-  }, [authUser]);
+  const dashboardPath = useMemo(() => authRoutes?.dashboard ?? ("/auth/login" as Route), [authRoutes]);
 
-  const profilePath = useMemo(() => {
-    if (!authUser) return "/auth/login" as Route;
-    return getProfilePath(authUser.role);
-  }, [authUser]);
+  const profilePath = useMemo(() => authRoutes?.profile ?? ("/auth/login" as Route), [authRoutes]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,8 +79,10 @@ export function SiteHeader() {
 
       if (response.ok && body.authenticated && body.user) {
         setAuthUser(body.user);
+        setAuthRoutes((body.routes ?? null) as AuthRoutes | null);
       } else {
         setAuthUser(null);
+        setAuthRoutes(null);
       }
 
       setLoadingUser(false);

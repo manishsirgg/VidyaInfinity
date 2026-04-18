@@ -21,7 +21,7 @@ export default async function LoginPage({ searchParams }: Props) {
       )}
       {rejected && (
         <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          Your account was rejected during moderation. Please contact support or submit a fresh registration with valid documents.
+          Your account was rejected during moderation. Please review the rejection reason in your profile, correct details/documents, and resubmit using the same account.
         </p>
       )}
       <LoginForm />
