@@ -61,6 +61,11 @@ export function UnifiedRegisterForm() {
       <input required type="email" name="email" placeholder="Email" className="rounded border px-3 py-2" />
       <input required type="password" name="password" minLength={8} placeholder="Password (min 8 chars)" className="rounded border px-3 py-2" />
       <input required name="phone" placeholder="Phone number" className="rounded border px-3 py-2" />
+      <label className="text-sm font-medium text-slate-700" htmlFor="registerAvatar">
+        Profile avatar image
+      </label>
+      <input id="registerAvatar" type="file" name="avatar" accept="image/png,image/jpeg,image/webp" className="rounded border px-3 py-2" />
+      <p className="text-xs text-slate-500">PNG, JPG or WEBP up to 3MB.</p>
 
       {showStudentBase && (
         <>
@@ -112,6 +117,12 @@ export function UnifiedRegisterForm() {
           <input name="establishedYear" type="number" min={1800} max={2100} placeholder="Established year" className="rounded border px-3 py-2" />
           <input name="totalStudents" type="number" min={0} placeholder="Total students" className="rounded border px-3 py-2" />
           <input name="totalStaff" type="number" min={0} placeholder="Total staff" className="rounded border px-3 py-2" />
+          <textarea
+            name="description"
+            placeholder="Institute description (max 2500 words)"
+            className="min-h-24 rounded border px-3 py-2"
+          />
+          <p className="text-xs text-slate-500">Describe your institute in up to 2500 words.</p>
         </>
       )}
 

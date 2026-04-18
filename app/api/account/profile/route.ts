@@ -27,6 +27,12 @@ function parseOptionalDob(value: string) {
   return value;
 }
 
+function countWords(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).filter(Boolean).length;
+}
+
 function isMissingNotificationsTableError(error: { code?: string; message?: string } | null) {
   if (!error) return false;
   const message = String(error.message ?? "").toLowerCase();
@@ -170,6 +176,10 @@ export async function PATCH(request: Request) {
 
     if (val(form, "totalStaff") && (totalStaff === null || totalStaff < 0)) {
       return NextResponse.json({ error: "totalStaff must be a non-negative integer" }, { status: 400 });
+    }
+
+    if (countWords(val(form, "description")) > 2500) {
+      return NextResponse.json({ error: "Institute description must not exceed 2500 words" }, { status: 400 });
     }
   }
 

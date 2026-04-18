@@ -5,13 +5,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   STORAGE_BUCKETS,
   deleteFromBucket,
+  uploadAvatar,
   uploadInstituteDocument,
   uploadUserDocument,
 } from "@/lib/storage/uploads";
 
 type RegisterRole = "student" | "institute" | "admin";
 type UploadRef = {
-  bucket: keyof Pick<typeof STORAGE_BUCKETS, "userDocuments" | "instituteDocuments">;
+  bucket: keyof Pick<typeof STORAGE_BUCKETS, "userDocuments" | "instituteDocuments" | "avatars">;
   path: string;
 };
 
@@ -46,6 +47,12 @@ function mapErrorStatus(message: string) {
     return 400;
   }
   return 500;
+}
+
+function countWords(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).filter(Boolean).length;
 }
 
 async function cleanupFailure(uploadedPaths: UploadRef[], createdUserId: string | null) {
@@ -139,6 +146,7 @@ export async function POST(request: Request) {
       const organizationName = text(form, "organizationName");
       const organizationType = text(form, "organizationType");
       const designation = text(form, "designation");
+      const description = text(form, "description");
 
       const roleMissing = missing(
         ["organizationName", organizationName],
@@ -148,6 +156,10 @@ export async function POST(request: Request) {
 
       if (roleMissing.length > 0) {
         return NextResponse.json({ error: `Missing required fields: ${roleMissing.join(", ")}` }, { status: 400 });
+      }
+
+      if (countWords(description) > 2500) {
+        return NextResponse.json({ error: "Institute description must not exceed 2500 words" }, { status: 400 });
       }
     }
 
@@ -217,6 +229,17 @@ export async function POST(request: Request) {
     }
 
     createdUserId = signUp.data.user.id;
+    let avatarUrl: string | null = null;
+
+    const avatar = form.get("avatar");
+    if (avatar instanceof File && avatar.size > 0) {
+      const avatarUpload = await uploadAvatar({ userId: createdUserId, file: avatar });
+      if (avatarUpload.error || !avatarUpload.path) {
+        throw new Error(avatarUpload.error ?? "Failed to upload avatar");
+      }
+      uploadedPaths.push({ bucket: "avatars", path: avatarUpload.path });
+      avatarUrl = avatarUpload.publicUrl ?? null;
+    }
 
     const { error: profileError } = await admin.data.from("profiles").insert({
       id: createdUserId,
@@ -232,6 +255,7 @@ export async function POST(request: Request) {
       designation: role === "admin" || role === "institute" ? text(form, "designation") || null : null,
       organization_name: role === "institute" ? instituteName || null : null,
       organization_type: role === "institute" ? instituteOrganizationType || null : null,
+      avatar_url: avatarUrl,
     });
 
     if (profileError) throw new Error(profileError.message);
@@ -265,6 +289,7 @@ export async function POST(request: Request) {
           registration_number: text(form, "registrationNumber") || null,
           accreditation_affiliation_number: text(form, "accreditationAffiliationNumber") || null,
           website_url: text(form, "websiteUrl") || null,
+          description: text(form, "description") || null,
           established_year: establishedYear,
           total_students: totalStudents,
           total_staff: totalStaff,
