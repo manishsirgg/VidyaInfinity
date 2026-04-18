@@ -276,7 +276,13 @@ export function ProfileSettingsForm({ role }: Props) {
             />
             <input name="totalStudents" type="number" min={0} defaultValue={String(institute.total_students ?? "")} placeholder="Total students" className="rounded border px-3 py-2" />
             <input name="totalStaff" type="number" min={0} defaultValue={String(institute.total_staff ?? "")} placeholder="Total staff" className="rounded border px-3 py-2" />
-            <textarea name="description" defaultValue={String(institute.description ?? "")} placeholder="Institute description" className="min-h-24 rounded border px-3 py-2" />
+            <textarea
+              name="description"
+              defaultValue={String(institute.description ?? "")}
+              placeholder="Institute description (max 2500 words)"
+              className="min-h-24 rounded border px-3 py-2"
+            />
+            <p className="text-xs text-slate-500">Keep institute description within 2500 words.</p>
           </>
         ) : null}
 
