@@ -23,6 +23,19 @@ function numericOrNull(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function booleanOrNull(value: unknown) {
+  const raw = text(value).toLowerCase();
+  if (!raw) return null;
+  if (["true", "yes", "1"].includes(raw)) return true;
+  if (["false", "no", "0"].includes(raw)) return false;
+  return null;
+}
+
+function getWordCount(value: string) {
+  if (!value.trim()) return 0;
+  return value.trim().split(/\s+/).length;
+}
+
 export async function PATCH(request: Request, { params }: Params) {
   const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
@@ -45,6 +58,10 @@ export async function PATCH(request: Request, { params }: Params) {
   const batchSize = numericOrNull(payload.batchSize);
   if (payload.batchSize !== undefined && (batchSize === null || !Number.isInteger(batchSize) || batchSize < 0)) {
     return NextResponse.json({ error: "batchSize must be a non-negative integer" }, { status: 400 });
+  }
+
+  if (payload.description !== undefined && payload.description !== null && getWordCount(text(payload.description)) > 3000) {
+    return NextResponse.json({ error: "Course details must be 3000 words or fewer" }, { status: 400 });
   }
 
   const updates: Record<string, unknown> = {
@@ -70,8 +87,8 @@ export async function PATCH(request: Request, { params }: Params) {
     certificate_status: payload.certificateStatus !== undefined ? nullable(payload.certificateStatus) : undefined,
     certificate_details: payload.certificateDetails !== undefined ? nullable(payload.certificateDetails) : undefined,
     batch_size: payload.batchSize !== undefined ? batchSize : undefined,
-    placement_support: payload.placementSupport !== undefined ? nullable(payload.placementSupport) : undefined,
-    internship_support: payload.internshipSupport !== undefined ? nullable(payload.internshipSupport) : undefined,
+    placement_support: payload.placementSupport !== undefined ? booleanOrNull(payload.placementSupport) : undefined,
+    internship_support: payload.internshipSupport !== undefined ? booleanOrNull(payload.internshipSupport) : undefined,
     faculty_name: payload.facultyName !== undefined ? nullable(payload.facultyName) : undefined,
     faculty_qualification: payload.facultyQualification !== undefined ? nullable(payload.facultyQualification) : undefined,
     support_email: payload.supportEmail !== undefined ? nullable(payload.supportEmail) : undefined,
