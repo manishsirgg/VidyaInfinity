@@ -51,6 +51,15 @@ function formatDateTime(value: string) {
   return parsed.toLocaleString();
 }
 
+function parseJsonObject(value: string) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as { error?: unknown };
+  } catch {
+    return null;
+  }
+}
+
 export function ProfileSettingsForm({ role }: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -67,6 +76,7 @@ export function ProfileSettingsForm({ role }: Props) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsAvailable, setNotificationsAvailable] = useState(true);
   const [instituteMedia, setInstituteMedia] = useState<InstituteMediaItem[]>([]);
+  const [pendingInstituteMediaFiles, setPendingInstituteMediaFiles] = useState<File[]>([]);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -137,12 +147,32 @@ export function ProfileSettingsForm({ role }: Props) {
       body: form,
     });
 
-    const body = await response.json().catch(() => null);
+    const raw = await response.text();
+    const body = parseJsonObject(raw);
     if (!response.ok) {
       throw new Error((typeof body?.error === "string" && body.error) || "Unable to update profile");
     }
 
     return body;
+  }
+
+  async function uploadInstituteMediaFiles(files: File[]) {
+    if (files.length === 0) return;
+
+    for (const file of files) {
+      const mediaForm = new FormData();
+      mediaForm.set("file", file);
+
+      const response = await fetch("/api/account/profile/institute-media", {
+        method: "POST",
+        body: mediaForm,
+      });
+
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error((typeof body?.error === "string" && body.error) || `Unable to upload ${file.name}`);
+      }
+    }
   }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
@@ -155,8 +185,24 @@ export function ProfileSettingsForm({ role }: Props) {
     const workflow = submitter?.value === "resubmit" ? "resubmit" : "save";
 
     try {
-      await submitProfile(new FormData(event.currentTarget), workflow === "resubmit");
-      setMessage(workflow === "resubmit" ? "Resubmission sent. Your account is back under review." : "Profile updated successfully.");
+      const formData = new FormData(event.currentTarget);
+      const mediaFiles = formData.getAll("instituteMedia").filter((item): item is File => item instanceof File && item.size > 0);
+      formData.delete("instituteMedia");
+
+      await submitProfile(formData, workflow === "resubmit");
+
+      if (role === "institute" && mediaFiles.length > 0) {
+        await uploadInstituteMediaFiles(mediaFiles);
+      }
+
+      setPendingInstituteMediaFiles([]);
+      setMessage(
+        workflow === "resubmit"
+          ? "Resubmission sent. Your account is back under review."
+          : role === "institute" && mediaFiles.length > 0
+            ? "Profile updated and media uploaded successfully."
+            : "Profile updated successfully."
+      );
       await loadProfile();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : workflow === "resubmit" ? "Unable to resubmit profile" : "Unable to update profile");
@@ -304,9 +350,16 @@ export function ProfileSettingsForm({ role }: Props) {
                 name="instituteMedia"
                 type="file"
                 multiple
-                accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime"
+                accept="image/png,image/jpeg,image/webp,video/mp4"
                 className="mt-2 rounded border bg-white px-3 py-2"
+                onChange={(event) => {
+                  const files = Array.from(event.currentTarget.files ?? []);
+                  setPendingInstituteMediaFiles(files);
+                }}
               />
+              {pendingInstituteMediaFiles.length > 0 ? (
+                <p className="mt-1 text-xs text-slate-500">{pendingInstituteMediaFiles.length} file(s) selected. Files upload when you click Save profile.</p>
+              ) : null}
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
