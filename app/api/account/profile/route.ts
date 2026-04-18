@@ -13,7 +13,9 @@ function hasMissingProfileColumn(errorMessage: string, columnName: "avatar_url" 
   const normalized = errorMessage.toLowerCase();
   return (
     new RegExp(`column\\s+profiles\\.${columnName}\\s+does\\s+not\\s+exist`, "i").test(errorMessage) ||
-    (normalized.includes(`'${columnName}'`) && normalized.includes("'profiles'") && normalized.includes("schema cache"))
+    (normalized.includes(columnName) &&
+      normalized.includes("profiles") &&
+      (normalized.includes("schema cache") || normalized.includes("could not find the")))
   );
 }
 
