@@ -184,6 +184,9 @@ export default async function InstituteDashboardPage() {
         <div className="rounded border bg-white p-4 lg:col-span-2">
           <h2 className="text-base font-semibold">Quick actions</h2>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <Link href="/institute/courses#create-course" className="rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100">
+              Add new course
+            </Link>
             <Link href="/institute/courses" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Manage courses (edit/delete)
             </Link>
@@ -241,6 +244,14 @@ export default async function InstituteDashboardPage() {
               </div>
             ))}
             {courses.length === 0 ? <p className="text-slate-600">No courses yet.</p> : null}
+            {courses.length === 0 ? (
+              <Link
+                href="/institute/courses#create-course"
+                className="inline-flex w-fit rounded border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-800 hover:bg-brand-100"
+              >
+                Add your first course
+              </Link>
+            ) : null}
           </div>
         </div>
 
