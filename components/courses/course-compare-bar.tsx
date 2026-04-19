@@ -10,6 +10,7 @@ type ComparableCourse = {
 
 const STORAGE_KEY = "vi-course-compare";
 const MAX_COMPARE = 4;
+const DEFAULT_VISIBLE_COUNT = 24;
 
 function loadCompareIds() {
   if (typeof window === "undefined") return [] as string[];
@@ -28,16 +29,36 @@ function saveCompareIds(ids: string[]) {
 
 export function CourseCompareBar({ courses }: { courses: ComparableCourse[] }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(DEFAULT_VISIBLE_COUNT);
 
   useEffect(() => {
     setSelected(loadCompareIds());
   }, []);
 
   const selectedValid = useMemo(() => selected.filter((id) => courses.some((course) => course.id === id)), [courses, selected]);
+  const selectedCourseTitles = useMemo(
+    () =>
+      selectedValid
+        .map((id) => courses.find((course) => course.id === id)?.title)
+        .filter((title): title is string => Boolean(title)),
+    [courses, selectedValid],
+  );
+  const filteredCourses = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return courses;
+    return courses.filter((course) => course.title.toLowerCase().includes(normalized));
+  }, [courses, query]);
+  const visibleCourses = useMemo(() => filteredCourses.slice(0, visibleCount), [filteredCourses, visibleCount]);
+  const hasMore = filteredCourses.length > visibleCourses.length;
 
   useEffect(() => {
     saveCompareIds(selectedValid);
   }, [selectedValid]);
+
+  useEffect(() => {
+    setVisibleCount(DEFAULT_VISIBLE_COUNT);
+  }, [query]);
 
   function toggle(courseId: string) {
     setSelected((prev) => {
@@ -53,6 +74,11 @@ export function CourseCompareBar({ courses }: { courses: ComparableCourse[] }) {
         <div>
           <p className="text-sm font-medium text-slate-900">Compare courses (up to {MAX_COMPARE})</p>
           <p className="text-xs text-slate-600">Select up to four courses to compare them side by side.</p>
+          {selectedCourseTitles.length > 0 ? (
+            <p className="mt-1 text-xs text-slate-600">
+              Selected: <span className="font-medium text-slate-800">{selectedCourseTitles.join(", ")}</span>
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -72,14 +98,41 @@ export function CourseCompareBar({ courses }: { courses: ComparableCourse[] }) {
         </div>
       </div>
 
+      <div className="mt-3">
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search courses to compare..."
+          className="w-full rounded-md border px-3 py-2 text-xs outline-none ring-brand-200 focus:ring"
+          aria-label="Search courses for compare"
+        />
+      </div>
+
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {courses.map((course) => (
+        {visibleCourses.map((course) => (
           <label key={course.id} className="flex items-center gap-2 rounded border px-2 py-1.5 text-xs text-slate-700">
             <input type="checkbox" checked={selectedValid.includes(course.id)} onChange={() => toggle(course.id)} />
             <span className="line-clamp-1">{course.title}</span>
           </label>
         ))}
       </div>
+
+      {filteredCourses.length === 0 ? (
+        <p className="mt-3 text-xs text-slate-500">No courses found for this search.</p>
+      ) : null}
+
+      {hasMore ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            className="rounded border px-3 py-1.5 text-xs text-slate-700"
+            onClick={() => setVisibleCount((prev) => prev + DEFAULT_VISIBLE_COUNT)}
+          >
+            Show more ({filteredCourses.length - visibleCourses.length} remaining)
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
