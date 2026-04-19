@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { CourseCompareBar } from "@/components/courses/course-compare-bar";
 import { createClient } from "@/lib/supabase/server";
 
 type CompareCourse = {
@@ -33,6 +34,12 @@ export default async function CourseComparePage({ searchParams }: { searchParams
     .slice(0, 4);
 
   const supabase = await createClient();
+  const { data: availableCourses } = await supabase
+    .from("courses")
+    .select("id,title")
+    .eq("status", "approved")
+    .order("created_at", { ascending: false });
+
   const { data } = ids.length
     ? await supabase
         .from("courses")
@@ -68,6 +75,10 @@ export default async function CourseComparePage({ searchParams }: { searchParams
       </div>
       <p className="mt-2 text-sm text-slate-600">Compare approved courses side by side across key details.</p>
 
+      <div className="mt-6">
+        <CourseCompareBar courses={(availableCourses ?? []).map((course) => ({ id: course.id, title: course.title }))} />
+      </div>
+
       {courses.length > 0 ? (
         <div className="mt-6 overflow-x-auto rounded-xl border bg-white">
           <table className="min-w-full divide-y text-sm">
@@ -92,7 +103,7 @@ export default async function CourseComparePage({ searchParams }: { searchParams
           </table>
         </div>
       ) : (
-        <div className="mt-6 rounded border bg-white p-4 text-sm text-slate-600">Select at least one approved course from the courses page to compare.</div>
+        <div className="mt-6 rounded border bg-white p-4 text-sm text-slate-600">Select at least one approved course above to compare.</div>
       )}
     </div>
   );
