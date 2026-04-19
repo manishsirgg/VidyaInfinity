@@ -8,6 +8,12 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
+function isMissingStoragePathColumnError(message: string | undefined) {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return normalized.includes("storage_path") && normalized.includes("column");
+}
+
 export async function POST(request: Request, { params }: Params) {
   const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
@@ -54,12 +60,25 @@ export async function POST(request: Request, { params }: Params) {
 
   const mediaType = file.type.startsWith("video/") ? "video" : "image";
 
-  const { error: mediaError } = await admin.data.from("course_media").insert({
+  const mediaPayload = {
     course_id: course.id,
     file_url: uploaded.publicUrl,
     type: mediaType,
     storage_path: uploaded.path,
-  });
+  };
+
+  const { error: mediaError } = await admin.data.from("course_media").insert(mediaPayload);
+
+  if (mediaError && isMissingStoragePathColumnError(mediaError.message)) {
+    const { error: fallbackInsertError } = await admin.data.from("course_media").insert({
+      course_id: course.id,
+      file_url: uploaded.publicUrl,
+      type: mediaType,
+    });
+
+    if (fallbackInsertError) return NextResponse.json({ error: fallbackInsertError.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
 
   if (mediaError) return NextResponse.json({ error: mediaError.message }, { status: 500 });
 
