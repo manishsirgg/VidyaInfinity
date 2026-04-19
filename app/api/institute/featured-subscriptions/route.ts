@@ -13,6 +13,7 @@ type FeaturedSummary = {
   hasActive: boolean;
   hasScheduled: boolean;
   nextPurchaseWillStack: boolean;
+  upgradeAvailable: boolean;
 };
 
 function toNumber(value: unknown) {
@@ -41,13 +42,14 @@ function parsePlans(rows: PlanRecord[]) {
     price: toNumber(row.price ?? row.amount),
     currency: typeof row.currency === "string" && row.currency ? row.currency : "INR",
     sortOrder: toNumber(row.sort_order),
+    tierRank: toNumber(row.tier_rank),
     isActive: Boolean(row.is_active ?? true),
   }));
 }
 
-function buildSummary(subscriptions: SubscriptionRecord[]): FeaturedSummary {
+function buildSummary(subscriptions: SubscriptionRecord[], plans: ReturnType<typeof parsePlans>): FeaturedSummary {
   const now = Date.now();
-  const normalized = subscriptions
+  const normalized: Array<Record<string, unknown>> = subscriptions
     .map((subscription) => {
       const startsAt = toIsoDate(subscription.starts_at);
       const endsAt = toIsoDate(subscription.ends_at);
@@ -71,12 +73,17 @@ function buildSummary(subscriptions: SubscriptionRecord[]): FeaturedSummary {
     .filter((subscription) => new Date(String(subscription.starts_at)).getTime() > now)
     .sort((left, right) => new Date(String(left.starts_at)).getTime() - new Date(String(right.starts_at)).getTime())[0] ?? null;
 
+  const currentPlanId = typeof active?.plan_id === "string" ? active.plan_id : null;
+  const currentPlan = plans.find((item) => item.id === currentPlanId);
+  const upgradeAvailable = Boolean(currentPlan && plans.some((item) => item.tierRank > currentPlan.tierRank));
+
   return {
     current: active,
     nextScheduled: scheduled,
     hasActive: Boolean(active),
     hasScheduled: Boolean(scheduled),
     nextPurchaseWillStack: Boolean(active || scheduled),
+    upgradeAvailable,
   };
 }
 
@@ -118,6 +125,6 @@ export async function GET() {
     plans: parsedPlans,
     orders: (orders ?? []) as OrderRecord[],
     subscriptions: parsedSubscriptions,
-    summary: buildSummary(parsedSubscriptions),
+    summary: buildSummary(parsedSubscriptions, parsedPlans),
   });
 }

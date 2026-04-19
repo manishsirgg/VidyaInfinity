@@ -17,21 +17,30 @@ type FeaturedPlan = {
   durationDays: number;
   price: number;
   currency: string;
+  tierRank: number;
 };
 
 type FeaturedOrder = {
   id: string;
   amount: number;
+  base_amount: number | null;
+  credit_adjustment_amount: number | null;
+  final_payable_amount: number | null;
   currency: string;
   payment_status: string;
   order_status: string;
   created_at: string;
   paid_at: string | null;
   duration_days: number;
+  is_upgrade: boolean | null;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+  auto_renew_requested: boolean | null;
 };
 
 type FeaturedSubscription = {
   id: string;
+  plan_id: string | null;
   plan_code: string;
   amount: number;
   currency: string;
@@ -40,6 +49,12 @@ type FeaturedSubscription = {
   status: string;
   queued_from_previous: boolean | null;
   activated_at: string | null;
+  upgraded_from_subscription_id: string | null;
+  upgraded_to_subscription_id: string | null;
+  auto_renew: boolean | null;
+  end_behavior: string | null;
+  upgrade_credit_used: number | null;
+  auto_renewed_from_subscription_id: string | null;
 };
 
 type FeaturedSummary = {
@@ -48,6 +63,24 @@ type FeaturedSummary = {
   hasActive: boolean;
   hasScheduled: boolean;
   nextPurchaseWillStack: boolean;
+  upgradeAvailable: boolean;
+};
+
+type UpgradePreview = {
+  plan: {
+    id: string;
+    baseAmount: number;
+    creditAdjustmentAmount: number;
+    finalPayableAmount: number;
+    currency: string;
+    durationDays: number;
+  };
+  purchaseMode: {
+    isUpgrade: boolean;
+    queuedOrder: boolean;
+    currentTierRank: number;
+    selectedTierRank: number;
+  };
 };
 
 function inr(value: number, currency = "INR") {
@@ -67,6 +100,13 @@ function when(value: string | null | undefined) {
   });
 }
 
+function dateOnly(value: string | null | undefined) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 export default function InstituteFeaturedPage() {
   const [plans, setPlans] = useState<FeaturedPlan[]>([]);
   const [orders, setOrders] = useState<FeaturedOrder[]>([]);
@@ -76,13 +116,28 @@ export default function InstituteFeaturedPage() {
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"info" | "success" | "error">("info");
+  const [autoRenewRequested, setAutoRenewRequested] = useState(false);
+  const [previewByPlanId, setPreviewByPlanId] = useState<Record<string, UpgradePreview>>({});
 
   const isBusy = Boolean(busyPlanId);
 
+  const activePlan = useMemo(() => {
+    if (!summary?.current?.plan_id) return null;
+    return plans.find((plan) => plan.id === summary.current?.plan_id) ?? null;
+  }, [plans, summary]);
+
   const activePlanLabel = useMemo(() => {
     if (!summary?.current) return "No active featured plan";
-    return `${summary.current.plan_code} · ${inr(Number(summary.current.amount ?? 0), summary.current.currency ?? "INR")}`;
-  }, [summary]);
+    const name = activePlan?.name ?? summary.current.plan_code;
+    return `${name} · ${inr(Number(summary.current.amount ?? 0), summary.current.currency ?? "INR")}`;
+  }, [activePlan, summary]);
+
+  const subscriptionBuckets = useMemo(() => {
+    const active = subscriptions.filter((item) => item.status === "active");
+    const scheduled = subscriptions.filter((item) => item.status === "scheduled");
+    const expired = subscriptions.filter((item) => item.status === "expired");
+    return { active, scheduled, expired };
+  }, [subscriptions]);
 
   async function loadData() {
     setLoading(true);
@@ -107,6 +162,24 @@ export default function InstituteFeaturedPage() {
     void loadData();
   }, []);
 
+  async function loadPreview(plan: FeaturedPlan) {
+    const response = await fetch("/api/institute/featured-subscriptions/create-order", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planId: plan.id, autoRenewRequested, previewOnly: true }),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.plan) return null;
+
+    const preview = {
+      plan: body.plan,
+      purchaseMode: body.purchaseMode,
+    } as UpgradePreview;
+
+    setPreviewByPlanId((current) => ({ ...current, [plan.id]: preview }));
+    return preview;
+  }
+
   async function activatePlan(plan: FeaturedPlan) {
     if (isBusy) return;
 
@@ -117,7 +190,7 @@ export default function InstituteFeaturedPage() {
       const createResponse = await fetch("/api/institute/featured-subscriptions/create-order", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ planId: plan.id }),
+        body: JSON.stringify({ planId: plan.id, autoRenewRequested }),
       });
 
       const createBody = await createResponse.json().catch(() => null);
@@ -165,9 +238,11 @@ export default function InstituteFeaturedPage() {
 
           setMessageType("success");
           setMessage(
-            verifyBody?.status === "scheduled"
-              ? "Payment successful. Plan purchased and scheduled to start after your current plan."
-              : "Payment successful. Featured listing is active now."
+            verifyBody?.isUpgrade
+              ? "Upgrade successful. New featured plan is active immediately."
+              : verifyBody?.status === "scheduled"
+                ? "Payment successful. Plan purchased and scheduled to start after your current plan."
+                : "Payment successful. Featured listing is active now."
           );
           await loadData();
           setBusyPlanId(null);
@@ -189,6 +264,29 @@ export default function InstituteFeaturedPage() {
     }
   }
 
+  function getPlanState(plan: FeaturedPlan) {
+    const currentPlan = activePlan;
+    if (!summary?.current || !currentPlan) {
+      return { disabled: false, badge: null as string | null, isUpgrade: false, willQueue: false };
+    }
+
+    if (plan.id === currentPlan.id) {
+      return { disabled: true, badge: "Current Plan", isUpgrade: false, willQueue: true };
+    }
+
+    if (plan.tierRank < currentPlan.tierRank) {
+      return { disabled: true, badge: "Lower Tier", isUpgrade: false, willQueue: true };
+    }
+
+    if (plan.tierRank === currentPlan.tierRank) {
+      return { disabled: false, badge: "Scheduled", isUpgrade: false, willQueue: true };
+    }
+
+    return { disabled: false, badge: "Upgrade", isUpgrade: true, willQueue: false };
+  }
+
+  const renewalMode = summary?.current?.end_behavior === "auto_renew" ? "Auto renew enabled" : "Stops after expiry";
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
@@ -208,26 +306,26 @@ export default function InstituteFeaturedPage() {
         {loading ? (
           <p className="mt-3 text-sm text-slate-500">Loading featured summary...</p>
         ) : summary ? (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+          <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded border p-3">
-              <p className="text-xs uppercase text-slate-500">Currently Active</p>
+              <p className="text-xs uppercase text-slate-500">Current Plan</p>
               <p className="mt-1 font-medium">{activePlanLabel}</p>
+              {summary.upgradeAvailable ? <p className="mt-2 inline-flex rounded bg-brand-100 px-2 py-0.5 text-xs text-brand-700">Upgrade available</p> : null}
             </div>
             <div className="rounded border p-3">
-              <p className="text-xs uppercase text-slate-500">Expires On</p>
+              <p className="text-xs uppercase text-slate-500">Expiry date</p>
               <p className="mt-1 font-medium">{when(summary.current?.ends_at)}</p>
             </div>
             <div className="rounded border p-3">
-              <p className="text-xs uppercase text-slate-500">Scheduled Next</p>
-              <p className="mt-1 font-medium">
-                {summary.nextScheduled
-                  ? `${summary.nextScheduled.plan_code} (${when(summary.nextScheduled.starts_at)})`
-                  : "No scheduled plan"}
-              </p>
+              <p className="text-xs uppercase text-slate-500">Auto Renew</p>
+              <p className="mt-1 font-medium">{summary.current?.auto_renew ? "ON" : "OFF"}</p>
+              <p className="text-xs text-slate-500">{renewalMode}</p>
             </div>
             <div className="rounded border p-3">
-              <p className="text-xs uppercase text-slate-500">Stacking</p>
-              <p className="mt-1 font-medium">{summary.nextPurchaseWillStack ? "Yes, next purchase will queue" : "No, starts immediately"}</p>
+              <p className="text-xs uppercase text-slate-500">Queued plan</p>
+              <p className="mt-1 font-medium">
+                {summary.nextScheduled ? `${summary.nextScheduled.plan_code} (${dateOnly(summary.nextScheduled.starts_at)})` : "No scheduled plan"}
+              </p>
             </div>
           </div>
         ) : (
@@ -236,24 +334,62 @@ export default function InstituteFeaturedPage() {
       </section>
 
       <section className="mt-6">
-        <h2 className="text-lg font-semibold">Choose a plan</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Choose a plan</h2>
+          <label className="inline-flex items-center gap-2 rounded border bg-white px-3 py-2 text-sm">
+            <input type="checkbox" checked={autoRenewRequested} onChange={(event) => setAutoRenewRequested(event.target.checked)} />
+            <span>Auto renew this plan</span>
+          </label>
+        </div>
+
         <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          {plans.map((plan) => (
-            <article key={plan.id} className="rounded-xl border bg-white p-4">
-              <p className="text-xs uppercase text-slate-500">{plan.name}</p>
-              <p className="mt-1 text-2xl font-semibold">{inr(plan.price, plan.currency)}</p>
-              <p className="mt-1 text-xs text-slate-600">{plan.durationDays} days</p>
-              <p className="mt-2 text-xs text-slate-600">{plan.description ?? "Featured discovery boost for your institute."}</p>
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={() => activatePlan(plan)}
-                className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm text-white disabled:opacity-70"
-              >
-                {busyPlanId === plan.id ? "Processing..." : "Activate plan"}
-              </button>
-            </article>
-          ))}
+          {plans.map((plan) => {
+            const state = getPlanState(plan);
+            const preview = previewByPlanId[plan.id];
+            return (
+              <article key={plan.id} className="rounded-xl border bg-white p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs uppercase text-slate-500">{plan.name}</p>
+                  {state.badge ? <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase text-slate-700">{state.badge}</span> : null}
+                </div>
+                <p className="mt-1 text-2xl font-semibold">{inr(plan.price, plan.currency)}</p>
+                <p className="mt-1 text-xs text-slate-600">{plan.durationDays} days</p>
+                <p className="mt-2 text-xs text-slate-600">{plan.description ?? "Featured discovery boost for your institute."}</p>
+
+                {state.willQueue && summary?.current ? (
+                  <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">This plan will begin after your current subscription ends.</p>
+                ) : null}
+
+                {state.isUpgrade ? (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => void loadPreview(plan)}
+                    className="mt-3 w-full rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-700 disabled:opacity-70"
+                  >
+                    Check upgrade credit
+                  </button>
+                ) : null}
+
+                {preview?.purchaseMode.isUpgrade ? (
+                  <div className="mt-2 rounded border border-brand-100 bg-brand-50 p-2 text-xs text-brand-800">
+                    <p>Original plan amount: {inr(preview.plan.baseAmount, preview.plan.currency)}</p>
+                    <p>Remaining credit: {inr(preview.plan.creditAdjustmentAmount, preview.plan.currency)}</p>
+                    <p>Final payable amount: {inr(preview.plan.finalPayableAmount, preview.plan.currency)}</p>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  disabled={isBusy || state.disabled}
+                  onClick={() => void activatePlan(plan)}
+                  className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {busyPlanId === plan.id ? "Processing..." : state.isUpgrade ? "Upgrade Now" : state.badge === "Current Plan" ? "Current Plan" : "Activate plan"}
+                </button>
+              </article>
+            );
+          })}
           {!loading && plans.length === 0 ? (
             <p className="rounded border bg-white p-4 text-sm text-slate-600 md:col-span-2 xl:col-span-5">
               No active featured plans are available right now. Please contact support.
@@ -264,15 +400,33 @@ export default function InstituteFeaturedPage() {
 
       <section className="mt-8 rounded-xl border bg-white p-4">
         <h2 className="text-lg font-semibold">Subscription history</h2>
-        <div className="mt-3 space-y-2 text-sm">
-          {subscriptions.map((item) => (
-            <div key={item.id} className="rounded border px-3 py-2">
-              <p className="font-medium">{item.plan_code} · {inr(Number(item.amount ?? 0), item.currency ?? "INR")}</p>
-              <p className="text-slate-600">{when(item.starts_at)} - {when(item.ends_at)} · {item.status}</p>
-              {item.queued_from_previous ? <p className="text-xs text-brand-700">Queued from previous active subscription window.</p> : null}
-            </div>
-          ))}
-          {!loading && subscriptions.length === 0 ? <p className="text-slate-500">No featured subscription yet.</p> : null}
+        <div className="mt-3 grid gap-4 md:grid-cols-3">
+          {(["active", "scheduled", "expired"] as const).map((bucket) => {
+            const items = subscriptionBuckets[bucket];
+            return (
+              <div key={bucket} className="rounded border p-3">
+                <p className="text-sm font-semibold capitalize">{bucket}</p>
+                <div className="mt-2 space-y-2 text-sm">
+                  {items.map((item) => (
+                    <div key={item.id} className="rounded border px-2 py-2">
+                      <p className="font-medium">{item.plan_code} · {inr(Number(item.amount ?? 0), item.currency ?? "INR")}</p>
+                      <p className="text-xs text-slate-600">{when(item.starts_at)} - {when(item.ends_at)}</p>
+                      <div className="mt-1 flex flex-wrap gap-1 text-[10px] uppercase">
+                        {item.upgraded_from_subscription_id ? <span className="rounded bg-brand-100 px-1.5 py-0.5 text-brand-700">Upgrade</span> : null}
+                        {item.queued_from_previous ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">Scheduled</span> : null}
+                        {item.auto_renew ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700">Auto Renew</span> : null}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">Renewal behavior: {item.end_behavior ?? "-"}</p>
+                      {item.upgrade_credit_used ? <p className="text-xs text-slate-500">Upgrade credits used: {inr(Number(item.upgrade_credit_used), item.currency ?? "INR")}</p> : null}
+                      {item.upgraded_to_subscription_id ? <p className="text-xs text-slate-500">Replaced by subscription: {item.upgraded_to_subscription_id}</p> : null}
+                      {item.auto_renewed_from_subscription_id ? <p className="text-xs text-slate-500">Auto-renewed from: {item.auto_renewed_from_subscription_id}</p> : null}
+                    </div>
+                  ))}
+                  {!loading && items.length === 0 ? <p className="text-xs text-slate-500">No records.</p> : null}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -281,8 +435,15 @@ export default function InstituteFeaturedPage() {
         <div className="mt-3 space-y-2 text-sm">
           {orders.map((order) => (
             <div key={order.id} className="rounded border px-3 py-2">
-              <p className="font-medium">{inr(Number(order.amount ?? 0), order.currency ?? "INR")} · {order.duration_days} days</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-medium">{inr(Number(order.base_amount ?? order.amount ?? 0), order.currency ?? "INR")} · {order.duration_days} days</p>
+                {order.is_upgrade ? <span className="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] uppercase text-brand-700">Upgrade</span> : null}
+                {order.order_status === "scheduled" ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase text-amber-700">Scheduled</span> : null}
+                {order.auto_renew_requested ? <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] uppercase text-emerald-700">Auto Renew</span> : null}
+              </div>
+              <p className="text-slate-600">Original: {inr(Number(order.base_amount ?? order.amount ?? 0), order.currency ?? "INR")} · Credit: {inr(Number(order.credit_adjustment_amount ?? 0), order.currency ?? "INR")} · Final: {inr(Number(order.final_payable_amount ?? order.amount ?? 0), order.currency ?? "INR")}</p>
               <p className="text-slate-600">Payment: {order.payment_status} · Order: {order.order_status}</p>
+              <p className="text-xs text-slate-500">Razorpay order: {order.razorpay_order_id ?? "-"} · Payment: {order.razorpay_payment_id ?? "-"}</p>
               <p className="text-xs text-slate-500">Created {when(order.created_at)}{order.paid_at ? ` · Paid ${when(order.paid_at)}` : ""}</p>
             </div>
           ))}
