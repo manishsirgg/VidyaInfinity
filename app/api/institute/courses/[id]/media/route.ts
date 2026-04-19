@@ -8,6 +8,10 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
+const MAX_MEDIA_FILES_PER_COURSE = 10;
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024;
+
 function isMissingStoragePathColumnError(message?: string) {
   if (!message) return false;
   const normalized = message.toLowerCase();
@@ -63,11 +67,42 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "file is required" }, { status: 400 });
     }
 
+    if (file.type.startsWith("image/") && file.size > MAX_IMAGE_SIZE_BYTES) {
+      return NextResponse.json(
+        {
+          error: `Upload failed for ${file.name}: Image files must be 10MB or smaller.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (file.type.startsWith("video/") && file.size > MAX_VIDEO_SIZE_BYTES) {
+      return NextResponse.json(
+        {
+          error: `Upload failed for ${file.name}: Video files must be 50MB or smaller.`,
+        },
+        { status: 400 }
+      );
+    }
+
     if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
       return NextResponse.json(
         { error: "Only image and video files are allowed for course media" },
         { status: 400 }
       );
+    }
+
+    const { count: mediaCount, error: mediaCountError } = await admin.data
+      .from("course_media")
+      .select("id", { count: "exact", head: true })
+      .eq("course_id", course.id);
+
+    if (mediaCountError) {
+      return NextResponse.json({ error: mediaCountError.message }, { status: 500 });
+    }
+
+    if ((mediaCount ?? 0) >= MAX_MEDIA_FILES_PER_COURSE) {
+      return NextResponse.json({ error: `A maximum of ${MAX_MEDIA_FILES_PER_COURSE} media files is allowed per course.` }, { status: 400 });
     }
 
     const uploaded = await uploadCourseMedia({
