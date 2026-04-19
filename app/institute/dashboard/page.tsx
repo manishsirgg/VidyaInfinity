@@ -48,7 +48,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -77,6 +77,13 @@ export default async function InstituteDashboardPage() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(5),
+    dataClient
+      .from("active_institute_featured_status")
+      .select("plan_code,starts_at,ends_at")
+      .eq("institute_id", institute.id)
+      .order("ends_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ plan_code: string; starts_at: string; ends_at: string }>(),
   ]);
 
   const courses = coursesResult.data ?? [];
@@ -84,6 +91,7 @@ export default async function InstituteDashboardPage() {
   const orderRows = orderResult.data ?? [];
   const payouts = payoutsResult.data ?? [];
   const recentNotifications = recentNotificationsResult.data ?? [];
+  const activeFeaturedStatus = featuredStatusResult.data ?? null;
 
   const now = Date.now();
   const days30 = 30 * 24 * 60 * 60 * 1000;
@@ -225,6 +233,16 @@ export default async function InstituteDashboardPage() {
             <Link href="/institute/featured" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Activate featured listing
             </Link>
+          </div>
+          <div className="mt-3 rounded border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-900">
+            {activeFeaturedStatus ? (
+              <p>
+                Featured listing active ({activeFeaturedStatus.plan_code}) until{" "}
+                {new Date(activeFeaturedStatus.ends_at).toLocaleDateString("en-IN")}.
+              </p>
+            ) : (
+              <p>No active featured listing. Activate a plan to boost public visibility.</p>
+            )}
           </div>
           <p className="mt-3 text-xs text-slate-500">Institute account created on {new Date(institute.created_at).toLocaleDateString("en-IN")}.</p>
         </div>

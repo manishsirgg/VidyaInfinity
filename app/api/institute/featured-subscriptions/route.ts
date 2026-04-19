@@ -1,64 +1,123 @@
 import { NextResponse } from "next/server";
 
-import { featuredInstitutePlans } from "@/lib/institute/featured-plans";
-import { requireUser } from "@/lib/auth/get-session";
+import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
-export async function GET() {
-  const { user } = await requireUser("institute");
-  const supabase = await createClient();
-  const admin = getSupabaseAdmin();
-  const dataClient = admin.ok ? admin.data : supabase;
+type PlanRecord = Record<string, unknown>;
+type OrderRecord = Record<string, unknown>;
+type SubscriptionRecord = Record<string, unknown>;
 
-  const { data: institute } = await dataClient.from("institutes").select("id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+type FeaturedSummary = {
+  current: SubscriptionRecord | null;
+  nextScheduled: SubscriptionRecord | null;
+  hasActive: boolean;
+  hasScheduled: boolean;
+  nextPurchaseWillStack: boolean;
+};
 
-  if (!institute) return NextResponse.json({ subscriptions: [] });
-
-  const { data, error } = await dataClient
-    .from("institute_featured_subscriptions")
-    .select("id,plan_code,amount,currency,duration_days,starts_at,ends_at,status,lead_boost_note,created_at")
-    .eq("institute_id", institute.id)
-    .order("created_at", { ascending: false });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ subscriptions: data ?? [], plans: featuredInstitutePlans });
+function toNumber(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
-export async function POST(request: Request) {
-  const { user } = await requireUser("institute");
-  const body = (await request.json()) as { planCode?: string };
-  const plan = featuredInstitutePlans.find((item) => item.code === body.planCode);
+function toIsoDate(value: unknown) {
+  if (typeof value !== "string") return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
 
-  if (!plan) return NextResponse.json({ error: "Invalid plan." }, { status: 400 });
+function parsePlans(rows: PlanRecord[]) {
+  return rows.map((row) => ({
+    id: String(row.id),
+    code: String(row.plan_code ?? row.code ?? ""),
+    name: String(row.name ?? row.label ?? row.plan_code ?? row.code ?? "Featured Plan"),
+    description: typeof row.description === "string" ? row.description : null,
+    durationDays: toNumber(row.duration_days),
+    price: toNumber(row.price ?? row.amount),
+    currency: typeof row.currency === "string" && row.currency ? row.currency : "INR",
+    sortOrder: toNumber(row.sort_order),
+    isActive: Boolean(row.is_active ?? true),
+  }));
+}
 
-  const supabase = await createClient();
-  const admin = getSupabaseAdmin();
-  const dataClient = admin.ok ? admin.data : supabase;
-
-  const { data: institute } = await dataClient.from("institutes").select("id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (!institute) return NextResponse.json({ error: "Institute profile not found." }, { status: 404 });
-
-  const startsAt = new Date();
-  const endsAt = new Date(startsAt.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
-
-  const { data, error } = await dataClient
-    .from("institute_featured_subscriptions")
-    .insert({
-      institute_id: institute.id,
-      created_by: user.id,
-      plan_code: plan.code,
-      amount: plan.amount,
-      duration_days: plan.durationDays,
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-      status: "active",
-      lead_boost_note: "Featured boost enabled: priority listing placement and higher lead visibility.",
+function buildSummary(subscriptions: SubscriptionRecord[]): FeaturedSummary {
+  const now = Date.now();
+  const normalized = subscriptions
+    .map((subscription) => {
+      const startsAt = toIsoDate(subscription.starts_at);
+      const endsAt = toIsoDate(subscription.ends_at);
+      return {
+        ...subscription,
+        starts_at: startsAt,
+        ends_at: endsAt,
+      };
     })
+    .filter((subscription) => Boolean(subscription.starts_at) && Boolean(subscription.ends_at));
+
+  const active = normalized
+    .filter((subscription) => {
+      const startsAt = new Date(String(subscription.starts_at)).getTime();
+      const endsAt = new Date(String(subscription.ends_at)).getTime();
+      return startsAt <= now && endsAt > now;
+    })
+    .sort((left, right) => new Date(String(right.ends_at)).getTime() - new Date(String(left.ends_at)).getTime())[0] ?? null;
+
+  const scheduled = normalized
+    .filter((subscription) => new Date(String(subscription.starts_at)).getTime() > now)
+    .sort((left, right) => new Date(String(left.starts_at)).getTime() - new Date(String(right.starts_at)).getTime())[0] ?? null;
+
+  return {
+    current: active,
+    nextScheduled: scheduled,
+    hasActive: Boolean(active),
+    hasScheduled: Boolean(scheduled),
+    nextPurchaseWillStack: Boolean(active || scheduled),
+  };
+}
+
+export async function GET() {
+  const auth = await requireApiUser("institute");
+  if ("error" in auth) return auth.error;
+
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  try {
+    await admin.data.rpc("expire_featured_subscriptions");
+  } catch {
+    // Ignore expiry cleanup failures for read path.
+  }
+
+  const { data: institute } = await admin.data
+    .from("institutes")
     .select("id")
-    .single();
+    .eq("user_id", auth.user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!institute) {
+    return NextResponse.json({ plans: [], orders: [], subscriptions: [], summary: null });
+  }
 
-  return NextResponse.json({ id: data.id }, { status: 201 });
+  const [{ data: plans }, { data: orders }, { data: subscriptions }] = await Promise.all([
+    admin.data.from("featured_listing_plans").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+    admin.data.from("featured_listing_orders").select("*").eq("institute_id", institute.id).order("created_at", { ascending: false }),
+    admin.data.from("institute_featured_subscriptions").select("*").eq("institute_id", institute.id).order("starts_at", { ascending: false }),
+  ]);
+
+  const parsedPlans = parsePlans((plans ?? []) as PlanRecord[]);
+  const parsedSubscriptions = (subscriptions ?? []) as SubscriptionRecord[];
+
+  return NextResponse.json({
+    plans: parsedPlans,
+    orders: (orders ?? []) as OrderRecord[],
+    subscriptions: parsedSubscriptions,
+    summary: buildSummary(parsedSubscriptions),
+  });
 }

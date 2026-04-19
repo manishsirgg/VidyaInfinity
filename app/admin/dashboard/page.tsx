@@ -16,6 +16,7 @@ const adminModules = [
   { href: "/admin/psychometric-tests", label: "Psychometric Tests" },
   { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/webinars", label: "Webinars" },
+  { href: "/admin/featured-listings", label: "Featured Listings" },
   { href: "/admin/profile", label: "Admin Profile" },
 ];
 
@@ -119,6 +120,9 @@ export default async function AdminDashboardPage() {
         </Link>
         <Link href="/admin/webinars" className="rounded border bg-white p-4">
           Webinar events: Manage live sessions
+        </Link>
+        <Link href="/admin/featured-listings" className="rounded border bg-white p-4">
+          Featured subscriptions: Plans, orders, and active windows
         </Link>
       </div>
 

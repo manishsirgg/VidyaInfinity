@@ -5,16 +5,37 @@ import { CourseCompareBar } from "@/components/courses/course-compare-bar";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+type ActiveFeaturedInstituteRecord = {
+  institute_id: string;
+};
+
 export default async function CoursesPage() {
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
   const { data: courses } = await dataClient
     .from("courses")
-    .select("id,title,summary,fees,category,subject,level,language,mode,duration,location,course_media(file_url,type),status")
+    .select("id,institute_id,title,summary,fees,category,subject,level,language,mode,duration,location,course_media(file_url,type),status")
     .eq("status", "approved")
     .or("is_active.is.null,is_active.eq.true")
     .order("created_at", { ascending: false });
+  const instituteIds = [...new Set((courses ?? []).map((course) => course.institute_id).filter(Boolean))];
+  const featuredRows = instituteIds.length
+    ? (
+        await dataClient
+          .from("active_institute_featured_status")
+          .select("institute_id")
+          .in("institute_id", instituteIds)
+      ).data ?? []
+    : [];
+  const featuredInstituteIds = new Set(
+    (featuredRows as ActiveFeaturedInstituteRecord[])
+      .map((row) => row.institute_id)
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+  );
+  const sortedCourses = [...(courses ?? [])].sort(
+    (left, right) => Number(featuredInstituteIds.has(right.institute_id)) - Number(featuredInstituteIds.has(left.institute_id))
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -22,11 +43,11 @@ export default async function CoursesPage() {
       <p className="mt-2 text-sm text-slate-600">Browse verified courses and open each card to explore complete details.</p>
 
       <div className="mt-6">
-        <CourseCompareBar courses={(courses ?? []).map((course) => ({ id: course.id, title: course.title }))} />
+        <CourseCompareBar courses={sortedCourses.map((course) => ({ id: course.id, title: course.title }))} />
       </div>
 
       <div className="mt-8 grid gap-4 md:grid-cols-2">
-        {courses?.map((course) => {
+        {sortedCourses.map((course) => {
           const previewImage = course.course_media?.find((media) => media.type === "image")?.file_url;
           const imageCount = course.course_media?.filter((media) => media.type === "image").length ?? 0;
           const videoCount = course.course_media?.filter((media) => media.type === "video").length ?? 0;
@@ -41,6 +62,11 @@ export default async function CoursesPage() {
                 <div className="mb-3 grid h-40 w-full place-items-center rounded-md border border-dashed text-xs text-slate-500">No preview image</div>
               )}
               <h2 className="text-lg font-medium">{course.title}</h2>
+              {featuredInstituteIds.has(course.institute_id) ? (
+                <p className="mt-1 inline-flex w-fit rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                  Featured Institute
+                </p>
+              ) : null}
               <p className="mt-1 text-xs text-slate-500">
                 {course.category ?? "General"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.language ?? "-"}
               </p>
