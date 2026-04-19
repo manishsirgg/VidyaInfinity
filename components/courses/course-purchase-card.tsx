@@ -74,7 +74,7 @@ export function CoursePurchaseCard({
           }
 
           setState("success");
-          setMessage("Payment verified and enrollment confirmed. Institute details are now available in your enrollment section.");
+          setMessage("Payment verified and enrollment confirmed. You can now review your enrollment in the dashboard.");
         },
         modal: {
           ondismiss: () => {
@@ -98,7 +98,6 @@ export function CoursePurchaseCard({
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
       <p className="text-sm text-slate-600">Course fee</p>
       <p className="text-2xl font-semibold">₹{feeAmount}</p>
-      <p className="mt-2 text-xs text-slate-600">Institute details are shared only after successful payment and enrollment.</p>
       <button
         type="button"
         onClick={enrollNow}
