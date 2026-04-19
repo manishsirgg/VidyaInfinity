@@ -1,7 +1,5 @@
 import Link from "next/link";
 
-import { ModerationActions } from "@/components/admin/moderation-actions";
-import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -48,7 +46,7 @@ export default async function AdminDashboardPage() {
     { count: tests },
     { count: unreadNotifications },
     { data: recentNotifications },
-    { data: recentCourses },
+    { data: recentPendingCourses },
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("institutes").select("id", { count: "exact", head: true }),
@@ -68,8 +66,21 @@ export default async function AdminDashboardPage() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(5),
-    supabase.from("courses").select("id,title,status,rejection_reason,created_at").order("created_at", { ascending: false }).limit(5),
+    supabase.from("courses").select("id,title,created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(5),
   ]);
+
+  const moderationNotifications = (recentPendingCourses ?? []).map((course) => ({
+    id: `course-moderation-${course.id}`,
+    title: "Course moderation pending",
+    message: `Course "${course.title}" is waiting for admin approval.`,
+    type: "resubmission",
+    is_read: false,
+    created_at: course.created_at,
+  }));
+
+  const recentNotificationFeed = [...(recentNotifications ?? []), ...moderationNotifications]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 5);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -103,7 +114,7 @@ export default async function AdminDashboardPage() {
           Active tests: {tests ?? 0}
         </Link>
         <Link href="/admin/notifications" className="rounded border bg-white p-4">
-          Unread notifications: {unreadNotifications ?? 0}
+          Unread notifications: {(unreadNotifications ?? 0) + (pendingCourses ?? 0)}
         </Link>
       </div>
 
@@ -123,8 +134,8 @@ export default async function AdminDashboardPage() {
           </Link>
         </div>
         <div className="mt-3 space-y-2 text-sm">
-          {(recentNotifications ?? []).length === 0 ? <p className="text-slate-600">No notifications yet.</p> : null}
-          {(recentNotifications ?? []).map((item) => (
+          {recentNotificationFeed.length === 0 ? <p className="text-slate-600">No notifications yet.</p> : null}
+          {recentNotificationFeed.map((item) => (
             <div key={item.id} className="rounded border px-3 py-2">
               <p className="font-medium">{item.title}</p>
               <p className="text-slate-700">{item.message}</p>
@@ -136,28 +147,6 @@ export default async function AdminDashboardPage() {
         </div>
       </section>
 
-      <section className="mt-8 rounded border bg-white p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold">Recent Course Moderation</h2>
-          <Link href="/admin/courses" className="text-sm text-brand-700">
-            Open courses moderation
-          </Link>
-        </div>
-        <div className="mt-3 space-y-2 text-sm">
-          {(recentCourses ?? []).length === 0 ? <p className="text-slate-600">No courses yet.</p> : null}
-          {(recentCourses ?? []).map((course) => (
-            <div key={course.id} className="rounded border px-3 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-medium">{course.title}</p>
-                <StatusBadge status={course.status} />
-              </div>
-              {course.rejection_reason ? <p className="mt-1 text-xs text-rose-600">Reason: {course.rejection_reason}</p> : null}
-              <p className="mt-1 text-xs text-slate-500">Created: {formatDate(course.created_at)}</p>
-              <ModerationActions targetType="courses" targetId={course.id} currentStatus={course.status} />
-            </div>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
