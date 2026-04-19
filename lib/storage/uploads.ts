@@ -92,12 +92,21 @@ async function uploadBytes({
 
   if (uploadError) return { error: uploadError.message };
 
-  const publicUrl =
-    bucket === STORAGE_BUCKETS.userDocuments ||
-    bucket === STORAGE_BUCKETS.instituteDocuments ||
-    bucket === STORAGE_BUCKETS.psychometricReports
-      ? undefined
-      : admin.data.storage.from(bucket).getPublicUrl(uploadPath).data.publicUrl;
+  const shouldSkipPublicUrl =
+    bucket === STORAGE_BUCKETS.userDocuments || bucket === STORAGE_BUCKETS.instituteDocuments || bucket === STORAGE_BUCKETS.psychometricReports;
+
+  let publicUrl: string | undefined;
+  if (!shouldSkipPublicUrl) {
+    const publicData = admin.data.storage.from(bucket).getPublicUrl(uploadPath).data as { publicUrl?: string; publicURL?: string } | null;
+    publicUrl = publicData?.publicUrl || publicData?.publicURL;
+
+    if (!publicUrl) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+      if (supabaseUrl) {
+        publicUrl = `${supabaseUrl.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${uploadPath}`;
+      }
+    }
+  }
 
   return {
     error: null,

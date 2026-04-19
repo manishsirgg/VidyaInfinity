@@ -54,7 +54,7 @@ export async function POST(request: Request, { params }: Params) {
   });
 
   if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
-  if (!uploaded.path || !uploaded.publicUrl) {
+  if (!uploaded.path) {
     return NextResponse.json({ error: "Failed to upload course media" }, { status: 500 });
   }
 
@@ -62,7 +62,7 @@ export async function POST(request: Request, { params }: Params) {
 
   const mediaPayload = {
     course_id: course.id,
-    file_url: uploaded.publicUrl,
+    file_url: uploaded.publicUrl ?? uploaded.path,
     type: mediaType,
     storage_path: uploaded.path,
   };
@@ -72,7 +72,7 @@ export async function POST(request: Request, { params }: Params) {
   if (mediaError && isMissingStoragePathColumnError(mediaError.message)) {
     const { error: fallbackInsertError } = await admin.data.from("course_media").insert({
       course_id: course.id,
-      file_url: uploaded.publicUrl,
+      file_url: uploaded.publicUrl ?? uploaded.path,
       type: mediaType,
     });
 
