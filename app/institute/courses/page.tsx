@@ -15,13 +15,26 @@ export default async function Page() {
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
     : { data: [] };
+  const rejectedCourses = (courses ?? []).filter((course) => course.status === "rejected");
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Institute Courses</h1>
       <p className="mt-2 text-sm text-slate-600">Create and manage courses. Every create/edit is sent to admin moderation.</p>
       <CourseCreateForm />
-      <h2 className="mt-8 text-lg font-semibold">Manage listed courses</h2>
+      <section id="manage-courses" className="scroll-mt-28">
+        <h2 className="mt-8 text-lg font-semibold">Manage listed courses</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Edit or delete any listed course. If a course is rejected, update details and click{" "}
+          <span className="font-medium">Resubmit</span> for re-approval.
+        </p>
+      </section>
+      {rejectedCourses.length > 0 ? (
+        <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          You have {rejectedCourses.length} rejected course{rejectedCourses.length === 1 ? "" : "s"} pending
+          corrections.
+        </p>
+      ) : null}
       <CourseManagementTable courses={courses ?? []} />
     </div>
   );
