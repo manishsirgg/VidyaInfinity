@@ -36,7 +36,7 @@ export default async function InstituteWalletPage() {
           .order("created_at", { ascending: false }),
         dataClient
           .from("institute_payouts")
-          .select("id,amount_payable,payout_status,created_at,paid_at")
+          .select("id,payout_amount,payout_status,created_at,processed_at")
           .eq("institute_id", institute.id)
           .order("created_at", { ascending: false }),
       ])
@@ -48,10 +48,10 @@ export default async function InstituteWalletPage() {
   const grossRevenue = paidOrders.reduce((sum, item) => sum + Number(item.gross_amount ?? 0), 0);
   const totalCommission = paidOrders.reduce((sum, item) => sum + Number(item.platform_fee_amount ?? 0), 0);
   const netEarnings = paidOrders.reduce((sum, item) => sum + Number(item.institute_receivable_amount ?? 0), 0);
-  const paidOut = payouts.filter((item) => item.payout_status === "paid").reduce((sum, item) => sum + Number(item.amount_payable ?? 0), 0);
+  const paidOut = payouts.filter((item) => item.payout_status === "paid").reduce((sum, item) => sum + Number(item.payout_amount ?? 0), 0);
   const pendingPayouts = payouts
     .filter((item) => item.payout_status === "pending" || item.payout_status === "processing")
-    .reduce((sum, item) => sum + Number(item.amount_payable ?? 0), 0);
+    .reduce((sum, item) => sum + Number(item.payout_amount ?? 0), 0);
   const walletBalance = Math.max(netEarnings - paidOut, 0);
 
   return (
@@ -115,9 +115,9 @@ export default async function InstituteWalletPage() {
           <div className="mt-3 space-y-2 text-sm">
             {payouts.slice(0, 10).map((payout) => (
               <div key={payout.id} className="rounded border px-3 py-2">
-                <p className="font-medium">{money(Number(payout.amount_payable ?? 0))}</p>
+                <p className="font-medium">{money(Number(payout.payout_amount ?? 0))}</p>
                 <p className="text-slate-600">Status: {payout.payout_status}</p>
-                <p className="text-xs text-slate-500">Paid at: {formatDate(payout.paid_at)} · Requested: {formatDate(payout.created_at)}</p>
+                <p className="text-xs text-slate-500">Processed: {formatDate(payout.processed_at)} · Requested: {formatDate(payout.created_at)}</p>
               </div>
             ))}
             {payouts.length === 0 ? <p className="text-slate-600">No payouts yet.</p> : null}

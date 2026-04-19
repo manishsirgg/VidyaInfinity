@@ -4,11 +4,6 @@ import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-function first<T>(value: T | T[] | null | undefined): T | null {
-  if (!value) return null;
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
 function formatDate(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -27,13 +22,22 @@ export default async function InstituteLeadsPage() {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const { data: leads, error: leadsError } = institute
+  const leadsResult = institute
     ? await dataClient
         .from("leads")
-        .select("id,name,email,phone,message,created_at,course:courses(title,institute_id)")
-        .eq("courses.institute_id", institute.id)
+        .select("id,name,email,phone,message,created_at,course_id")
+        .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
     : { data: [], error: null };
+
+  const leads = leadsResult.data ?? [];
+  const leadsError = leadsResult.error;
+
+  const courseIds = [...new Set(leads.map((lead) => lead.course_id).filter(Boolean))];
+  const courseResult = courseIds.length
+    ? await dataClient.from("courses").select("id,title").in("id", courseIds)
+    : { data: [], error: null };
+  const courseById = new Map((courseResult.data ?? []).map((course) => [course.id, course]));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -68,8 +72,8 @@ export default async function InstituteLeadsPage() {
       ) : null}
 
       <div className="mt-6 space-y-3">
-        {(leads ?? []).map((lead) => {
-          const course = first(lead.course);
+        {leads.map((lead) => {
+          const course = lead.course_id ? courseById.get(lead.course_id) : null;
 
           return (
           <article key={lead.id} className="rounded-xl border bg-white p-4 shadow-sm">
@@ -87,7 +91,12 @@ export default async function InstituteLeadsPage() {
           </article>
           );
         })}
-        {institute && (leads ?? []).length === 0 && !leadsError ? (
+        {courseResult.error ? (
+          <p className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some course titles could not be loaded: {courseResult.error.message}
+          </p>
+        ) : null}
+        {institute && leads.length === 0 && !leadsError ? (
           <div className="rounded border bg-white p-4 text-sm text-slate-600">No leads yet. Leads will appear here when students submit course inquiries.</div>
         ) : null}
       </div>

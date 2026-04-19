@@ -28,8 +28,8 @@ function formatDate(value: string | null | undefined) {
 type EnrollmentRow = {
   id: string;
   course_id: string;
-  user_id: string;
-  order_id: string | null;
+  student_id: string;
+  course_order_id: string | null;
   enrollment_status: string | null;
   created_at: string;
 };
@@ -49,7 +49,7 @@ export default async function InstituteEnrollmentsPage() {
   const enrollmentResult = institute
     ? await dataClient
         .from("course_enrollments")
-        .select("id,course_id,user_id,order_id,enrollment_status,created_at")
+        .select("id,course_id,student_id,course_order_id,enrollment_status,created_at")
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
     : { data: [] as EnrollmentRow[], error: null };
@@ -57,8 +57,8 @@ export default async function InstituteEnrollmentsPage() {
   const enrollments = (enrollmentResult.data ?? []) as EnrollmentRow[];
 
   const courseIds = [...new Set(enrollments.map((item) => item.course_id).filter(Boolean))];
-  const userIds = [...new Set(enrollments.map((item) => item.user_id).filter(Boolean))];
-  const orderIds = [...new Set(enrollments.map((item) => item.order_id).filter((value): value is string => Boolean(value)))];
+  const userIds = [...new Set(enrollments.map((item) => item.student_id).filter(Boolean))];
+  const orderIds = [...new Set(enrollments.map((item) => item.course_order_id).filter((value): value is string => Boolean(value)))];
 
   const [courseResult, studentResult, orderResult] = await Promise.all([
     courseIds.length
@@ -77,7 +77,7 @@ export default async function InstituteEnrollmentsPage() {
   const ordersById = new Map((orderResult.data ?? []).map((order) => [order.id, order]));
 
   const paidCount = enrollments.filter((item) => {
-    const order = item.order_id ? ordersById.get(item.order_id) : null;
+    const order = item.course_order_id ? ordersById.get(item.course_order_id) : null;
     return order?.payment_status === "paid";
   }).length;
 
@@ -117,8 +117,8 @@ export default async function InstituteEnrollmentsPage() {
       <div className="mt-4 space-y-2">
         {enrollments.map((enrollment) => {
           const course = coursesById.get(enrollment.course_id);
-          const student = studentsById.get(enrollment.user_id);
-          const order = enrollment.order_id ? ordersById.get(enrollment.order_id) : null;
+          const student = studentsById.get(enrollment.student_id);
+          const order = enrollment.course_order_id ? ordersById.get(enrollment.course_order_id) : null;
 
           return (
             <article key={enrollment.id} className="rounded border bg-white p-4 text-sm">

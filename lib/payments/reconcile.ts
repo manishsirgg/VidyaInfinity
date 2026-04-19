@@ -91,9 +91,11 @@ export async function reconcileCourseOrderPaid({
     const { error: payoutError } = await supabase.from("institute_payouts").insert({
       institute_id: order.institute_id,
       course_order_id: order.id,
-      amount_payable: order.institute_receivable_amount,
+      gross_amount: order.gross_amount,
+      platform_fee_amount: order.gross_amount - order.institute_receivable_amount,
+      payout_amount: order.institute_receivable_amount,
       payout_status: "pending",
-      due_at: new Date().toISOString(),
+      scheduled_at: new Date().toISOString(),
     });
     if (payoutError) return { error: payoutError.message };
   }
