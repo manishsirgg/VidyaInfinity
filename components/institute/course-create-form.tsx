@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 
 import { FormFeedback } from "@/components/shared/form-feedback";
+import { createClient } from "@/lib/supabase/client";
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
@@ -154,13 +155,47 @@ export function CourseCreateForm() {
 
       const courseId = String(createBody.courseId);
 
+      const supabase = createClient();
+
       for (const file of mediaFiles) {
-        const mediaPayload = new FormData();
-        mediaPayload.append("file", file);
+        const signedResponse = await fetch(`/api/institute/courses/${courseId}/media/signed-url`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: file.name, fileType: file.type, fileSize: file.size }),
+        });
+
+        const signedBody = (await signedResponse.json().catch(() => null)) as
+          | { error?: string; token?: string; path?: string; publicUrl?: string }
+          | null;
+
+        if (!signedResponse.ok || !signedBody?.token || !signedBody.path) {
+          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
+          setState("error");
+          setError(signedBody?.error ?? `Failed to prepare upload for "${file.name}".`);
+          return;
+        }
+
+        const { error: storageError } = await supabase.storage
+          .from("course-media")
+          .uploadToSignedUrl(signedBody.path, signedBody.token, file, {
+            contentType: file.type,
+          });
+
+        if (storageError) {
+          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
+          setState("error");
+          setError(`Upload failed for "${file.name}": ${storageError.message}`);
+          return;
+        }
 
         const mediaResponse = await fetch(`/api/institute/courses/${courseId}/media`, {
           method: "POST",
-          body: mediaPayload,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            path: signedBody.path,
+            publicUrl: signedBody.publicUrl,
+            fileType: file.type,
+          }),
         });
 
         if (!mediaResponse.ok) {
@@ -174,7 +209,7 @@ export function CourseCreateForm() {
             }
           }
           const detailedError =
-            mediaBody?.error || errorText || `Failed to upload "${file.name}" (HTTP ${mediaResponse.status})`;
+            mediaBody?.error || errorText || `Failed to register "${file.name}" (HTTP ${mediaResponse.status})`;
           await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
           setState("error");
           setError(detailedError);
