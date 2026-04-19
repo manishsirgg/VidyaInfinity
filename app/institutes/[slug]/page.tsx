@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { InstituteMediaGallery } from "@/components/institutes/institute-media-gallery";
+import { ShareActions } from "@/components/shared/share-actions";
+import { siteConfig } from "@/lib/constants/site";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 function toPublicMediaUrl(
@@ -82,6 +84,24 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
             .maybeSingle()
         ).data
       : fallbackProfile;
+  const ownerDetails =
+    instituteRecord?.user_id
+      ? (
+          await admin.data
+            .from("user_additional_details")
+            .select("address_line_1,address_line_2,postal_code")
+            .eq("user_id", instituteRecord.user_id)
+            .maybeSingle()
+        ).data
+      : fallbackProfile
+        ? (
+            await admin.data
+              .from("user_additional_details")
+              .select("address_line_1,address_line_2,postal_code")
+              .eq("user_id", fallbackProfile.id)
+              .maybeSingle()
+          ).data
+        : null;
 
   const institute =
     instituteResponse.data ??
@@ -106,6 +126,21 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
   const instituteStaff = "total_staff" in institute ? institute.total_staff : null;
   const instituteVerified = "verified" in institute ? institute.verified : null;
   const location = [ownerProfile?.city, ownerProfile?.state, ownerProfile?.country].filter(Boolean).join(", ");
+  const fullAddress = [
+    ownerDetails?.address_line_1,
+    ownerDetails?.address_line_2,
+    ownerProfile?.city,
+    ownerProfile?.state,
+    ownerProfile?.country,
+    ownerDetails?.postal_code,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const mapsEmbedUrl = fullAddress
+    ? `https://www.google.com/maps?q=${encodeURIComponent(fullAddress)}&output=embed`
+    : null;
+  const mapsOpenUrl = fullAddress ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}` : null;
+  const shareUrl = `${siteConfig.url}/institutes/${slug}`;
   const mediaRows =
     "id" in institute
       ? (
@@ -127,6 +162,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
     <div className="mx-auto max-w-5xl px-4 py-12">
       <article className="rounded-xl border bg-white p-8">
         <h1 className="text-3xl font-semibold">{instituteName}</h1>
+        <ShareActions title={instituteName} text={instituteDescription ?? undefined} url={shareUrl} className="mt-3" />
         <InstituteMediaGallery mediaItems={mediaItems} instituteName={instituteName} />
         <p className="mt-6 text-slate-700">{instituteDescription ?? "No description available."}</p>
         <div className="mt-6 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
@@ -135,6 +171,9 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
           </p>
           <p>
             <span className="font-medium">Location:</span> {location || "-"}
+          </p>
+          <p>
+            <span className="font-medium">Address:</span> {fullAddress || "-"}
           </p>
           <p>
             <span className="font-medium">Established:</span> {instituteYear ?? "-"}
@@ -167,6 +206,19 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
             <span className="font-medium">Accreditation #:</span> {instituteAccreditation ?? "-"}
           </p>
         </div>
+        {mapsEmbedUrl ? (
+          <section className="mt-6">
+            <h2 className="text-lg font-semibold">Find on Google Maps</h2>
+            <div className="mt-3 overflow-hidden rounded-lg border">
+              <iframe title={`${instituteName} map`} src={mapsEmbedUrl} className="h-72 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+            </div>
+            {mapsOpenUrl ? (
+              <a href={mapsOpenUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm text-brand-700 hover:underline">
+                Open in Google Maps
+              </a>
+            ) : null}
+          </section>
+        ) : null}
       </article>
     </div>
   );

@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { CourseMediaGallery } from "@/components/courses/course-media-gallery";
 import { CoursePurchaseCard } from "@/components/courses/course-purchase-card";
 import { LeadForm } from "@/components/forms/lead-form";
+import { ShareActions } from "@/components/shared/share-actions";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { siteConfig } from "@/lib/constants/site";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -21,6 +23,8 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
 
   const course = byLegacySlug.data;
   if (!course) notFound();
+  const coursePath = `/courses/${slug}`;
+  const shareUrl = `${siteConfig.url}${coursePath}`;
 
   return (
     <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:py-12 md:grid-cols-[2fr_1fr] md:gap-8">
@@ -31,6 +35,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
             {course.category ?? "General"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.language ?? "-"}
           </p>
           <p className="mt-3 text-slate-700">{course.summary}</p>
+          <ShareActions title={course.title} text={course.summary ?? undefined} url={shareUrl} className="mt-4" />
         </div>
 
         <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
