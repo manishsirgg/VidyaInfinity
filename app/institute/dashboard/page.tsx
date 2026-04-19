@@ -136,7 +136,10 @@ export default async function InstituteDashboardPage() {
         <div className="rounded border bg-white p-4">
           <p className="text-xs uppercase tracking-wide text-slate-500">Courses</p>
           <p className="mt-1 text-2xl font-semibold">{courses.length}</p>
-          <p className="mt-1 text-xs text-slate-600">{approvedCourses} approved · {pendingCourses} pending</p>
+          <p className="mt-1 text-xs text-slate-600">
+            {approvedCourses} approved · {pendingCourses} pending · {rejectedCourses.length} rejected (awaiting
+            resubmission)
+          </p>
         </div>
         <div className="rounded border bg-white p-4">
           <p className="text-xs uppercase tracking-wide text-slate-500">Leads</p>
