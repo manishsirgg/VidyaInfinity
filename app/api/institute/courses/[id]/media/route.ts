@@ -190,3 +190,45 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: `Unhandled course media upload error: ${message}` }, { status: 500 });
   }
 }
+
+
+export async function DELETE(request: Request, { params }: Params) {
+  const auth = await requireApiUser("institute", { requireApproved: false });
+  if ("error" in auth) return auth.error;
+
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  const { id: courseId } = await params;
+  const body = (await request.json().catch(() => null)) as { mediaId?: string } | null;
+  const mediaId = String(body?.mediaId ?? "").trim();
+
+  if (!mediaId) return NextResponse.json({ error: "mediaId is required" }, { status: 400 });
+
+  const { data: institute } = await admin.data.from("institutes").select("id").eq("user_id", auth.user.id).maybeSingle<{ id: string }>();
+  if (!institute) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
+
+  const { data: course } = await admin.data.from("courses").select("id").eq("id", courseId).eq("institute_id", institute.id).maybeSingle<{ id: string }>();
+  if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
+
+  const { data: mediaWithPath } = await admin.data.from("course_media").select("id,storage_path").eq("id", mediaId).eq("course_id", courseId).maybeSingle<{ id: string; storage_path?: string | null }>();
+  const media = mediaWithPath
+    ? mediaWithPath
+    : await admin.data
+        .from("course_media")
+        .select("id")
+        .eq("id", mediaId)
+        .eq("course_id", courseId)
+        .maybeSingle<{ id: string }>()
+        .then((res) => (res.data ? { ...res.data, storage_path: null } : null));
+  if (!media) return NextResponse.json({ error: "Media not found" }, { status: 404 });
+
+  const { error: deleteError } = await admin.data.from("course_media").delete().eq("id", mediaId).eq("course_id", courseId);
+  if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+
+  if (media.storage_path) {
+    await admin.data.storage.from("course-media").remove([media.storage_path]);
+  }
+
+  return NextResponse.json({ ok: true });
+}

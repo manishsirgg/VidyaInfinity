@@ -9,6 +9,38 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
+type CourseUpdatePayload = {
+  title?: unknown;
+  summary?: unknown;
+  description?: unknown;
+  category?: unknown;
+  subject?: unknown;
+  level?: unknown;
+  language?: unknown;
+  mode?: unknown;
+  location?: unknown;
+  duration?: unknown;
+  durationValue?: unknown;
+  durationUnit?: unknown;
+  schedule?: unknown;
+  startDate?: unknown;
+  endDate?: unknown;
+  admissionDeadline?: unknown;
+  eligibility?: unknown;
+  learningOutcomes?: unknown;
+  targetAudience?: unknown;
+  certificateStatus?: unknown;
+  certificateDetails?: unknown;
+  batchSize?: unknown;
+  placementSupport?: unknown;
+  internshipSupport?: unknown;
+  facultyName?: unknown;
+  facultyQualification?: unknown;
+  supportEmail?: unknown;
+  supportPhone?: unknown;
+  fees?: unknown;
+};
+
 function text(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -37,6 +69,37 @@ function getWordCount(value: string) {
   return value.trim().split(/\s+/).length;
 }
 
+async function getInstituteId(userId: string) {
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return { error: admin.error, instituteId: null };
+  const { data: institute } = await admin.data.from("institutes").select("id").eq("user_id", userId).maybeSingle<{ id: string }>();
+  return { instituteId: institute?.id ?? null, error: null, admin: admin.data };
+}
+
+export async function GET(_: Request, { params }: Params) {
+  const auth = await requireApiUser("institute", { requireApproved: false });
+  if ("error" in auth) return auth.error;
+
+  const { id } = await params;
+  const instituteData = await getInstituteId(auth.user.id);
+  if (instituteData.error || !instituteData.admin) return NextResponse.json({ error: instituteData.error ?? "Server error" }, { status: 500 });
+  if (!instituteData.instituteId) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
+
+  const { data: course, error } = await instituteData.admin
+    .from("courses")
+    .select("id,institute_id,title,summary,description,category,subject,level,language,fees,duration,duration_value,duration_unit,mode,location,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,rejection_reason,created_at,updated_at")
+    .eq("id", id)
+    .eq("institute_id", instituteData.instituteId)
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
+
+  const { data: media } = await instituteData.admin.from("course_media").select("*").eq("course_id", id).order("created_at", { ascending: true });
+
+  return NextResponse.json({ ok: true, course, media: media ?? [] });
+}
+
 export async function PATCH(request: Request, { params }: Params) {
   const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
@@ -49,7 +112,7 @@ export async function PATCH(request: Request, { params }: Params) {
   const { data: institute } = await admin.data.from("institutes").select("id").eq("user_id", user.id).maybeSingle<{ id: string }>();
   if (!institute) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
 
-  const payload = await request.json();
+  const payload = (await request.json()) as CourseUpdatePayload;
 
   const fees = numericOrNull(payload.fees);
   if (payload.fees !== undefined && (fees === null || fees < 0)) {
@@ -119,7 +182,6 @@ export async function PATCH(request: Request, { params }: Params) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
-
 
   const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
 
