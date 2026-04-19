@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 type Props = {
-  targetType: "institutes" | "courses" | "users";
+  targetType: "institutes" | "courses" | "users" | "webinars";
   targetId: string;
   currentStatus: string;
   isActionable?: boolean;

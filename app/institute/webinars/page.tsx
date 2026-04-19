@@ -1,106 +1,88 @@
-"use client";
+import Link from "next/link";
 
-import { FormEvent, useEffect, useState } from "react";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { requireUser } from "@/lib/auth/get-session";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+import { toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
 
-type Webinar = {
-  id: string;
-  title: string;
-  description: string | null;
-  starts_at: string;
-  ends_at: string | null;
-  timezone: string;
-  webinar_mode: "free" | "paid";
-  price: number;
-  meeting_url: string | null;
-  registration_url: string | null;
-  status: string;
-};
+export default async function InstituteWebinarsPage() {
+  const { user } = await requireUser("institute", { requireApproved: false });
+  const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
 
-export default function InstituteWebinarsPage() {
-  const [webinars, setWebinars] = useState<Webinar[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [mode, setMode] = useState<"free" | "paid">("free");
+  const { data: institute } = await dataClient.from("institutes").select("id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle<{ id: string }>();
+  if (!institute) return <div className="mx-auto max-w-6xl px-4 py-10">Institute profile not found.</div>;
 
-  async function loadWebinars() {
-    setLoading(true);
-    const response = await fetch("/api/institute/webinars", { cache: "no-store" });
-    const body = await response.json();
-    if (response.ok) setWebinars(body.webinars ?? []);
-    setLoading(false);
-  }
+  const [{ data: webinars }, { data: registrations }, { data: orders }] = await Promise.all([
+    dataClient
+      .from("webinars")
+      .select("id,title,starts_at,webinar_mode,price,currency,approval_status,status")
+      .eq("institute_id", institute.id)
+      .order("starts_at", { ascending: true }),
+    dataClient.from("webinar_registrations").select("id,webinar_id").eq("institute_id", institute.id),
+    dataClient.from("webinar_orders").select("id,webinar_id,payment_status,amount,platform_fee_amount,payout_amount").eq("institute_id", institute.id),
+  ]);
 
-  useEffect(() => {
-    void loadWebinars();
-  }, []);
+  const webinarRows = webinars ?? [];
+  const regRows = registrations ?? [];
+  const orderRows = orders ?? [];
+  const paidOrders = orderRows.filter((item) => item.payment_status === "paid");
+  const attendeeCountMap = new Map<string, number>();
+  for (const row of regRows) attendeeCountMap.set(row.webinar_id, (attendeeCountMap.get(row.webinar_id) ?? 0) + 1);
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    setSubmitting(true);
-
-    const response = await fetch("/api/institute/webinars", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        title: formData.get("title"),
-        description: formData.get("description"),
-        startsAt: formData.get("startsAt"),
-        endsAt: formData.get("endsAt"),
-        timezone: formData.get("timezone"),
-        mode,
-        price: Number(formData.get("price") ?? 0),
-        meetingUrl: formData.get("meetingUrl"),
-        registrationUrl: formData.get("registrationUrl"),
-      }),
-    });
-
-    if (response.ok) {
-      event.currentTarget.reset();
-      setMode("free");
-      await loadWebinars();
-    }
-
-    setSubmitting(false);
-  }
+  const stats = {
+    total: webinarRows.length,
+    approved: webinarRows.filter((item) => item.approval_status === "approved").length,
+    pending: webinarRows.filter((item) => item.approval_status === "pending").length,
+    rejected: webinarRows.filter((item) => item.approval_status === "rejected").length,
+    upcoming: webinarRows.filter((item) => new Date(item.starts_at).getTime() >= Date.now() && item.status !== "cancelled").length,
+    registrations: regRows.length,
+    revenue: paidOrders.reduce((sum, row) => sum + Number(row.amount ?? 0), 0),
+  };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-2xl font-semibold">Live Webinars</h1>
-      <p className="mt-2 text-sm text-slate-600">Schedule and conduct free or paid live webinars to attract high-intent student leads.</p>
-
-      <form onSubmit={onSubmit} className="mt-6 grid gap-3 rounded-xl border bg-white p-4 md:grid-cols-2">
-        <input required name="title" placeholder="Webinar title" className="rounded border px-3 py-2 text-sm" />
-        <select value={mode} onChange={(e) => setMode(e.target.value as "free" | "paid")} className="rounded border px-3 py-2 text-sm">
-          <option value="free">Free webinar</option>
-          <option value="paid">Paid webinar</option>
-        </select>
-        <input required type="datetime-local" name="startsAt" className="rounded border px-3 py-2 text-sm" />
-        <input type="datetime-local" name="endsAt" className="rounded border px-3 py-2 text-sm" />
-        <input name="timezone" defaultValue="Asia/Kolkata" className="rounded border px-3 py-2 text-sm" />
-        <input name="price" type="number" min={mode === "paid" ? 1 : 0} step="1" defaultValue={0} className="rounded border px-3 py-2 text-sm" />
-        <input name="meetingUrl" placeholder="Live meeting URL" className="rounded border px-3 py-2 text-sm" />
-        <input name="registrationUrl" placeholder="Registration URL (optional)" className="rounded border px-3 py-2 text-sm" />
-        <textarea name="description" placeholder="What students will learn" className="md:col-span-2 rounded border px-3 py-2 text-sm" rows={3} />
-        <button disabled={submitting} className="md:col-span-2 rounded bg-brand-600 px-4 py-2 text-sm text-white disabled:opacity-70" type="submit">
-          {submitting ? "Saving..." : "Schedule webinar"}
-        </button>
-      </form>
-
-      <section className="mt-6 rounded-xl border bg-white p-4">
-        <h2 className="text-lg font-semibold">Upcoming & past webinars</h2>
-        {loading ? <p className="mt-3 text-sm text-slate-500">Loading webinars...</p> : null}
-        <div className="mt-3 grid gap-3">
-          {webinars.map((item) => (
-            <article key={item.id} className="rounded border p-3 text-sm">
-              <p className="font-medium">{item.title}</p>
-              <p className="text-slate-600">{new Date(item.starts_at).toLocaleString()} · {item.webinar_mode === "paid" ? `Paid (₹${item.price})` : "Free"}</p>
-              <p className="text-slate-600">Status: {item.status}</p>
-            </article>
-          ))}
-          {!loading && webinars.length === 0 ? <p className="text-sm text-slate-500">No webinars scheduled yet.</p> : null}
+    <div className="mx-auto max-w-7xl px-4 py-10">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Institute Webinars</h1>
+          <p className="text-sm text-slate-600">Manage webinar schedule, registrations, and paid orders.</p>
         </div>
-      </section>
+        <Link href="/institute/webinars/new" className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800">Schedule webinar</Link>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Total webinars</p><p className="text-xl font-semibold">{stats.total}</p></div>
+        <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Approved / Pending / Rejected</p><p className="text-xl font-semibold">{stats.approved} / {stats.pending} / {stats.rejected}</p></div>
+        <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Upcoming & registrations</p><p className="text-xl font-semibold">{stats.upcoming} · {stats.registrations}</p></div>
+        <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Paid revenue</p><p className="text-xl font-semibold">{toCurrency(stats.revenue)}</p></div>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {webinarRows.map((item) => (
+          <article key={item.id} className="rounded-xl border bg-white p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-semibold">{item.title}</p>
+                <p className="text-sm text-slate-600">{toDateTimeLabel(item.starts_at)} · {item.webinar_mode === "paid" ? toCurrency(Number(item.price), item.currency ?? "INR") : "Free"}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusBadge status={item.approval_status ?? "pending"} />
+                <StatusBadge status={item.status} />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-slate-600">Attendees: {attendeeCountMap.get(item.id) ?? 0}</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-sm">
+              <Link className="rounded border px-3 py-1.5" href={`/institute/webinars/${item.id}`}>View</Link>
+              <Link className="rounded border px-3 py-1.5" href={`/institute/webinars/${item.id}/edit`}>Edit</Link>
+              <Link className="rounded border px-3 py-1.5" href={`/institute/webinars/${item.id}/attendees`}>Attendees</Link>
+              <Link className="rounded border px-3 py-1.5" href={`/institute/webinars/${item.id}/orders`}>Orders</Link>
+            </div>
+          </article>
+        ))}
+        {webinarRows.length === 0 ? <div className="rounded border border-dashed bg-white p-8 text-center text-slate-600">No webinars scheduled yet.</div> : null}
+      </div>
     </div>
   );
 }

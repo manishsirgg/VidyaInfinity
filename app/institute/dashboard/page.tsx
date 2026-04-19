@@ -219,6 +219,9 @@ export default async function InstituteDashboardPage() {
             <Link href="/institute/webinars" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Schedule live webinars
             </Link>
+            <Link href="/institute/webinars/new" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              Schedule webinar now
+            </Link>
             <Link href="/institute/featured" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Activate featured listing
             </Link>

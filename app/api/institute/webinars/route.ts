@@ -1,70 +1,127 @@
 import { NextResponse } from "next/server";
 
-import { requireUser } from "@/lib/auth/get-session";
+import { requireApiUser } from "@/lib/auth/api-auth";
+import { normalizeWebinarMode } from "@/lib/webinars/utils";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-export async function GET() {
-  const { user } = await requireUser("institute");
+type CreateWebinarPayload = {
+  title?: string;
+  description?: string;
+  startsAt?: string;
+  endsAt?: string;
+  timezone?: string;
+  webinarMode?: "free" | "paid";
+  price?: number;
+  currency?: string;
+  meetingUrl?: string;
+  registrationUrl?: string;
+  facultyName?: string;
+  facultyBio?: string;
+  thumbnailUrl?: string;
+  bannerUrl?: string;
+  maxAttendees?: number;
+  learningPoints?: string;
+};
+
+async function getInstituteId(userId: string) {
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
 
-  const { data: institute } = await dataClient.from("institutes").select("id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data: institute } = await dataClient
+    .from("institutes")
+    .select("id")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
 
-  if (!institute) {
-    return NextResponse.json({ webinars: [] });
-  }
+  return institute?.id ?? null;
+}
+
+export async function GET() {
+  const auth = await requireApiUser("institute", { requireApproved: false });
+  if ("error" in auth) return auth.error;
+
+  const instituteId = await getInstituteId(auth.user.id);
+  if (!instituteId) return NextResponse.json({ webinars: [] });
+
+  const admin = getSupabaseAdmin();
+  const supabase = await createClient();
+  const dataClient = admin.ok ? admin.data : supabase;
 
   const { data, error } = await dataClient
     .from("webinars")
-    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,registration_url,status,created_at")
-    .eq("institute_id", institute.id)
+    .select(
+      "id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,registration_url,meeting_provider,status,approval_status,rejection_reason,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points,created_at,updated_at"
+    )
+    .eq("institute_id", instituteId)
     .order("starts_at", { ascending: true });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const webinarIds = (data ?? []).map((item) => item.id);
+  const [{ data: registrationCounts }, { data: paidOrders }] = await Promise.all([
+    webinarIds.length > 0
+      ? dataClient.from("webinar_registrations").select("webinar_id").in("webinar_id", webinarIds)
+      : Promise.resolve({ data: [], error: null }),
+    webinarIds.length > 0
+      ? dataClient.from("webinar_orders").select("webinar_id,payout_amount,payment_status").in("webinar_id", webinarIds).eq("payment_status", "paid")
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const attendeeMap = new Map<string, number>();
+  for (const row of registrationCounts ?? []) {
+    const current = attendeeMap.get(row.webinar_id) ?? 0;
+    attendeeMap.set(row.webinar_id, current + 1);
   }
 
-  return NextResponse.json({ webinars: data ?? [] });
+  const paidRevenueMap = new Map<string, number>();
+  for (const row of paidOrders ?? []) {
+    const current = paidRevenueMap.get(row.webinar_id) ?? 0;
+    paidRevenueMap.set(row.webinar_id, current + Number(row.payout_amount ?? 0));
+  }
+
+  return NextResponse.json({
+    webinars: (data ?? []).map((item) => ({
+      ...item,
+      attendee_count: attendeeMap.get(item.id) ?? 0,
+      paid_revenue: paidRevenueMap.get(item.id) ?? 0,
+    })),
+  });
 }
 
 export async function POST(request: Request) {
-  const { user } = await requireUser("institute");
-  const body = (await request.json()) as {
-    title?: string;
-    description?: string;
-    startsAt?: string;
-    endsAt?: string;
-    timezone?: string;
-    mode?: "free" | "paid";
-    price?: number;
-    meetingUrl?: string;
-    registrationUrl?: string;
-  };
+  const auth = await requireApiUser("institute", { requireApproved: false });
+  if ("error" in auth) return auth.error;
+
+  const body = (await request.json()) as CreateWebinarPayload;
 
   if (!body.title || !body.startsAt) {
     return NextResponse.json({ error: "Title and start date are required." }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const admin = getSupabaseAdmin();
-  const dataClient = admin.ok ? admin.data : supabase;
+  const mode = normalizeWebinarMode(body.webinarMode);
+  const price = mode === "paid" ? Number(body.price ?? 0) : 0;
+  if (mode === "paid" && price <= 0) {
+    return NextResponse.json({ error: "Paid webinar must have price greater than zero" }, { status: 400 });
+  }
 
-  const { data: institute } = await dataClient.from("institutes").select("id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
-
-  if (!institute) {
+  const instituteId = await getInstituteId(auth.user.id);
+  if (!instituteId) {
     return NextResponse.json({ error: "Institute profile not found." }, { status: 404 });
   }
 
-  const mode = body.mode === "paid" ? "paid" : "free";
-  const price = mode === "paid" ? Math.max(Number(body.price ?? 0), 1) : 0;
+  const admin = getSupabaseAdmin();
+  const supabase = await createClient();
+  const dataClient = admin.ok ? admin.data : supabase;
 
   const { data, error } = await dataClient
     .from("webinars")
     .insert({
-      institute_id: institute.id,
-      created_by: user.id,
+      institute_id: instituteId,
+      created_by: auth.user.id,
       title: body.title.trim(),
       description: body.description?.trim() ?? null,
       starts_at: body.startsAt,
@@ -72,15 +129,24 @@ export async function POST(request: Request) {
       timezone: body.timezone || "Asia/Kolkata",
       webinar_mode: mode,
       price,
+      currency: body.currency || "INR",
+      meeting_provider: "google_meet",
       meeting_url: body.meetingUrl?.trim() || null,
       registration_url: body.registrationUrl?.trim() || null,
+      faculty_name: body.facultyName?.trim() || null,
+      faculty_bio: body.facultyBio?.trim() || null,
+      thumbnail_url: body.thumbnailUrl?.trim() || null,
+      banner_url: body.bannerUrl?.trim() || null,
+      max_attendees: body.maxAttendees ?? null,
+      learning_points: body.learningPoints?.trim() || null,
+      approval_status: "pending",
+      rejection_reason: null,
+      status: "scheduled",
     })
     .select("id")
-    .single();
+    .single<{ id: string }>();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ id: data.id }, { status: 201 });
 }
