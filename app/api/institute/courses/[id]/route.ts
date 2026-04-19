@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type Params = {
@@ -118,6 +119,20 @@ export async function PATCH(request: Request, { params }: Params) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
+
+
+  const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
+
+  await Promise.allSettled(
+    (admins ?? []).map((adminProfile) =>
+      createAccountNotification({
+        userId: adminProfile.id,
+        type: "resubmission",
+        title: "Course moderation pending",
+        message: `Course "${course.title}" was updated by the institute and is waiting for moderation.`,
+      })
+    )
+  );
 
   await writeAdminAuditLog({
     adminUserId: null,

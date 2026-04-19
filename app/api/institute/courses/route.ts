@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 function text(form: FormData, key: string) {
@@ -132,6 +133,20 @@ export async function POST(request: Request) {
     .single<{ id: string }>();
 
   if (error || !course) return NextResponse.json({ error: error?.message ?? "Failed to create course" }, { status: 500 });
+
+
+  const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
+
+  await Promise.allSettled(
+    (admins ?? []).map((adminProfile) =>
+      createAccountNotification({
+        userId: adminProfile.id,
+        type: "resubmission",
+        title: "Course moderation pending",
+        message: `A new course "${title}" has been submitted and is waiting for moderation.`,
+      })
+    )
+  );
 
   await writeAdminAuditLog({
     adminUserId: null,
