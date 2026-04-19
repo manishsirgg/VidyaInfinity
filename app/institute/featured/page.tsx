@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 declare global {
   interface Window {
@@ -162,7 +162,7 @@ export default function InstituteFeaturedPage() {
     void loadData();
   }, []);
 
-  async function loadPreview(plan: FeaturedPlan) {
+  const loadPreview = useCallback(async (plan: FeaturedPlan) => {
     const response = await fetch("/api/institute/featured-subscriptions/create-order", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -178,7 +178,16 @@ export default function InstituteFeaturedPage() {
 
     setPreviewByPlanId((current) => ({ ...current, [plan.id]: preview }));
     return preview;
-  }
+  }, [autoRenewRequested]);
+
+  useEffect(() => {
+    if (!summary?.current || !activePlan || plans.length === 0) return;
+
+    const higherTierPlans = plans.filter((plan) => plan.tierRank > activePlan.tierRank);
+    if (higherTierPlans.length === 0) return;
+
+    void Promise.all(higherTierPlans.map((plan) => loadPreview(plan)));
+  }, [plans, summary, activePlan, loadPreview]);
 
   async function activatePlan(plan: FeaturedPlan) {
     if (isBusy) return;
@@ -271,11 +280,11 @@ export default function InstituteFeaturedPage() {
     }
 
     if (plan.id === currentPlan.id) {
-      return { disabled: true, badge: "Current Plan", isUpgrade: false, willQueue: true };
+      return { disabled: true, badge: "Current Plan", isUpgrade: false, willQueue: false };
     }
 
     if (plan.tierRank < currentPlan.tierRank) {
-      return { disabled: true, badge: "Lower Tier", isUpgrade: false, willQueue: true };
+      return { disabled: false, badge: "Lower Tier", isUpgrade: false, willQueue: true };
     }
 
     if (plan.tierRank === currentPlan.tierRank) {
@@ -357,25 +366,18 @@ export default function InstituteFeaturedPage() {
                 <p className="mt-2 text-xs text-slate-600">{plan.description ?? "Featured discovery boost for your institute."}</p>
 
                 {state.willQueue && summary?.current ? (
-                  <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">This plan will begin after your current subscription ends.</p>
-                ) : null}
-
-                {state.isUpgrade ? (
-                  <button
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => void loadPreview(plan)}
-                    className="mt-3 w-full rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-700 disabled:opacity-70"
-                  >
-                    Check upgrade credit
-                  </button>
+                  <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                    {plan.tierRank < (activePlan?.tierRank ?? -1)
+                      ? "This lower-tier plan will be queued and start after your current plan ends."
+                      : "This same-tier plan will be queued and start after your current plan ends."}
+                  </p>
                 ) : null}
 
                 {preview?.purchaseMode.isUpgrade ? (
                   <div className="mt-2 rounded border border-brand-100 bg-brand-50 p-2 text-xs text-brand-800">
-                    <p>Original plan amount: {inr(preview.plan.baseAmount, preview.plan.currency)}</p>
-                    <p>Remaining credit: {inr(preview.plan.creditAdjustmentAmount, preview.plan.currency)}</p>
-                    <p>Final payable amount: {inr(preview.plan.finalPayableAmount, preview.plan.currency)}</p>
+                    <p>Original price: {inr(preview.plan.baseAmount, preview.plan.currency)}</p>
+                    <p>Credit adjustment: -{inr(preview.plan.creditAdjustmentAmount, preview.plan.currency)}</p>
+                    <p className="font-semibold">Final payable amount: {inr(preview.plan.finalPayableAmount, preview.plan.currency)}</p>
                   </div>
                 ) : null}
 
