@@ -186,13 +186,13 @@ export default async function InstituteDashboardPage() {
         <div className="rounded border bg-white p-4 lg:col-span-2">
           <h2 className="text-base font-semibold">Quick actions</h2>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            <Link href="/institute/courses#create-course" className="rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100">
+            <Link href="/institute/courses/new" className="rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100">
               Add new course
             </Link>
-            <Link href="/institute/courses#manage-courses" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+            <Link href="/institute/courses/manage" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Manage courses (edit/delete)
             </Link>
-            <Link href="/institute/courses#manage-courses" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+            <Link href="/institute/courses/rejected" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Rejected courses &amp; resubmission
             </Link>
             <Link href="/institute/leads" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
@@ -219,14 +219,14 @@ export default async function InstituteDashboardPage() {
         <div className="rounded border bg-white p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold">Rejected courses</h2>
-            <Link href="/institute/courses#manage-courses" className="text-sm text-brand-700">
+            <Link href="/institute/courses/rejected" className="text-sm text-brand-700">
               Fix and resubmit
             </Link>
           </div>
           <div className="mt-3 space-y-2 text-sm">
             {rejectedCourses.slice(0, 5).map((course) => (
               <div key={course.id} className="rounded border px-3 py-2">
-                <p className="font-medium">{course.title}</p>
+                <Link href={`/institute/courses/${course.id}`} className="font-medium text-brand-700 hover:underline">{course.title}</Link>
                 <p className="mt-1 text-slate-600">Reason: {course.rejection_reason ?? "Rejected by moderator"}</p>
                 <p className="mt-1 text-xs text-slate-500">Update the course, then resubmit for moderation.</p>
               </div>
@@ -261,7 +261,7 @@ export default async function InstituteDashboardPage() {
           <div className="mt-3 space-y-2 text-sm">
             {courses.slice(0, 5).map((course) => (
               <div key={course.id} className="rounded border px-3 py-2">
-                <p className="font-medium">{course.title}</p>
+                <Link href={`/institute/courses/${course.id}`} className="font-medium text-brand-700 hover:underline">{course.title}</Link>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-slate-600">
                   <StatusBadge status={course.status} />
                   <span>₹{course.fees}</span>
@@ -272,7 +272,7 @@ export default async function InstituteDashboardPage() {
             {courses.length === 0 ? <p className="text-slate-600">No courses yet.</p> : null}
             {courses.length === 0 ? (
               <Link
-                href="/institute/courses#create-course"
+                href="/institute/courses/new"
                 className="inline-flex w-fit rounded border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-800 hover:bg-brand-100"
               >
                 Add your first course
