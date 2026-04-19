@@ -360,6 +360,9 @@ export default async function HomePage() {
                 <p className="mt-1 text-xs text-slate-500">
                   {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
                 </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
+                </p>
                 <p className="mt-5 text-sm text-brand-600 group-hover:underline">View institute</p>
               </article>
             </Link>
@@ -402,6 +405,9 @@ export default async function HomePage() {
                           institute.email ||
                           institute.phone ||
                           "Details not shared yet."}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
                         {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
