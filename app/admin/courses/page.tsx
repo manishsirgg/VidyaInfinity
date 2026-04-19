@@ -1,20 +1,33 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
 import { requireUser } from "@/lib/auth/get-session";
-import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export default async function Page() {
   await requireUser("admin");
-  const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) {
+    throw new Error(admin.error);
+  }
+  const supabase = admin.data;
 
-  const { data: courses } = await supabase
+  const { data: courses, error } = await supabase
     .from("courses")
     .select("id,title,category,subject,level,mode,language,summary,fees,status,faculty_name,batch_size,start_date,rejection_reason,course_media(id,type,file_url),created_at")
     .order("created_at", { ascending: false })
     .limit(100);
 
+  if (error) {
+    console.error("Failed to load courses for moderation", { error: error.message });
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Admin Courses Moderation</h1>
+      {error ? (
+        <p className="mt-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Unable to load courses right now. Please refresh or check Supabase policies/logs.
+        </p>
+      ) : null}
       <div className="mt-4 space-y-3">
         {courses?.map((course) => (
           <div key={course.id} className="rounded border bg-white p-4 text-sm">
@@ -31,6 +44,7 @@ export default async function Page() {
             <ModerationActions targetType="courses" targetId={course.id} currentStatus={course.status} />
           </div>
         ))}
+        {!error && (courses?.length ?? 0) === 0 ? <p className="rounded border bg-white p-4 text-sm text-slate-600">No courses found for moderation.</p> : null}
       </div>
     </div>
   );
