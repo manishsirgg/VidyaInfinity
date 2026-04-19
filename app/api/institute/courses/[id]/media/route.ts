@@ -9,7 +9,7 @@ type Params = {
 };
 
 export async function POST(request: Request, { params }: Params) {
-  const auth = await requireApiUser("institute");
+  const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
 
   const { user } = auth;
