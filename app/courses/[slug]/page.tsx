@@ -2,18 +2,33 @@ import { notFound } from "next/navigation";
 
 import { CoursePurchaseCard } from "@/components/courses/course-purchase-card";
 import { LeadForm } from "@/components/forms/lead-form";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
 
   const baseSelect = "id,title,summary,description,fees,category,subject,level,language,mode,duration,duration_value,duration_unit,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,course_media(file_url,type)";
 
-  const byId = await supabase.from("courses").select(baseSelect).eq("id", slug).eq("status", "approved").maybeSingle();
+  const byId = await dataClient
+    .from("courses")
+    .select(baseSelect)
+    .eq("id", slug)
+    .eq("status", "approved")
+    .or("is_active.is.null,is_active.eq.true")
+    .maybeSingle();
   const byLegacySlug = byId.data
     ? { data: byId.data }
-    : await supabase.from("courses").select(baseSelect).eq("slug", slug).eq("status", "approved").maybeSingle();
+    : await dataClient
+        .from("courses")
+        .select(baseSelect)
+        .eq("slug", slug)
+        .eq("status", "approved")
+        .or("is_active.is.null,is_active.eq.true")
+        .maybeSingle();
 
   const course = byLegacySlug.data;
   if (!course) notFound();
