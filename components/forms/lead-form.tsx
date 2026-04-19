@@ -46,22 +46,27 @@ export function LeadForm({ courseId }: { courseId: string }) {
       courseId,
     };
 
-    const response = await fetch("/api/leads", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    const body = await response.json().catch(() => null);
-    setSubmitting(false);
+      const body = await response.json().catch(() => null);
+      setSubmitting(false);
 
-    if (!response.ok) {
-      setError(body?.error ?? "Unable to submit your lead right now.");
-      return;
+      if (!response.ok) {
+        setError(body?.error ?? "Unable to submit your lead right now.");
+        return;
+      }
+
+      setDone(true);
+      setValues({ name: "", email: "", phone: "", message: "" });
+    } catch {
+      setSubmitting(false);
+      setError("Unable to submit your lead right now. Please check your connection and try again.");
     }
-
-    setDone(true);
-    setValues({ name: "", email: "", phone: "", message: "" });
   }
 
   return (

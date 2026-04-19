@@ -69,6 +69,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: reconciled.error }, { status: 500 });
     }
 
+    await admin.data
+      .from("student_cart_items")
+      .delete()
+      .eq("student_id", user.id)
+      .eq("course_id", order.course_id);
+
     return NextResponse.json({ ok: true, idempotent: false });
   } catch (error) {
     return NextResponse.json(
