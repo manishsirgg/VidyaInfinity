@@ -55,6 +55,27 @@ function hasAnyMedia(files: File[]) {
   return files.some((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
 }
 
+function getMediaValidationError(files: File[]) {
+  if (files.length === 0) return "Upload at least one course image or video.";
+  if (files.length > MAX_MEDIA_FILES) return `You can upload a maximum of ${MAX_MEDIA_FILES} media files.`;
+  if (!hasAnyMedia(files)) return "Only image/video files are allowed for course media.";
+  const oversizedFile = files.find((file) => {
+    if (file.type.startsWith("image/")) return file.size > MAX_IMAGE_SIZE_BYTES;
+    if (file.type.startsWith("video/")) return file.size > MAX_VIDEO_SIZE_BYTES;
+    return true;
+  });
+
+  if (!oversizedFile) return "";
+
+  if (oversizedFile.type.startsWith("image/")) {
+    return `"${oversizedFile.name}" is too large. Image files must be 10MB or smaller.`;
+  }
+  if (oversizedFile.type.startsWith("video/")) {
+    return `"${oversizedFile.name}" is too large. Video files must be 50MB or smaller.`;
+  }
+  return `Unsupported media type for "${oversizedFile.name}".`;
+}
+
 function requiredLabel(label: string) {
   return (
     <>
@@ -97,26 +118,7 @@ export function CourseCreateForm() {
     return "";
   }, [dates]);
 
-  const mediaError = useMemo(() => {
-    if (mediaFiles.length === 0) return "Upload at least one course image or video.";
-    if (mediaFiles.length > MAX_MEDIA_FILES) return `You can upload a maximum of ${MAX_MEDIA_FILES} media files.`;
-    if (!hasAnyMedia(mediaFiles)) return "Only image/video files are allowed for course media.";
-    const oversizedFile = mediaFiles.find((file) => {
-      if (file.type.startsWith("image/")) return file.size > MAX_IMAGE_SIZE_BYTES;
-      if (file.type.startsWith("video/")) return file.size > MAX_VIDEO_SIZE_BYTES;
-      return true;
-    });
-    if (oversizedFile) {
-      if (oversizedFile.type.startsWith("image/")) {
-        return `"${oversizedFile.name}" is too large. Image files must be 10MB or smaller.`;
-      }
-      if (oversizedFile.type.startsWith("video/")) {
-        return `"${oversizedFile.name}" is too large. Video files must be 50MB or smaller.`;
-      }
-      return `Unsupported media type for "${oversizedFile.name}".`;
-    }
-    return "";
-  }, [mediaFiles]);
+  const mediaError = useMemo(() => getMediaValidationError(mediaFiles), [mediaFiles]);
 
   const descriptionError = useMemo(() => {
     if (descriptionWordCount > 3000) {
@@ -130,9 +132,15 @@ export function CourseCreateForm() {
     setMessage("");
     setError("");
 
-    if (dateError || mediaError || descriptionError) {
+    const mediaInput = event.currentTarget.elements.namedItem("mediaFiles");
+    const inputFiles = mediaInput instanceof HTMLInputElement ? Array.from(mediaInput.files ?? []) : [];
+    const selectedMediaFiles = mediaFiles.length > 0 ? mediaFiles : inputFiles;
+    const submitMediaError = getMediaValidationError(selectedMediaFiles);
+
+    if (dateError || submitMediaError || descriptionError) {
       setState("error");
-      setError(dateError || mediaError || descriptionError || "Please fix form errors before submitting.");
+      setMediaFiles(selectedMediaFiles);
+      setError(dateError || submitMediaError || descriptionError || "Please fix form errors before submitting.");
       return;
     }
 
@@ -157,7 +165,7 @@ export function CourseCreateForm() {
 
       const supabase = createClient();
 
-      for (const file of mediaFiles) {
+      for (const file of selectedMediaFiles) {
         const signedResponse = await fetch(`/api/institute/courses/${courseId}/media/signed-url`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
