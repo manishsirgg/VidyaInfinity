@@ -22,14 +22,14 @@ export default async function HomePage() {
 
   const statusAwareInstitutes = await dataClient
     .from("institutes")
-    .select("id,user_id,slug,name,description,organization_type,status")
+    .select("id,user_id,slug,name,description,organization_type,website_url,verified,status")
     .eq("status", "approved")
     .order("created_at", { ascending: false })
     .limit(18);
   const approvalAwareInstitutes = statusAwareInstitutes.error
     ? await dataClient
         .from("institutes")
-        .select("id,user_id,slug,name,description,organization_type,approval_status")
+        .select("id,user_id,slug,name,description,organization_type,website_url,verified,approval_status")
         .eq("approval_status", "approved")
         .order("created_at", { ascending: false })
         .limit(18)
@@ -41,6 +41,8 @@ export default async function HomePage() {
     name: string | null;
     description: string | null;
     organization_type: string | null;
+    website_url: string | null;
+    verified: boolean | null;
   }>;
 
   const profileIds = [...new Set(listedInstitutes.map((institute) => institute.user_id).filter(Boolean))] as string[];
@@ -48,7 +50,7 @@ export default async function HomePage() {
     ? (
         await dataClient
           .from("profiles")
-          .select("id,name,full_name,organization_name,organization_type,city,state,country,email,phone")
+          .select("id,name,full_name,organization_name,organization_type,city,state,country,email,phone,avatar_url")
           .in("id", profileIds)
       ).data ?? []
     : [];
@@ -65,12 +67,32 @@ export default async function HomePage() {
         country: string | null;
         email: string | null;
         phone: string | null;
+        avatar_url: string | null;
       }>
     ).map((profile) => [profile.id, profile]),
+  );
+  const additionalDetailsRows = profileIds.length
+    ? (
+        await dataClient
+          .from("user_additional_details")
+          .select("user_id,address_line_1,address_line_2,postal_code")
+          .in("user_id", profileIds)
+      ).data ?? []
+    : [];
+  const additionalDetailsByUserId = new Map(
+    (
+      additionalDetailsRows as Array<{
+        user_id: string;
+        address_line_1: string | null;
+        address_line_2: string | null;
+        postal_code: string | null;
+      }>
+    ).map((item) => [item.user_id, item]),
   );
 
   const mappedInstitutes = listedInstitutes.map((institute) => {
     const profile = institute.user_id ? profileById.get(institute.user_id) : undefined;
+    const details = institute.user_id ? additionalDetailsByUserId.get(institute.user_id) : undefined;
     return {
       ...institute,
       name: institute.name || profile?.organization_name || profile?.full_name || profile?.name || "Institute",
@@ -80,6 +102,10 @@ export default async function HomePage() {
       country: profile?.country ?? null,
       email: profile?.email ?? null,
       phone: profile?.phone ?? null,
+      avatar_url: profile?.avatar_url ?? null,
+      address_line_1: details?.address_line_1 ?? null,
+      address_line_2: details?.address_line_2 ?? null,
+      postal_code: details?.postal_code ?? null,
     };
   });
 
@@ -88,7 +114,7 @@ export default async function HomePage() {
     : (
         await dataClient
           .from("profiles")
-          .select("id,name,full_name,organization_name,organization_type,city,state,country,email,phone,approval_status,role")
+          .select("id,name,full_name,organization_name,organization_type,city,state,country,email,phone,avatar_url,approval_status,role")
           .eq("role", "institute")
           .eq("approval_status", "approved")
           .order("created_at", { ascending: false })
@@ -109,15 +135,21 @@ export default async function HomePage() {
         country: profile.country ?? null,
         email: profile.email ?? null,
         phone: profile.phone ?? null,
+        avatar_url: profile.avatar_url ?? null,
+        address_line_1: null as string | null,
+        address_line_2: null as string | null,
+        postal_code: null as string | null,
+        website_url: null as string | null,
+        verified: null as boolean | null,
       }));
 
-  const instituteIds = institutesForHome.map((institute) => institute.id);
-  const instituteMediaRows = instituteIds.length
+  const instituteMediaLookupIds = [...new Set(institutesForHome.flatMap((institute) => [institute.id, institute.user_id].filter(Boolean)))] as string[];
+  const instituteMediaRows = instituteMediaLookupIds.length
     ? (
         await dataClient
           .from("institute_media")
           .select("institute_id,media_type,file_url")
-          .in("institute_id", instituteIds)
+          .in("institute_id", instituteMediaLookupIds)
           .order("created_at", { ascending: false })
       ).data ?? []
     : [];
@@ -129,6 +161,17 @@ export default async function HomePage() {
         ? media.file_url
         : getPublicFileUrl({ bucket: "institute-media", path: media.file_url }) ?? getPublicFileUrl({ bucket: "blog-media", path: media.file_url });
       if (mediaUrl) instituteImageById.set(media.institute_id, mediaUrl);
+    }
+  }
+  for (const institute of institutesForHome) {
+    if (!instituteImageById.has(institute.id) && institute.user_id && instituteImageById.has(institute.user_id)) {
+      instituteImageById.set(institute.id, instituteImageById.get(institute.user_id) ?? "");
+    }
+    if (!instituteImageById.has(institute.id) && institute.avatar_url) {
+      const avatarUrl = /^https?:\/\//i.test(institute.avatar_url)
+        ? institute.avatar_url
+        : getPublicFileUrl({ bucket: "avatars", path: institute.avatar_url });
+      if (avatarUrl) instituteImageById.set(institute.id, avatarUrl);
     }
   }
 
@@ -309,7 +352,13 @@ export default async function HomePage() {
                 <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{institute.name ?? "Institute"}</h3>
                 <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
                 <p className="mt-3 text-xs text-slate-600">
-                  {[institute.city, institute.state, institute.country].filter(Boolean).join(", ") || institute.email || institute.phone || "Details not shared yet."}
+                  {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
+                    institute.email ||
+                    institute.phone ||
+                    "Details not shared yet."}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
                 </p>
                 <p className="mt-5 text-sm text-brand-600 group-hover:underline">View institute</p>
               </article>
@@ -349,7 +398,13 @@ export default async function HomePage() {
                       <h4 className="line-clamp-2 text-base font-medium">{institute.name ?? "Institute"}</h4>
                       <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
                       <p className="mt-3 text-xs text-slate-600">
-                        {[institute.city, institute.state, institute.country].filter(Boolean).join(", ") || institute.email || institute.phone || "Details not shared yet."}
+                        {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
+                          institute.email ||
+                          institute.phone ||
+                          "Details not shared yet."}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
                       </p>
                       <p className="mt-4 text-xs text-brand-700">View details</p>
                     </article>
