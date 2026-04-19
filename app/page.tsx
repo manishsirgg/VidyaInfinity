@@ -20,24 +20,42 @@ export default async function HomePage() {
     .order("created_at", { ascending: false })
     .limit(18);
 
+  const instituteSelectWithSlug = "id,user_id,slug,name,description,organization_type,website_url,verified";
+  const instituteSelectWithoutSlug = "id,user_id,name,description,organization_type,website_url,verified";
   const statusAwareInstitutes = await dataClient
     .from("institutes")
-    .select("id,user_id,slug,name,description,organization_type,website_url,verified,status")
+    .select(`${instituteSelectWithSlug},status`)
     .eq("status", "approved")
     .order("created_at", { ascending: false })
     .limit(18);
-  const approvalAwareInstitutes = statusAwareInstitutes.error
+  const statusAwareInstitutesWithoutSlug = statusAwareInstitutes.error
     ? await dataClient
         .from("institutes")
-        .select("id,user_id,slug,name,description,organization_type,website_url,verified,approval_status")
-        .eq("approval_status", "approved")
+        .select(`${instituteSelectWithoutSlug},status`)
+        .eq("status", "approved")
         .order("created_at", { ascending: false })
         .limit(18)
     : statusAwareInstitutes;
-  const listedInstitutes = (approvalAwareInstitutes.data ?? []) as Array<{
+  const approvalAwareInstitutes = statusAwareInstitutesWithoutSlug.error
+    ? await dataClient
+        .from("institutes")
+        .select(`${instituteSelectWithSlug},approval_status`)
+        .eq("approval_status", "approved")
+        .order("created_at", { ascending: false })
+        .limit(18)
+    : statusAwareInstitutesWithoutSlug;
+  const approvalAwareInstitutesWithoutSlug = approvalAwareInstitutes.error
+    ? await dataClient
+        .from("institutes")
+        .select(`${instituteSelectWithoutSlug},approval_status`)
+        .eq("approval_status", "approved")
+        .order("created_at", { ascending: false })
+        .limit(18)
+    : approvalAwareInstitutes;
+  const listedInstitutes = (approvalAwareInstitutesWithoutSlug.data ?? []) as Array<{
     id: string;
     user_id: string | null;
-    slug: string | null;
+    slug?: string | null;
     name: string | null;
     description: string | null;
     organization_type: string | null;

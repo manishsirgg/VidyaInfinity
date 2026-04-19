@@ -22,30 +22,34 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
   const admin = getSupabaseAdmin();
   if (!admin.ok) notFound();
 
+  const baseInstituteColumns =
+    "id,user_id,name,description,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified";
   const statusAwareResponse = await admin.data
     .from("institutes")
-    .select(
-      "id,user_id,name,description,slug,status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
-    )
+    .select(`${baseInstituteColumns},slug,status`)
     .or(`id.eq.${slug},slug.eq.${slug}`)
     .eq("status", "approved")
     .maybeSingle();
-  const approvalStatusResponse = statusAwareResponse.error
+  const statusAwareWithoutSlugResponse = statusAwareResponse.error
     ? await admin.data
         .from("institutes")
-        .select(
-          "id,user_id,name,description,slug,approval_status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
-        )
+        .select(`${baseInstituteColumns},status`)
+        .eq("id", slug)
+        .eq("status", "approved")
+        .maybeSingle()
+    : statusAwareResponse;
+  const approvalStatusResponse = statusAwareWithoutSlugResponse.error
+    ? await admin.data
+        .from("institutes")
+        .select(`${baseInstituteColumns},slug,approval_status`)
         .or(`id.eq.${slug},slug.eq.${slug}`)
         .eq("approval_status", "approved")
         .maybeSingle()
-    : statusAwareResponse;
+    : statusAwareWithoutSlugResponse;
   const statusWithoutSlugResponse = approvalStatusResponse.error
     ? await admin.data
         .from("institutes")
-        .select(
-          "id,user_id,name,description,status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
-        )
+        .select(`${baseInstituteColumns},status`)
         .eq("id", slug)
         .eq("status", "approved")
         .maybeSingle()
@@ -53,9 +57,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
   const instituteResponse = statusWithoutSlugResponse.error
     ? await admin.data
         .from("institutes")
-        .select(
-          "id,user_id,name,description,approval_status,website_url,organization_type,legal_entity_name,registration_number,accreditation_affiliation_number,established_year,total_students,total_staff,verified"
-        )
+        .select(`${baseInstituteColumns},approval_status`)
         .eq("id", slug)
         .eq("approval_status", "approved")
         .maybeSingle()
