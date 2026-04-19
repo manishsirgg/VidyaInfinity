@@ -41,6 +41,10 @@ type InstituteMediaRecord = {
   file_name: string | null;
 };
 
+type ActiveFeaturedInstituteRecord = {
+  institute_id: string;
+};
+
 function toPublicMediaUrl(
   adminClient: { storage: { from: (bucket: string) => { getPublicUrl: (path: string) => { data: { publicUrl: string } } } } },
   fileUrl: string | null | undefined
@@ -105,6 +109,19 @@ export default async function InstitutesPage() {
     : statusWithoutSlugResponse;
   const instituteRows = (institutesResponse.data ?? []) as InstituteRecord[];
   const instituteIds = instituteRows.map((item) => item.id);
+  const featuredInstituteRows = instituteIds.length
+    ? (
+        await admin.data
+          .from("active_institute_featured_status")
+          .select("institute_id")
+          .in("institute_id", instituteIds)
+      ).data ?? []
+    : [];
+  const featuredInstituteIdSet = new Set(
+    (featuredInstituteRows as ActiveFeaturedInstituteRecord[])
+      .map((item) => item.institute_id)
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+  );
   const mediaRows = instituteIds.length
     ? (
         await admin.data
@@ -159,6 +176,7 @@ export default async function InstitutesPage() {
         url: toPublicMediaUrl(admin.data, item.file_url),
         fileName: item.file_name,
       })),
+      isFeatured: featuredInstituteIdSet.has(institute.id),
     };
   });
 
@@ -195,7 +213,9 @@ export default async function InstitutesPage() {
         state: profile.state ?? null,
         country: profile.country ?? null,
         media: [] as { id: string; mediaType: "image" | "video"; url: string | null; fileName: string | null }[],
+        isFeatured: false,
       }));
+  instituteCards.sort((left, right) => Number(right.isFeatured) - Number(left.isFeatured));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -204,7 +224,14 @@ export default async function InstitutesPage() {
         {instituteCards.map((institute) => (
           <Link href={`/institutes/${institute.slug ?? institute.id}` as Route} key={institute.id} className="group rounded-xl border bg-white p-5 transition hover:border-brand-300">
           <article>
-            <h2 className="text-lg font-medium">{institute.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-medium">{institute.name}</h2>
+              {institute.isFeatured ? (
+                <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                  Featured
+                </span>
+              ) : null}
+            </div>
             {(() => {
               const coverMedia = getInstituteCoverMedia(institute.media);
               if (!coverMedia) return null;
