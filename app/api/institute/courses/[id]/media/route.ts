@@ -60,6 +60,75 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "Course not found" }, { status: 404 });
     }
 
+    const { count: mediaCount, error: mediaCountError } = await admin.data
+      .from("course_media")
+      .select("id", { count: "exact", head: true })
+      .eq("course_id", course.id);
+
+    if (mediaCountError) {
+      return NextResponse.json({ error: mediaCountError.message }, { status: 500 });
+    }
+
+    if ((mediaCount ?? 0) >= MAX_MEDIA_FILES_PER_COURSE) {
+      return NextResponse.json({ error: `A maximum of ${MAX_MEDIA_FILES_PER_COURSE} media files is allowed per course.` }, { status: 400 });
+    }
+
+    const contentType = request.headers.get("content-type") ?? "";
+
+    if (contentType.includes("application/json")) {
+      const body = (await request.json().catch(() => null)) as
+        | {
+            path?: string;
+            publicUrl?: string;
+            fileType?: string;
+          }
+        | null;
+
+      const path = String(body?.path ?? "").trim();
+      const publicUrl = String(body?.publicUrl ?? "").trim();
+      const fileType = String(body?.fileType ?? "").trim();
+
+      if (!path || !fileType) {
+        return NextResponse.json({ error: "path and fileType are required" }, { status: 400 });
+      }
+
+      if (!fileType.startsWith("image/") && !fileType.startsWith("video/")) {
+        return NextResponse.json({ error: "Only image and video files are allowed for course media" }, { status: 400 });
+      }
+
+      const mediaType = fileType.startsWith("video/") ? "video" : "image";
+
+      const mediaPayload = {
+        course_id: course.id,
+        file_url: publicUrl || path,
+        type: mediaType,
+        storage_path: path,
+      };
+
+      const { error: mediaError } = await admin.data.from("course_media").insert(mediaPayload);
+
+      if (mediaError && isMissingStoragePathColumnError(mediaError.message)) {
+        const { error: fallbackInsertError } = await admin.data.from("course_media").insert({
+          course_id: course.id,
+          file_url: publicUrl || path,
+          type: mediaType,
+        });
+
+        if (fallbackInsertError) {
+          return NextResponse.json({ error: `Course media record insert failed: ${fallbackInsertError.message}` }, { status: 500 });
+        }
+
+        return NextResponse.json({ ok: true });
+      }
+
+      if (mediaError) {
+        return NextResponse.json({ error: `Course media record insert failed: ${mediaError.message}` }, { status: 500 });
+      }
+
+      return NextResponse.json({ ok: true });
+    }
+
+    // Legacy multipart fallback for smaller files.
     const form = await request.formData();
     const file = form.get("file");
 
@@ -86,23 +155,7 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
-      return NextResponse.json(
-        { error: "Only image and video files are allowed for course media" },
-        { status: 400 }
-      );
-    }
-
-    const { count: mediaCount, error: mediaCountError } = await admin.data
-      .from("course_media")
-      .select("id", { count: "exact", head: true })
-      .eq("course_id", course.id);
-
-    if (mediaCountError) {
-      return NextResponse.json({ error: mediaCountError.message }, { status: 500 });
-    }
-
-    if ((mediaCount ?? 0) >= MAX_MEDIA_FILES_PER_COURSE) {
-      return NextResponse.json({ error: `A maximum of ${MAX_MEDIA_FILES_PER_COURSE} media files is allowed per course.` }, { status: 400 });
+      return NextResponse.json({ error: "Only image and video files are allowed for course media" }, { status: 400 });
     }
 
     const uploaded = await uploadCourseMedia({
@@ -112,52 +165,23 @@ export async function POST(request: Request, { params }: Params) {
     });
 
     if (uploaded.error) {
-      return NextResponse.json(
-        { error: `Upload failed for ${file.name}: ${uploaded.error}` },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: `Upload failed for ${file.name}: ${uploaded.error}` }, { status: 400 });
     }
 
     if (!uploaded.path) {
-      return NextResponse.json(
-        { error: `Upload failed for ${file.name}: Storage path was not returned by server.` },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: `Upload failed for ${file.name}: Storage path was not returned by server.` }, { status: 500 });
     }
 
     const mediaType = file.type.startsWith("video/") ? "video" : "image";
-
-    const mediaPayload = {
+    const { error: mediaError } = await admin.data.from("course_media").insert({
       course_id: course.id,
       file_url: uploaded.publicUrl ?? uploaded.path,
       type: mediaType,
       storage_path: uploaded.path,
-    };
-
-    const { error: mediaError } = await admin.data.from("course_media").insert(mediaPayload);
-
-    if (mediaError && isMissingStoragePathColumnError(mediaError.message)) {
-      const { error: fallbackInsertError } = await admin.data.from("course_media").insert({
-        course_id: course.id,
-        file_url: uploaded.publicUrl ?? uploaded.path,
-        type: mediaType,
-      });
-
-      if (fallbackInsertError) {
-        return NextResponse.json(
-          { error: `Course media record insert failed for ${file.name}: ${fallbackInsertError.message}` },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({ ok: true });
-    }
+    });
 
     if (mediaError) {
-      return NextResponse.json(
-        { error: `Course media record insert failed for ${file.name}: ${mediaError.message}` },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: `Course media record insert failed for ${file.name}: ${mediaError.message}` }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
