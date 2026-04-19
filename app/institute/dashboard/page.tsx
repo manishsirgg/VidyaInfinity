@@ -90,6 +90,7 @@ export default async function InstituteDashboardPage() {
 
   const approvedCourses = courses.filter((course) => course.status === "approved").length;
   const pendingCourses = courses.filter((course) => course.status === "pending").length;
+  const rejectedCourses = courses.filter((course) => course.status === "rejected");
 
   const paidOrders = orderRows.filter((order) => order.payment_status === "paid");
   const totalGrossRevenue = paidOrders.reduce((sum, order) => sum + Number(order.gross_amount ?? 0), 0);
@@ -188,8 +189,11 @@ export default async function InstituteDashboardPage() {
             <Link href="/institute/courses#create-course" className="rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 hover:bg-brand-100">
               Add new course
             </Link>
-            <Link href="/institute/courses" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+            <Link href="/institute/courses#manage-courses" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Manage courses (edit/delete)
+            </Link>
+            <Link href="/institute/courses#manage-courses" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              Rejected courses &amp; resubmission
             </Link>
             <Link href="/institute/leads" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Review leads
@@ -212,6 +216,25 @@ export default async function InstituteDashboardPage() {
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="rounded border bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold">Rejected courses</h2>
+            <Link href="/institute/courses#manage-courses" className="text-sm text-brand-700">
+              Fix and resubmit
+            </Link>
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            {rejectedCourses.slice(0, 5).map((course) => (
+              <div key={course.id} className="rounded border px-3 py-2">
+                <p className="font-medium">{course.title}</p>
+                <p className="mt-1 text-slate-600">Reason: {course.rejection_reason ?? "Rejected by moderator"}</p>
+                <p className="mt-1 text-xs text-slate-500">Update the course, then resubmit for moderation.</p>
+              </div>
+            ))}
+            {rejectedCourses.length === 0 ? <p className="text-slate-600">No rejected courses at the moment.</p> : null}
+          </div>
+        </div>
+
         <div className="rounded border bg-white p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold">Recent notifications</h2>
