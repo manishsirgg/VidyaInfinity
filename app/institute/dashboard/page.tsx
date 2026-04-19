@@ -151,7 +151,7 @@ export default async function InstituteDashboardPage() {
           <p className="mt-1 text-2xl font-semibold">{enrollmentsResult.count ?? 0}</p>
           <p className="mt-1 text-xs text-slate-600">{paidOrdersThisMonth} paid orders in the last 30 days</p>
         </Link>
-        <Link href="/institute/enrollments" className="rounded border bg-white p-4 transition hover:border-brand-300">
+        <Link href="/institute/wallet" className="rounded border bg-white p-4 transition hover:border-brand-300">
           <p className="text-xs uppercase tracking-wide text-slate-500">Wallet balance</p>
           <p className="mt-1 text-2xl font-semibold">{money(walletBalance)}</p>
           <p className="mt-1 text-xs text-slate-600">Pending payouts: {money(pendingPayouts)}</p>
@@ -203,6 +203,9 @@ export default async function InstituteDashboardPage() {
             </Link>
             <Link href="/institute/enrollments" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Track enrollments
+            </Link>
+            <Link href="/institute/wallet" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              Wallet balance & payouts
             </Link>
             <Link href="/institute/profile" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Update institute profile
