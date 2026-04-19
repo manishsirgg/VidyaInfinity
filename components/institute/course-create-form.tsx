@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 
 import { FormFeedback } from "@/components/shared/form-feedback";
 import { createClient } from "@/lib/supabase/client";
@@ -51,8 +51,29 @@ const MAX_MEDIA_FILES = 10;
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024;
 
+const FORM_STEPS = [
+  "Basic course information",
+  "Delivery, schedule & timeline",
+  "Admissions & learner outcomes",
+  "Certification, pricing & support",
+  "Course media",
+] as const;
+
+type FileKind = "image" | "video" | null;
+
+function getFileKind(file: File): FileKind {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+
+  const extension = file.name.toLowerCase().split(".").pop() ?? "";
+  if (["jpg", "jpeg", "png", "webp"].includes(extension)) return "image";
+  if (["mp4", "webm", "mov", "m4v"].includes(extension)) return "video";
+
+  return null;
+}
+
 function hasAnyMedia(files: File[]) {
-  return files.some((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
+  return files.some((file) => getFileKind(file) !== null);
 }
 
 function getMediaValidationError(files: File[]) {
@@ -60,17 +81,18 @@ function getMediaValidationError(files: File[]) {
   if (files.length > MAX_MEDIA_FILES) return `You can upload a maximum of ${MAX_MEDIA_FILES} media files.`;
   if (!hasAnyMedia(files)) return "Only image/video files are allowed for course media.";
   const oversizedFile = files.find((file) => {
-    if (file.type.startsWith("image/")) return file.size > MAX_IMAGE_SIZE_BYTES;
-    if (file.type.startsWith("video/")) return file.size > MAX_VIDEO_SIZE_BYTES;
+    const kind = getFileKind(file);
+    if (kind === "image") return file.size > MAX_IMAGE_SIZE_BYTES;
+    if (kind === "video") return file.size > MAX_VIDEO_SIZE_BYTES;
     return true;
   });
 
   if (!oversizedFile) return "";
 
-  if (oversizedFile.type.startsWith("image/")) {
+  if (getFileKind(oversizedFile) === "image") {
     return `"${oversizedFile.name}" is too large. Image files must be 10MB or smaller.`;
   }
-  if (oversizedFile.type.startsWith("video/")) {
+  if (getFileKind(oversizedFile) === "video") {
     return `"${oversizedFile.name}" is too large. Video files must be 50MB or smaller.`;
   }
   return `Unsupported media type for "${oversizedFile.name}".`;
@@ -89,10 +111,13 @@ function FieldHint({ children }: { children: string }) {
 }
 
 export function CourseCreateForm() {
+  const formRef = useRef<HTMLFormElement>(null);
   const [state, setState] = useState<SubmitState>("idle");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [mediaTouched, setMediaTouched] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
   const [dates, setDates] = useState<DateState>({ startDate: "", endDate: "", admissionDeadline: "" });
   const [durationValue, setDurationValue] = useState("");
   const [durationUnit, setDurationUnit] = useState("");
@@ -127,6 +152,41 @@ export function CourseCreateForm() {
     return "";
   }, [descriptionWordCount]);
 
+  function validateStep(step: number, form: HTMLFormElement) {
+    const fields = form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+      `[data-step=\"${step}\"] input, [data-step=\"${step}\"] select, [data-step=\"${step}\"] textarea`,
+    );
+
+    for (const field of fields) {
+      if (!field.checkValidity()) {
+        setCurrentStep(step);
+        field.reportValidity();
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function goToNextStep() {
+    const form = formRef.current;
+    if (!form) return;
+
+    if (!validateStep(currentStep, form)) return;
+    if (currentStep === 1 && dateError) {
+      setError(dateError);
+      return;
+    }
+    if (currentStep === 4 && mediaError) {
+      setMediaTouched(true);
+      setError(mediaError);
+      return;
+    }
+
+    setError("");
+    setCurrentStep((prev) => Math.min(prev + 1, FORM_STEPS.length - 1));
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
@@ -135,7 +195,16 @@ export function CourseCreateForm() {
     const mediaInput = event.currentTarget.elements.namedItem("mediaFiles");
     const inputFiles = mediaInput instanceof HTMLInputElement ? Array.from(mediaInput.files ?? []) : [];
     const selectedMediaFiles = mediaFiles.length > 0 ? mediaFiles : inputFiles;
+    setMediaTouched(true);
     const submitMediaError = getMediaValidationError(selectedMediaFiles);
+
+    for (let step = 0; step < FORM_STEPS.length; step += 1) {
+      if (!validateStep(step, event.currentTarget)) {
+        setState("error");
+        setError("Please complete all required fields before submitting.");
+        return;
+      }
+    }
 
     if (dateError || submitMediaError || descriptionError) {
       setState("error");
@@ -165,11 +234,17 @@ export function CourseCreateForm() {
 
       const supabase = createClient();
 
+      const mediaFailures: string[] = [];
+      let mediaUploadCount = 0;
+
       for (const file of selectedMediaFiles) {
+        const kind = getFileKind(file);
+        const fileType = file.type || (kind === "image" ? "image/jpeg" : "video/mp4");
+
         const signedResponse = await fetch(`/api/institute/courses/${courseId}/media/signed-url`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileName: file.name, fileType: file.type, fileSize: file.size }),
+          body: JSON.stringify({ fileName: file.name, fileType, fileSize: file.size }),
         });
 
         const signedBody = (await signedResponse.json().catch(() => null)) as
@@ -177,23 +252,19 @@ export function CourseCreateForm() {
           | null;
 
         if (!signedResponse.ok || !signedBody?.token || !signedBody.path) {
-          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
-          setState("error");
-          setError(signedBody?.error ?? `Failed to prepare upload for "${file.name}".`);
-          return;
+          mediaFailures.push(`Could not prepare upload for "${file.name}".`);
+          continue;
         }
 
         const { error: storageError } = await supabase.storage
           .from("course-media")
           .uploadToSignedUrl(signedBody.path, signedBody.token, file, {
-            contentType: file.type,
+            contentType: fileType,
           });
 
         if (storageError) {
-          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
-          setState("error");
-          setError(`Upload failed for "${file.name}": ${storageError.message}`);
-          return;
+          mediaFailures.push(`Upload failed for "${file.name}": ${storageError.message}`);
+          continue;
         }
 
         const mediaResponse = await fetch(`/api/institute/courses/${courseId}/media`, {
@@ -202,36 +273,38 @@ export function CourseCreateForm() {
           body: JSON.stringify({
             path: signedBody.path,
             publicUrl: signedBody.publicUrl,
-            fileType: file.type,
+            fileType,
           }),
         });
 
         if (!mediaResponse.ok) {
           const errorText = await mediaResponse.text().catch(() => "");
-          let mediaBody: { error?: string } | null = null;
-          if (errorText) {
-            try {
-              mediaBody = JSON.parse(errorText) as { error?: string };
-            } catch {
-              mediaBody = null;
-            }
-          }
-          const detailedError =
-            mediaBody?.error || errorText || `Failed to register "${file.name}" (HTTP ${mediaResponse.status})`;
-          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
-          setState("error");
-          setError(detailedError);
-          return;
+          mediaFailures.push(errorText || `Failed to register "${file.name}" (HTTP ${mediaResponse.status})`);
+          continue;
         }
+
+        mediaUploadCount += 1;
+      }
+
+      if (mediaUploadCount === 0) {
+        setState("error");
+        setError(mediaFailures[0] ?? "Course was created but media upload failed. Please edit the course and upload media again.");
+        return;
       }
 
       setState("success");
-      setMessage("Course submitted for admin approval.");
+      setMessage(
+        mediaFailures.length > 0
+          ? "Course submitted. Some media files failed to upload; you can add them later from course management."
+          : "Course submitted for admin approval.",
+      );
       setMediaFiles([]);
+      setMediaTouched(false);
       setDates({ startDate: "", endDate: "", admissionDeadline: "" });
       setDurationValue("");
       setDurationUnit("");
       setDescription("");
+      setCurrentStep(0);
       event.currentTarget.reset();
     } catch {
       setState("error");
@@ -240,7 +313,7 @@ export function CourseCreateForm() {
   }
 
   return (
-    <form id="create-course" onSubmit={onSubmit} className="mt-4 space-y-5 rounded border bg-white p-4 md:p-6">
+    <form id="create-course" ref={formRef} onSubmit={onSubmit} noValidate className="mt-4 space-y-5 rounded border bg-white p-4 md:p-6">
       <div className="border-b border-slate-200 pb-3">
         <h2 className="text-lg font-semibold">Add a new course</h2>
         <p className="mt-1 text-sm text-slate-600">
@@ -248,7 +321,35 @@ export function CourseCreateForm() {
         </p>
       </div>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {FORM_STEPS.map((label, index) => {
+          const isActive = index === currentStep;
+          const isDone = index < currentStep;
+
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => {
+                setError("");
+                setCurrentStep(index);
+              }}
+              className={`rounded border px-3 py-2 text-left text-xs sm:text-sm ${
+                isActive
+                  ? "border-brand-600 bg-brand-50 font-semibold text-brand-700"
+                  : isDone
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 bg-white text-slate-600"
+              }`}
+            >
+              <span className="block text-[11px] uppercase tracking-wide opacity-70">Step {index + 1}</span>
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <section data-step="0" className={currentStep === 0 ? "space-y-3 rounded-lg border border-slate-200 p-4" : "hidden"}>
         <h3 className="text-base font-semibold text-slate-900">Basic course information</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-medium text-slate-700">
@@ -306,7 +407,7 @@ export function CourseCreateForm() {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <section data-step="1" className={currentStep === 1 ? "space-y-3 rounded-lg border border-slate-200 p-4" : "hidden"}>
         <h3 className="text-base font-semibold text-slate-900">Delivery, schedule & timeline</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-medium text-slate-700">
@@ -421,7 +522,7 @@ export function CourseCreateForm() {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <section data-step="2" className={currentStep === 2 ? "space-y-3 rounded-lg border border-slate-200 p-4" : "hidden"}>
         <h3 className="text-base font-semibold text-slate-900">Admissions & learner outcomes</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-medium text-slate-700">
@@ -441,7 +542,7 @@ export function CourseCreateForm() {
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <section data-step="3" className={currentStep === 3 ? "space-y-3 rounded-lg border border-slate-200 p-4" : "hidden"}>
         <h3 className="text-base font-semibold text-slate-900">Certification, pricing & support</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-sm font-medium text-slate-700">
@@ -511,10 +612,7 @@ export function CourseCreateForm() {
         </div>
       </section>
 
-      {dateError ? <FormFeedback tone="error">{dateError}</FormFeedback> : null}
-      {descriptionError ? <FormFeedback tone="error">{descriptionError}</FormFeedback> : null}
-
-      <section className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <section data-step="4" className={currentStep === 4 ? "space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4" : "hidden"}>
         <h3 className="text-base font-semibold text-slate-900">Course media</h3>
         <p className="text-sm text-slate-600">At least one image or video is required. Upload quality media for better conversions.</p>
         <input
@@ -522,20 +620,49 @@ export function CourseCreateForm() {
           name="mediaFiles"
           multiple
           required
-          accept="image/png,image/jpeg,image/webp,video/mp4,video/webm"
+          accept="image/png,image/jpeg,image/jpg,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v"
           className="rounded border bg-white px-3 py-2"
-          onChange={(event) => setMediaFiles(Array.from(event.target.files ?? []))}
+          onChange={(event) => {
+            setMediaTouched(true);
+            setMediaFiles(Array.from(event.target.files ?? []));
+          }}
         />
         <p className="text-xs text-slate-500">Upload up to 10 files. Images: max 10MB each. Videos: max 50MB each.</p>
         {mediaFiles.length > 0 ? <p className="text-xs text-slate-600">{mediaFiles.length} file(s) selected.</p> : null}
       </section>
 
-      {mediaError ? <FormFeedback tone="warning">{mediaError}</FormFeedback> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setError("");
+            setCurrentStep((prev) => Math.max(prev - 1, 0));
+          }}
+          disabled={currentStep === 0 || state === "submitting"}
+          className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Previous
+        </button>
 
-      <button type="submit" disabled={state === "submitting"} className="w-full rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-60 md:w-auto">
-        {state === "submitting" ? "Submitting..." : "Submit Course for Admin Approval"}
-      </button>
+        {currentStep < FORM_STEPS.length - 1 ? (
+          <button
+            type="button"
+            onClick={goToNextStep}
+            disabled={state === "submitting"}
+            className="rounded bg-brand-600 px-4 py-2 text-sm text-white disabled:opacity-60"
+          >
+            Save & Next
+          </button>
+        ) : (
+          <button type="submit" disabled={state === "submitting"} className="rounded bg-brand-600 px-4 py-2 text-sm text-white disabled:opacity-60">
+            {state === "submitting" ? "Submitting..." : "Submit Course for Admin Approval"}
+          </button>
+        )}
+      </div>
 
+      {dateError ? <FormFeedback tone="error">{dateError}</FormFeedback> : null}
+      {descriptionError ? <FormFeedback tone="error">{descriptionError}</FormFeedback> : null}
+      {currentStep === 4 && mediaTouched && mediaError ? <FormFeedback tone="warning">{mediaError}</FormFeedback> : null}
       {state === "success" && message ? <FormFeedback tone="success">{message}</FormFeedback> : null}
       {state === "error" && error ? <FormFeedback tone="error">{error}</FormFeedback> : null}
     </form>
