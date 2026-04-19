@@ -145,10 +145,20 @@ export function CourseCreateForm() {
         });
 
         if (!mediaResponse.ok) {
-          const mediaBody = await mediaResponse.json().catch(() => null);
+          const errorText = await mediaResponse.text().catch(() => "");
+          let mediaBody: { error?: string } | null = null;
+          if (errorText) {
+            try {
+              mediaBody = JSON.parse(errorText) as { error?: string };
+            } catch {
+              mediaBody = null;
+            }
+          }
+          const detailedError =
+            mediaBody?.error || errorText || `Failed to upload "${file.name}" (HTTP ${mediaResponse.status})`;
           await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
           setState("error");
-          setError(mediaBody?.error ?? "Failed to upload course media");
+          setError(detailedError);
           return;
         }
       }
