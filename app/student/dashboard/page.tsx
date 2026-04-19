@@ -79,12 +79,12 @@ export default async function StudentDashboardPage() {
     { data: recentEnrollments },
     { data: recentTestAttempts },
   ] = await Promise.all([
-    supabase.from("course_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
+    supabase.from("course_orders").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "paid"),
     supabase.from("psychometric_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
     supabase
       .from("course_enrollments")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
+      .eq("student_id", user.id)
       .eq("enrollment_status", "enrolled"),
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("email", profile.email),
     supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
@@ -113,7 +113,7 @@ export default async function StudentDashboardPage() {
     supabase
       .from("course_enrollments")
       .select("id,course_id,enrollment_status,created_at")
-      .eq("user_id", user.id)
+      .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<EnrollmentItem[]>(),
