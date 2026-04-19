@@ -187,19 +187,25 @@ export function CourseCreateForm() {
     setCurrentStep((prev) => Math.min(prev + 1, FORM_STEPS.length - 1));
   }
 
+  async function getApiErrorMessage(response: Response, fallback: string) {
+    const body = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
+    return body?.error || body?.message || fallback;
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = event.currentTarget;
     setMessage("");
     setError("");
 
-    const mediaInput = event.currentTarget.elements.namedItem("mediaFiles");
+    const mediaInput = form.elements.namedItem("mediaFiles");
     const inputFiles = mediaInput instanceof HTMLInputElement ? Array.from(mediaInput.files ?? []) : [];
     const selectedMediaFiles = mediaFiles.length > 0 ? mediaFiles : inputFiles;
     setMediaTouched(true);
     const submitMediaError = getMediaValidationError(selectedMediaFiles);
 
     for (let step = 0; step < FORM_STEPS.length; step += 1) {
-      if (!validateStep(step, event.currentTarget)) {
+      if (!validateStep(step, form)) {
         setState("error");
         setError("Please complete all required fields before submitting.");
         return;
@@ -215,7 +221,7 @@ export function CourseCreateForm() {
 
     setState("submitting");
     try {
-      const formData = new FormData(event.currentTarget);
+      const formData = new FormData(form);
       formData.delete("mediaFiles");
 
       const createResponse = await fetch("/api/institute/courses", {
@@ -223,10 +229,10 @@ export function CourseCreateForm() {
         body: formData,
       });
 
-      const createBody = await createResponse.json().catch(() => null);
+      const createBody = (await createResponse.json().catch(() => null)) as { error?: string; courseId?: string } | null;
       if (!createResponse.ok || !createBody?.courseId) {
         setState("error");
-        setError(createBody?.error ?? "Failed to submit course");
+        setError(createBody?.error ?? "Failed to submit course.");
         return;
       }
 
@@ -252,7 +258,8 @@ export function CourseCreateForm() {
           | null;
 
         if (!signedResponse.ok || !signedBody?.token || !signedBody.path) {
-          mediaFailures.push(`Could not prepare upload for "${file.name}".`);
+          const signedError = await getApiErrorMessage(signedResponse, `Could not prepare upload for "${file.name}".`);
+          mediaFailures.push(signedError);
           continue;
         }
 
@@ -278,8 +285,8 @@ export function CourseCreateForm() {
         });
 
         if (!mediaResponse.ok) {
-          const errorText = await mediaResponse.text().catch(() => "");
-          mediaFailures.push(errorText || `Failed to register "${file.name}" (HTTP ${mediaResponse.status})`);
+          const mediaErrorMessage = await getApiErrorMessage(mediaResponse, `Failed to register "${file.name}" (HTTP ${mediaResponse.status})`);
+          mediaFailures.push(mediaErrorMessage);
           continue;
         }
 
@@ -305,10 +312,10 @@ export function CourseCreateForm() {
       setDurationUnit("");
       setDescription("");
       setCurrentStep(0);
-      event.currentTarget.reset();
+      form.reset();
     } catch {
       setState("error");
-      setError("Failed to submit course");
+      setError("Failed to submit course. Please try again.");
     }
   }
 
