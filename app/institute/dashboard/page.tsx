@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -238,9 +239,11 @@ export default async function InstituteDashboardPage() {
             {courses.slice(0, 5).map((course) => (
               <div key={course.id} className="rounded border px-3 py-2">
                 <p className="font-medium">{course.title}</p>
-                <p className="text-slate-600">
-                  {course.status} · ₹{course.fees} · Starts {course.start_date ?? "TBA"}
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-slate-600">
+                  <StatusBadge status={course.status} />
+                  <span>₹{course.fees}</span>
+                  <span>Starts {course.start_date ?? "TBA"}</span>
+                </div>
               </div>
             ))}
             {courses.length === 0 ? <p className="text-slate-600">No courses yet.</p> : null}
