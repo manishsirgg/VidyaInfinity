@@ -2,15 +2,18 @@ import type { Route } from "next";
 import Link from "next/link";
 
 import { CourseCompareBar } from "@/components/courses/course-compare-bar";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function CoursesPage() {
   const supabase = await createClient();
-  const { data: courses } = await supabase
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
+  const { data: courses } = await dataClient
     .from("courses")
     .select("id,title,summary,fees,category,subject,level,language,mode,duration,location,course_media(file_url,type),status")
     .eq("status", "approved")
-    .eq("is_active", true)
+    .or("is_active.is.null,is_active.eq.true")
     .order("created_at", { ascending: false });
 
   return (
