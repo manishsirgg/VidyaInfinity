@@ -33,7 +33,7 @@ export default async function Page() {
       .limit(100),
     supabase
       .from("institute_payouts")
-      .select("id,institute_id,course_order_id,amount_payable,payout_status,created_at,paid_at")
+      .select("id,institute_id,course_order_id,payout_amount,payout_status,created_at,processed_at")
       .order("created_at", { ascending: false })
       .limit(100),
   ]);
@@ -87,7 +87,7 @@ export default async function Page() {
         <div className="mt-3 space-y-2">
           {payouts?.map((payout) => (
             <div key={payout.id} className="rounded border bg-white p-3 text-sm">
-              Institute {payout.institute_id.slice(0, 8)} · ₹{payout.amount_payable} · {toTitleCase(payout.payout_status)}
+              Institute {payout.institute_id.slice(0, 8)} · ₹{payout.payout_amount} · {toTitleCase(payout.payout_status)}
             </div>
           ))}
         </div>

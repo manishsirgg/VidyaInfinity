@@ -67,7 +67,7 @@ export default async function InstituteDashboardPage() {
       .order("created_at", { ascending: false }),
     dataClient
       .from("institute_payouts")
-      .select("id,amount_payable,payout_status,created_at,paid_at")
+      .select("id,payout_amount,payout_status,created_at,processed_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
     dataClient.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
@@ -99,10 +99,10 @@ export default async function InstituteDashboardPage() {
 
   const totalPayoutsPaid = payouts
     .filter((payout) => payout.payout_status === "paid")
-    .reduce((sum, payout) => sum + Number(payout.amount_payable ?? 0), 0);
+    .reduce((sum, payout) => sum + Number(payout.payout_amount ?? 0), 0);
   const pendingPayouts = payouts
     .filter((payout) => payout.payout_status === "pending" || payout.payout_status === "processing")
-    .reduce((sum, payout) => sum + Number(payout.amount_payable ?? 0), 0);
+    .reduce((sum, payout) => sum + Number(payout.payout_amount ?? 0), 0);
 
   const walletBalance = Math.max(totalNetEarnings - totalPayoutsPaid, 0);
 
