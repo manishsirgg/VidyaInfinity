@@ -46,6 +46,10 @@ const CERTIFICATE_STATUS_OPTIONS = [
   { value: "in_progress", label: "In Progress" },
 ] as const;
 
+const MAX_MEDIA_FILES = 10;
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024;
+
 function hasAnyMedia(files: File[]) {
   return files.some((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
 }
@@ -94,7 +98,22 @@ export function CourseCreateForm() {
 
   const mediaError = useMemo(() => {
     if (mediaFiles.length === 0) return "Upload at least one course image or video.";
+    if (mediaFiles.length > MAX_MEDIA_FILES) return `You can upload a maximum of ${MAX_MEDIA_FILES} media files.`;
     if (!hasAnyMedia(mediaFiles)) return "Only image/video files are allowed for course media.";
+    const oversizedFile = mediaFiles.find((file) => {
+      if (file.type.startsWith("image/")) return file.size > MAX_IMAGE_SIZE_BYTES;
+      if (file.type.startsWith("video/")) return file.size > MAX_VIDEO_SIZE_BYTES;
+      return true;
+    });
+    if (oversizedFile) {
+      if (oversizedFile.type.startsWith("image/")) {
+        return `"${oversizedFile.name}" is too large. Image files must be 10MB or smaller.`;
+      }
+      if (oversizedFile.type.startsWith("video/")) {
+        return `"${oversizedFile.name}" is too large. Video files must be 50MB or smaller.`;
+      }
+      return `Unsupported media type for "${oversizedFile.name}".`;
+    }
     return "";
   }, [mediaFiles]);
 
@@ -464,6 +483,7 @@ export function CourseCreateForm() {
           className="rounded border bg-white px-3 py-2"
           onChange={(event) => setMediaFiles(Array.from(event.target.files ?? []))}
         />
+        <p className="text-xs text-slate-500">Upload up to 10 files. Images: max 10MB each. Videos: max 50MB each.</p>
         {mediaFiles.length > 0 ? <p className="text-xs text-slate-600">{mediaFiles.length} file(s) selected.</p> : null}
       </section>
 
