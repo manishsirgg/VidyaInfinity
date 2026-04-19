@@ -16,13 +16,13 @@ export default async function PsychometricTestsPage() {
       <h1 className="text-3xl font-semibold">Psychometric Tests</h1>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {tests?.map((test) => (
-          <article key={test.id} className="rounded-xl border bg-white p-5">
+          <Link href={`/psychometric-tests/${test.slug}` as Route} key={test.id} className="group rounded-xl border bg-white p-5 transition hover:border-brand-300">
+          <article>
             <h2 className="text-lg font-medium">{test.title}</h2>
             <p className="mt-2 text-sm">₹{test.price}</p>
-            <Link href={`/psychometric-tests/${test.slug}` as Route} className="mt-4 inline-block text-brand-600">
-              Buy Test
-            </Link>
+            <p className="mt-4 inline-block text-brand-600 group-hover:underline">Buy Test</p>
           </article>
+        </Link>
         ))}
       </div>
     </div>

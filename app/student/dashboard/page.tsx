@@ -200,11 +200,11 @@ export default async function StudentDashboardPage() {
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Overview</h2>
         <div className="mt-3 grid gap-4 md:grid-cols-5">
-          <div className="rounded-xl border bg-white p-4 text-sm">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></div>
-          <div className="rounded-xl border bg-white p-4 text-sm">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></div>
-          <div className="rounded-xl border bg-white p-4 text-sm">Active Enrollments: <span className="font-semibold">{activeEnrollments ?? 0}</span></div>
-          <div className="rounded-xl border bg-white p-4 text-sm">My Inquiries: <span className="font-semibold">{inquiryCount ?? 0}</span></div>
-          <div className="rounded-xl border bg-white p-4 text-sm">Unread Notifications: <span className="font-semibold">{unreadNotificationCount ?? 0}</span></div>
+          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></Link>
+          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></Link>
+          <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{activeEnrollments ?? 0}</span></Link>
+          <Link href="/student/leads" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">My Inquiries: <span className="font-semibold">{inquiryCount ?? 0}</span></Link>
+          <Link href="/student/notifications" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Unread Notifications: <span className="font-semibold">{unreadNotificationCount ?? 0}</span></Link>
         </div>
       </section>
 

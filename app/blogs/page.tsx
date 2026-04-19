@@ -16,13 +16,13 @@ export default async function BlogsPage() {
       <h1 className="text-3xl font-semibold">Insights & Blogs</h1>
       <div className="mt-8 space-y-4">
         {blogs?.map((blog) => (
-          <article key={blog.id} className="rounded-xl border bg-white p-5">
+          <Link href={`/blogs/${blog.slug}` as Route} key={blog.id} className="group block rounded-xl border bg-white p-5 transition hover:border-brand-300">
+          <article>
             <h2 className="text-xl font-medium">{blog.title}</h2>
             <p className="mt-2 text-sm text-slate-600">{blog.excerpt}</p>
-            <Link href={`/blogs/${blog.slug}` as Route} className="mt-4 inline-block text-brand-600">
-              Read more
-            </Link>
+            <p className="mt-4 inline-block text-brand-600 group-hover:underline">Read more</p>
           </article>
+        </Link>
         ))}
       </div>
     </div>

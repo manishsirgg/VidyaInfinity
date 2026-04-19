@@ -133,34 +133,34 @@ export default async function InstituteDashboardPage() {
       ) : null}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        <div className="rounded border bg-white p-4">
+        <Link href="/institute/courses/manage" className="rounded border bg-white p-4 transition hover:border-brand-300">
           <p className="text-xs uppercase tracking-wide text-slate-500">Courses</p>
           <p className="mt-1 text-2xl font-semibold">{courses.length}</p>
           <p className="mt-1 text-xs text-slate-600">
             {approvedCourses} approved · {pendingCourses} pending · {rejectedCourses.length} rejected (awaiting
             resubmission)
           </p>
-        </div>
-        <div className="rounded border bg-white p-4">
+        </Link>
+        <Link href="/institute/leads" className="rounded border bg-white p-4 transition hover:border-brand-300">
           <p className="text-xs uppercase tracking-wide text-slate-500">Leads</p>
           <p className="mt-1 text-2xl font-semibold">{leads.length}</p>
           <p className="mt-1 text-xs text-slate-600">{leadsThisMonth} in the last 30 days</p>
-        </div>
-        <div className="rounded border bg-white p-4">
+        </Link>
+        <Link href="/institute/enrollments" className="rounded border bg-white p-4 transition hover:border-brand-300">
           <p className="text-xs uppercase tracking-wide text-slate-500">Enrollments</p>
           <p className="mt-1 text-2xl font-semibold">{enrollmentsResult.count ?? 0}</p>
           <p className="mt-1 text-xs text-slate-600">{paidOrdersThisMonth} paid orders in the last 30 days</p>
-        </div>
-        <div className="rounded border bg-white p-4">
+        </Link>
+        <Link href="/institute/enrollments" className="rounded border bg-white p-4 transition hover:border-brand-300">
           <p className="text-xs uppercase tracking-wide text-slate-500">Wallet balance</p>
           <p className="mt-1 text-2xl font-semibold">{money(walletBalance)}</p>
           <p className="mt-1 text-xs text-slate-600">Pending payouts: {money(pendingPayouts)}</p>
-        </div>
-        <div className="rounded border bg-white p-4">
+        </Link>
+        <Link href="/institute/notifications" className="rounded border bg-white p-4 transition hover:border-brand-300">
           <p className="text-xs uppercase tracking-wide text-slate-500">Unread notifications</p>
           <p className="mt-1 text-2xl font-semibold">{unreadNotificationsResult.count ?? 0}</p>
           <p className="mt-1 text-xs text-slate-600">Institute alerts and moderation updates</p>
-        </div>
+        </Link>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -212,6 +212,12 @@ export default async function InstituteDashboardPage() {
             </Link>
             <Link href="/institute/kyc" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               KYC and business docs
+            </Link>
+            <Link href="/institute/webinars" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              Schedule live webinars
+            </Link>
+            <Link href="/institute/featured" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              Activate featured listing
             </Link>
           </div>
           <p className="mt-3 text-xs text-slate-500">Institute account created on {new Date(institute.created_at).toLocaleDateString("en-IN")}.</p>
