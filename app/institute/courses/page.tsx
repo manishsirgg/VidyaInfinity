@@ -1,15 +1,18 @@
 import { CourseCreateForm } from "@/components/institute/course-create-form";
 import { CourseManagementTable } from "@/components/institute/course-management-table";
 import { requireUser } from "@/lib/auth/get-session";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function Page() {
   const { user } = await requireUser("institute", { requireApproved: false });
   const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
 
-  const { data: institute } = await supabase.from("institutes").select("id").eq("user_id", user.id).maybeSingle();
+  const { data: institute } = await dataClient.from("institutes").select("id").eq("user_id", user.id).maybeSingle();
   const { data: courses } = institute
-    ? await supabase
+    ? await dataClient
         .from("courses")
         .select("id,title,summary,category,level,fees,status,created_at,rejection_reason,start_date,batch_size,mode,duration")
         .eq("institute_id", institute.id)
