@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 
 export default async function Page() {
-  const { user } = await requireUser("student");
+  const { user } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
 
   const { data: attempts } = await supabase
