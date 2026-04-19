@@ -15,6 +15,7 @@ const adminModules = [
   { href: "/admin/crm", label: "CRM Leads" },
   { href: "/admin/psychometric-tests", label: "Psychometric Tests" },
   { href: "/admin/notifications", label: "Notifications" },
+  { href: "/admin/webinars", label: "Webinars" },
   { href: "/admin/profile", label: "Admin Profile" },
 ];
 
@@ -86,8 +87,8 @@ export default async function AdminDashboardPage() {
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
       <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <div className="rounded border bg-white p-4">Profiles: {users ?? 0}</div>
-        <div className="rounded border bg-white p-4">Institutes: {institutes ?? 0}</div>
+        <Link href="/admin/users" className="rounded border bg-white p-4 transition hover:border-brand-300">Profiles: {users ?? 0}</Link>
+        <Link href="/admin/institutes" className="rounded border bg-white p-4 transition hover:border-brand-300">Institutes: {institutes ?? 0}</Link>
         <Link href="/admin/users" className="rounded border bg-white p-4">
           Pending user approvals: {pendingUsers ?? 0}
         </Link>
@@ -97,7 +98,7 @@ export default async function AdminDashboardPage() {
         <Link href="/admin/courses" className="rounded border bg-white p-4">
           Pending course approvals: {pendingCourses ?? 0}
         </Link>
-        <div className="rounded border bg-white p-4">Course orders: {orders ?? 0}</div>
+        <Link href="/admin/transactions" className="rounded border bg-white p-4 transition hover:border-brand-300">Course orders: {orders ?? 0}</Link>
         <Link href="/admin/refunds" className="rounded border bg-white p-4">
           Pending refunds: {refunds ?? 0}
         </Link>
@@ -115,6 +116,9 @@ export default async function AdminDashboardPage() {
         </Link>
         <Link href="/admin/notifications" className="rounded border bg-white p-4">
           Unread notifications: {(unreadNotifications ?? 0) + (pendingCourses ?? 0)}
+        </Link>
+        <Link href="/admin/webinars" className="rounded border bg-white p-4">
+          Webinar events: Manage live sessions
         </Link>
       </div>
 

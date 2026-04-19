@@ -32,7 +32,8 @@ export default async function CoursesPage() {
           const videoCount = course.course_media?.filter((media) => media.type === "video").length ?? 0;
 
           return (
-            <article key={course.id} className="rounded-xl border bg-white p-5">
+            <Link href={`/courses/${course.id}` as Route} key={course.id} className="group rounded-xl border bg-white p-5 transition hover:border-brand-300">
+            <article>
               {previewImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={previewImage} alt={course.title} className="mb-3 h-40 w-full rounded-md object-cover" />
@@ -48,10 +49,9 @@ export default async function CoursesPage() {
               <p className="mt-2 text-sm text-slate-600">Location: {course.location ?? "TBA"}</p>
               <p className="mt-2 text-sm font-medium">₹{course.fees}</p>
               <p className="mt-2 text-xs text-slate-500">Media attached: {imageCount} images, {videoCount} videos</p>
-              <Link href={`/courses/${course.id}` as Route} className="mt-4 inline-block text-brand-600">
-                View Course
-              </Link>
+              <p className="mt-4 inline-block text-brand-600 group-hover:underline">View Course</p>
             </article>
+          </Link>
           );
         })}
       </div>

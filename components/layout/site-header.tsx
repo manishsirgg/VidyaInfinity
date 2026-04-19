@@ -278,6 +278,24 @@ export function SiteHeader() {
                   >
                     Dashboard
                   </Link>
+                  {authUser.role === "student" ? (
+                    <>
+                      <Link
+                        href="/student/cart"
+                        className="block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100"
+                        onClick={() => setAccountOpen(false)}
+                      >
+                        Cart
+                      </Link>
+                      <Link
+                        href="/student/saved-courses"
+                        className="block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100"
+                        onClick={() => setAccountOpen(false)}
+                      >
+                        Saved Courses
+                      </Link>
+                    </>
+                  ) : null}
                   {notificationsPath ? (
                     <Link
                       href={notificationsPath}
@@ -399,6 +417,16 @@ export function SiteHeader() {
               <Link href={dashboardPath} onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
                 Dashboard
               </Link>
+              {authUser.role === "student" ? (
+                <>
+                  <Link href="/student/cart" onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
+                    Cart
+                  </Link>
+                  <Link href="/student/saved-courses" onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
+                    Saved Courses
+                  </Link>
+                </>
+              ) : null}
               {notificationsPath ? (
                 <Link href={notificationsPath} onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
                   Notifications{(authUser.unreadNotifications ?? 0) > 0 ? ` (${authUser.unreadNotifications})` : ""}

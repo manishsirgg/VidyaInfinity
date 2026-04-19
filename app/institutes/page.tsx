@@ -202,7 +202,8 @@ export default async function InstitutesPage() {
       <h1 className="text-3xl font-semibold">Institutes</h1>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {instituteCards.map((institute) => (
-          <article key={institute.id} className="rounded-xl border bg-white p-5">
+          <Link href={`/institutes/${institute.slug ?? institute.id}` as Route} key={institute.id} className="group rounded-xl border bg-white p-5 transition hover:border-brand-300">
+          <article>
             <h2 className="text-lg font-medium">{institute.name}</h2>
             {(() => {
               const coverMedia = getInstituteCoverMedia(institute.media);
@@ -242,10 +243,9 @@ export default async function InstitutesPage() {
               <p>Registration #: {institute.registrationNumber ?? "-"}</p>
               <p>Accreditation #: {institute.accreditationNumber ?? "-"}</p>
             </div>
-            <Link href={`/institutes/${institute.slug ?? institute.id}` as Route} className="mt-4 inline-block text-brand-600">
-              View Institute
-            </Link>
+            <p className="mt-4 inline-block text-brand-600 group-hover:underline">View Institute</p>
           </article>
+        </Link>
         ))}
       </div>
       {instituteCards.length === 0 ? <p className="mt-6 text-sm text-slate-600">No institutes available yet.</p> : null}

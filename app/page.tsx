@@ -236,13 +236,15 @@ export default async function HomePage() {
 
       <section className="mt-14 grid gap-8 md:grid-cols-3">
         {[
-          "Institute onboarding with admin approval",
-          "Secure Razorpay purchase & enrollment",
-          "Psychometric test reports and dashboards",
-        ].map((value) => (
-          <article key={value} className="rounded-xl border border-slate-200 bg-white p-6">
-            <h2 className="font-medium">{value}</h2>
-          </article>
+          { label: "Institute onboarding with admin approval", href: "/auth/register/institute" as Route },
+          { label: "Secure Razorpay purchase & enrollment", href: "/courses" as Route },
+          { label: "Psychometric test reports and dashboards", href: "/psychometric-tests" as Route },
+        ].map((item) => (
+          <Link key={item.label} href={item.href} className="rounded-xl border border-slate-200 bg-white p-6 transition hover:border-brand-300">
+            <article>
+              <h2 className="font-medium">{item.label}</h2>
+            </article>
+          </Link>
         ))}
       </section>
 
@@ -439,6 +441,27 @@ export default async function HomePage() {
           ))}
         </div>
         {instituteCategoryGroups.length === 0 ? <p className="mt-4 text-sm text-slate-600">No institute categories available yet.</p> : null}
+      </section>
+
+      <section className="mt-14 rounded-xl border bg-white p-5 sm:p-8">
+        <h2 className="text-xl font-semibold">For institutes: webinars + featured visibility</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Institutes can run free or paid live webinars, and subscribe to featured placement plans for stronger visibility and more leads.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-sm">
+          {[
+            { plan: "Weekly", price: "₹99" },
+            { plan: "Monthly", price: "₹299" },
+            { plan: "3 Months", price: "₹999" },
+            { plan: "6 Months", price: "₹1,999" },
+            { plan: "Yearly", price: "₹3,999" },
+          ].map((item) => (
+            <article key={item.plan} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="font-medium">{item.plan}</p>
+              <p className="text-brand-700">{item.price}</p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="mt-14 rounded-xl border bg-white p-5 sm:p-8">
