@@ -1,6 +1,7 @@
 "use client";
 
 import type { Route } from "next";
+import { Facebook, Instagram, Linkedin, Youtube } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -39,6 +40,13 @@ const links: Array<{ href: Route; label: string }> = [
   { href: "/blogs", label: "Blogs" },
   { href: "/contact", label: "Contact" },
 ];
+
+const socialLinks = [
+  { href: siteConfig.socialLinks.facebook, label: "Facebook", Icon: Facebook },
+  { href: siteConfig.socialLinks.instagram, label: "Instagram", Icon: Instagram },
+  { href: siteConfig.socialLinks.linkedin, label: "LinkedIn", Icon: Linkedin },
+  { href: siteConfig.socialLinks.youtube, label: "YouTube", Icon: Youtube },
+] as const;
 
 
 function initials(name: string) {
@@ -176,6 +184,21 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
+
+        <div className="hidden shrink-0 items-center gap-1 md:flex" aria-label="Social links">
+          {socialLinks.map(({ href, label, Icon }) => (
+            <Link
+              key={label}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={label}
+              className="rounded-md p-2 text-slate-600 transition hover:bg-slate-100 hover:text-brand-700"
+            >
+              <Icon className="h-4 w-4" />
+            </Link>
+          ))}
+        </div>
 
         <div className="hidden flex-1 justify-end md:flex" ref={searchRef}>
           <div className="relative w-full max-w-sm">
@@ -352,6 +375,21 @@ export function SiteHeader() {
               </Link>
             ))}
           </nav>
+
+          <div className="mt-3 flex items-center gap-2 border-t border-slate-200 pt-3">
+            {socialLinks.map(({ href, label, Icon }) => (
+              <Link
+                key={`mobile-${label}`}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={label}
+                className="rounded-md border border-slate-300 p-2 text-slate-600 transition hover:bg-slate-100 hover:text-brand-700"
+              >
+                <Icon className="h-4 w-4" />
+              </Link>
+            ))}
+          </div>
 
           {!loadingUser && authUser ? (
             <div className="mt-3 grid gap-2 text-sm">
