@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ServiceInquiryForm } from "@/components/forms/service-inquiry-form";
+import { siteConfig } from "@/lib/constants/site";
 
 export default function ContactPage() {
   return (
@@ -22,18 +23,18 @@ export default function ContactPage() {
           </p>
           <p>
             Email:{" "}
-            <Link href="mailto:infovidyainfinity@gmail.com" className="font-medium text-brand-700 hover:underline">
-              infovidyainfinity@gmail.com
+            <Link href={`mailto:${siteConfig.email}`} className="font-medium text-brand-700 hover:underline">
+              {siteConfig.email}
             </Link>
           </p>
           <p>
             WhatsApp / Call:{" "}
             <Link href="tel:+917828199500" className="font-medium text-brand-700 hover:underline">
-              +91-7828199500
+              {siteConfig.phone}
             </Link>
           </p>
           <p>Subsidiary: Infinity Global Advisory</p>
-          <p>Address: G3 Market Bus Stand, Chhatarpur, Madhya Pradesh 471001</p>
+          <p>Address: {siteConfig.address}</p>
         </div>
       </section>
 

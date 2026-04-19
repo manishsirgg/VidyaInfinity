@@ -22,14 +22,14 @@ export default async function HomePage() {
 
   const statusAwareInstitutes = await dataClient
     .from("institutes")
-    .select("id,user_id,slug,name,description,organization_type,status")
+    .select("id,user_id,slug,name,description,organization_type,website_url,verified,status")
     .eq("status", "approved")
     .order("created_at", { ascending: false })
     .limit(18);
   const approvalAwareInstitutes = statusAwareInstitutes.error
     ? await dataClient
         .from("institutes")
-        .select("id,user_id,slug,name,description,organization_type,approval_status")
+        .select("id,user_id,slug,name,description,organization_type,website_url,verified,approval_status")
         .eq("approval_status", "approved")
         .order("created_at", { ascending: false })
         .limit(18)
@@ -41,6 +41,8 @@ export default async function HomePage() {
     name: string | null;
     description: string | null;
     organization_type: string | null;
+    website_url: string | null;
+    verified: boolean | null;
   }>;
 
   const profileIds = [...new Set(listedInstitutes.map((institute) => institute.user_id).filter(Boolean))] as string[];
@@ -48,7 +50,7 @@ export default async function HomePage() {
     ? (
         await dataClient
           .from("profiles")
-          .select("id,name,full_name,organization_name,organization_type,city,state,country,email,phone")
+          .select("id,name,full_name,organization_name,organization_type,city,state,country,email,phone,avatar_url")
           .in("id", profileIds)
       ).data ?? []
     : [];
@@ -65,6 +67,7 @@ export default async function HomePage() {
         country: string | null;
         email: string | null;
         phone: string | null;
+        avatar_url: string | null;
       }>
     ).map((profile) => [profile.id, profile]),
   );
@@ -80,6 +83,7 @@ export default async function HomePage() {
       country: profile?.country ?? null,
       email: profile?.email ?? null,
       phone: profile?.phone ?? null,
+      avatar_url: profile?.avatar_url ?? null,
     };
   });
 
@@ -88,7 +92,7 @@ export default async function HomePage() {
     : (
         await dataClient
           .from("profiles")
-          .select("id,name,full_name,organization_name,organization_type,city,state,country,email,phone,approval_status,role")
+          .select("id,name,full_name,organization_name,organization_type,city,state,country,email,phone,avatar_url,approval_status,role")
           .eq("role", "institute")
           .eq("approval_status", "approved")
           .order("created_at", { ascending: false })
@@ -109,6 +113,9 @@ export default async function HomePage() {
         country: profile.country ?? null,
         email: profile.email ?? null,
         phone: profile.phone ?? null,
+        avatar_url: profile.avatar_url ?? null,
+        website_url: null as string | null,
+        verified: null as boolean | null,
       }));
 
   const instituteIds = institutesForHome.map((institute) => institute.id);
@@ -129,6 +136,14 @@ export default async function HomePage() {
         ? media.file_url
         : getPublicFileUrl({ bucket: "institute-media", path: media.file_url }) ?? getPublicFileUrl({ bucket: "blog-media", path: media.file_url });
       if (mediaUrl) instituteImageById.set(media.institute_id, mediaUrl);
+    }
+  }
+  for (const institute of institutesForHome) {
+    if (!instituteImageById.has(institute.id) && institute.user_id && instituteImageById.has(institute.user_id)) {
+      instituteImageById.set(institute.id, instituteImageById.get(institute.user_id) ?? "");
+    }
+    if (!instituteImageById.has(institute.id) && institute.avatar_url) {
+      instituteImageById.set(institute.id, institute.avatar_url);
     }
   }
 
@@ -311,6 +326,9 @@ export default async function HomePage() {
                 <p className="mt-3 text-xs text-slate-600">
                   {[institute.city, institute.state, institute.country].filter(Boolean).join(", ") || institute.email || institute.phone || "Details not shared yet."}
                 </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
+                </p>
                 <p className="mt-5 text-sm text-brand-600 group-hover:underline">View institute</p>
               </article>
             </Link>
@@ -350,6 +368,9 @@ export default async function HomePage() {
                       <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
                       <p className="mt-3 text-xs text-slate-600">
                         {[institute.city, institute.state, institute.country].filter(Boolean).join(", ") || institute.email || institute.phone || "Details not shared yet."}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
                       </p>
                       <p className="mt-4 text-xs text-brand-700">View details</p>
                     </article>
