@@ -51,7 +51,7 @@ export default async function InstituteDashboardPage() {
   const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult] = await Promise.all([
     dataClient
       .from("courses")
-      .select("id,title,status,fees,created_at,start_date")
+      .select("id,title,status,fees,created_at,start_date,rejection_reason")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
     dataClient
