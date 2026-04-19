@@ -85,13 +85,13 @@ export default async function StudentEnrollmentsPage() {
 
               {isPaid ? (
                 <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
-                  <p className="font-medium">Institute details (unlocked after payment)</p>
+                  <p className="font-medium">Institute details</p>
                   <p>Name: {institute?.name ?? "-"}</p>
                   <p>Email: {instituteEmail ?? "-"}</p>
                   <p>Phone: {institute?.phone ?? "-"}</p>
                 </div>
               ) : (
-                <p className="mt-3 text-xs text-slate-500">Institute details will be shared after successful payment and enrollment.</p>
+                <p className="mt-3 text-xs text-slate-500">Complete payment to confirm enrollment for this course.</p>
               )}
             </div>
           );

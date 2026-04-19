@@ -56,7 +56,6 @@ export default async function CourseComparePage({ searchParams }: { searchParams
     ["Batch size", (course) => val(course.batch_size)],
     ["Placement", (course) => val(course.placement_support)],
     ["Internship", (course) => val(course.internship_support)],
-    ["Institute", () => "Shared after enrollment"],
   ];
 
   return (
@@ -67,7 +66,7 @@ export default async function CourseComparePage({ searchParams }: { searchParams
           Back to courses
         </Link>
       </div>
-      <p className="mt-2 text-sm text-slate-600">Only approved courses are compared. Institute identity stays hidden before purchase.</p>
+      <p className="mt-2 text-sm text-slate-600">Compare approved courses side by side across key details.</p>
 
       {courses.length > 0 ? (
         <div className="mt-6 overflow-x-auto rounded-xl border bg-white">

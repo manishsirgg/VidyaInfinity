@@ -1,25 +1,26 @@
 import { notFound } from "next/navigation";
 
+import { CourseMediaGallery } from "@/components/courses/course-media-gallery";
 import { CoursePurchaseCard } from "@/components/courses/course-purchase-card";
 import { LeadForm } from "@/components/forms/lead-form";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
 
   const baseSelect = "id,title,summary,description,fees,category,subject,level,language,mode,duration,duration_value,duration_unit,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,course_media(file_url,type)";
 
-  const byId = await supabase.from("courses").select(baseSelect).eq("id", slug).eq("status", "approved").maybeSingle();
+  const byId = await dataClient.from("courses").select(baseSelect).eq("id", slug).eq("status", "approved").maybeSingle();
   const byLegacySlug = byId.data
     ? { data: byId.data }
-    : await supabase.from("courses").select(baseSelect).eq("slug", slug).eq("status", "approved").maybeSingle();
+    : await dataClient.from("courses").select(baseSelect).eq("slug", slug).eq("status", "approved").maybeSingle();
 
   const course = byLegacySlug.data;
   if (!course) notFound();
-
-  const imageMedia = course.course_media?.filter((media) => media.type === "image") ?? [];
-  const videoMedia = course.course_media?.filter((media) => media.type === "video") ?? [];
 
   return (
     <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:py-12 md:grid-cols-[2fr_1fr] md:gap-8">
@@ -30,9 +31,6 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
             {course.category ?? "General"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.language ?? "-"}
           </p>
           <p className="mt-3 text-slate-700">{course.summary}</p>
-          <p className="mt-2 rounded border border-brand-100 bg-brand-50 px-3 py-2 text-xs text-brand-700">
-            Institute details will be shared after successful enrollment.
-          </p>
         </div>
 
         <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
@@ -68,25 +66,14 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
 
         <section>
           <h2 className="text-lg font-semibold">Media Gallery</h2>
-          {imageMedia.length > 0 ? (
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {imageMedia.map((media) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={media.file_url} src={media.file_url} alt={course.title} className="h-48 w-full rounded-md object-cover" />
-              ))}
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">No image gallery uploaded.</p>
-          )}
-          {videoMedia.length > 0 ? (
-            <div className="mt-3 grid gap-3">
-              {videoMedia.map((media) => (
-                <video key={media.file_url} controls className="w-full rounded-md border" src={media.file_url} />
-              ))}
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">No video media uploaded.</p>
-          )}
+          <CourseMediaGallery
+            courseTitle={course.title}
+            mediaItems={(course.course_media ?? []).map((media, index) => ({
+              id: `${media.file_url ?? "media"}-${index}`,
+              type: media.type ?? null,
+              fileUrl: media.file_url ?? null,
+            }))}
+          />
         </section>
       </article>
 
@@ -96,7 +83,6 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           <p className="mt-2 text-sm text-slate-600">Certificate: {course.certificate_status ?? "-"}</p>
           {course.certificate_details ? <p className="mt-1 text-sm text-slate-600">{course.certificate_details}</p> : null}
           {course.faculty_qualification ? <p className="mt-2 text-sm text-slate-600">Faculty qualification: {course.faculty_qualification}</p> : null}
-          <p className="mt-2 text-xs text-slate-500">Institute contact details stay hidden until payment is successful.</p>
         </div>
         <LeadForm courseId={course.id} />
       </aside>

@@ -52,7 +52,7 @@ export function CourseCompareBar({ courses }: { courses: ComparableCourse[] }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-900">Compare courses (up to {MAX_COMPARE})</p>
-          <p className="text-xs text-slate-600">Only course details are compared. Institute identity remains hidden until enrollment.</p>
+          <p className="text-xs text-slate-600">Select up to four courses to compare them side by side.</p>
         </div>
         <div className="flex items-center gap-2">
           <button

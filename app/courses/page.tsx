@@ -19,7 +19,7 @@ export default async function CoursesPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-3xl font-semibold">Approved Courses</h1>
-      <p className="mt-2 text-sm text-slate-600">Institute identity and direct contact details are shared only after successful enrollment.</p>
+      <p className="mt-2 text-sm text-slate-600">Browse verified courses and open each card to explore complete details.</p>
 
       <div className="mt-6">
         <CourseCompareBar courses={(courses ?? []).map((course) => ({ id: course.id, title: course.title }))} />

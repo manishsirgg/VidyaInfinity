@@ -54,7 +54,7 @@ export default async function Page() {
                   <p>Amount: ₹{order?.gross_amount ?? 0}</p>
                 </div>
               ) : (
-                <p className="mt-2 text-xs text-slate-500">Student contact is shared only for paid enrollments.</p>
+                <p className="mt-2 text-xs text-slate-500">Pending payment confirmation.</p>
               )}
             </div>
           );
