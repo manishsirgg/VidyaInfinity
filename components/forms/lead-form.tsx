@@ -6,20 +6,39 @@ import { FormFeedback } from "@/components/shared/form-feedback";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const phonePattern = /^[0-9+\-()\s]{7,20}$/;
+const contactOptions = [
+  { value: "email", label: "Email only" },
+  { value: "whatsapp", label: "WhatsApp / Contact only" },
+  { value: "both", label: "Both Email and WhatsApp / Contact" },
+] as const;
+
+type ContactPreference = (typeof contactOptions)[number]["value"];
 
 export function LeadForm({ courseId }: { courseId: string }) {
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [values, setValues] = useState({ name: "", email: "", phone: "", message: "" });
+  const [values, setValues] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    message: "",
+    contactPreference: "both" as ContactPreference,
+  });
 
   const fieldErrors = useMemo(() => {
     const errors: Record<string, string> = {};
     if (!values.name.trim()) errors.name = "Name is required.";
-    if (!values.email.trim()) errors.email = "Email is required.";
-    else if (!emailPattern.test(values.email.trim())) errors.email = "Enter a valid email address.";
-    if (!values.phone.trim()) errors.phone = "Contact number is required.";
-    else if (!phonePattern.test(values.phone.trim())) errors.phone = "Enter a valid phone/WhatsApp number.";
+    if (values.contactPreference === "email" || values.contactPreference === "both") {
+      if (!values.email.trim()) errors.email = "Email is required.";
+      else if (!emailPattern.test(values.email.trim())) errors.email = "Enter a valid email address.";
+    }
+
+    if (values.contactPreference === "whatsapp" || values.contactPreference === "both") {
+      if (!values.phone.trim()) errors.phone = "Contact number is required.";
+      else if (!phonePattern.test(values.phone.trim())) errors.phone = "Enter a valid phone/WhatsApp number.";
+    }
+
     if (values.message.length > 500) errors.message = "Message can be up to 500 characters.";
     return errors;
   }, [values]);
@@ -40,10 +59,11 @@ export function LeadForm({ courseId }: { courseId: string }) {
 
     const payload = {
       name: values.name.trim(),
-      email: values.email.trim(),
-      phone: values.phone.trim(),
+      email: values.email.trim() || undefined,
+      phone: values.phone.trim() || undefined,
       message: values.message.trim() || null,
       courseId,
+      contactPreference: values.contactPreference,
     };
 
     try {
@@ -62,7 +82,7 @@ export function LeadForm({ courseId }: { courseId: string }) {
       }
 
       setDone(true);
-      setValues({ name: "", email: "", phone: "", message: "" });
+      setValues({ name: "", email: "", phone: "", message: "", contactPreference: "both" });
     } catch {
       setSubmitting(false);
       setError("Unable to submit your lead right now. Please check your connection and try again.");
@@ -85,9 +105,27 @@ export function LeadForm({ courseId }: { courseId: string }) {
       </label>
 
       <label className="grid gap-1">
-        <span className="text-sm text-slate-700">Email</span>
+        <span className="text-sm text-slate-700">Send lead to</span>
+        <select
+          name="contactPreference"
+          value={values.contactPreference}
+          onChange={(event) =>
+            setValues((prev) => ({ ...prev, contactPreference: event.target.value as ContactPreference }))
+          }
+          className="rounded border px-3 py-2"
+        >
+          {contactOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="grid gap-1">
+        <span className="text-sm text-slate-700">Email {values.contactPreference === "whatsapp" ? "(optional)" : "*"}</span>
         <input
-          required
+          required={values.contactPreference !== "whatsapp"}
           type="email"
           name="email"
           value={values.email}
@@ -99,9 +137,11 @@ export function LeadForm({ courseId }: { courseId: string }) {
       </label>
 
       <label className="grid gap-1">
-        <span className="text-sm text-slate-700">WhatsApp / contact number</span>
+        <span className="text-sm text-slate-700">
+          WhatsApp / contact number {values.contactPreference === "email" ? "(optional)" : "*"}
+        </span>
         <input
-          required
+          required={values.contactPreference !== "email"}
           name="phone"
           value={values.phone}
           onChange={(event) => setValues((prev) => ({ ...prev, phone: event.target.value }))}
