@@ -211,7 +211,7 @@ export function CourseCreateForm() {
           </label>
 
           <label className="text-sm font-medium text-slate-700">
-            Subject
+            Subcategory
             <input name="subject" placeholder="e.g. Language" className="mt-1 w-full rounded border px-3 py-2" />
           </label>
 
