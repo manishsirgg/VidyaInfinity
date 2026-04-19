@@ -116,6 +116,7 @@ export function CourseCreateForm() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [mediaTouched, setMediaTouched] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [dates, setDates] = useState<DateState>({ startDate: "", endDate: "", admissionDeadline: "" });
   const [durationValue, setDurationValue] = useState("");
@@ -177,6 +178,7 @@ export function CourseCreateForm() {
       return;
     }
     if (currentStep === 4 && mediaError) {
+      setMediaTouched(true);
       setError(mediaError);
       return;
     }
@@ -193,6 +195,7 @@ export function CourseCreateForm() {
     const mediaInput = event.currentTarget.elements.namedItem("mediaFiles");
     const inputFiles = mediaInput instanceof HTMLInputElement ? Array.from(mediaInput.files ?? []) : [];
     const selectedMediaFiles = mediaFiles.length > 0 ? mediaFiles : inputFiles;
+    setMediaTouched(true);
     const submitMediaError = getMediaValidationError(selectedMediaFiles);
 
     for (let step = 0; step < FORM_STEPS.length; step += 1) {
@@ -231,8 +234,12 @@ export function CourseCreateForm() {
 
       const supabase = createClient();
 
+      const mediaFailures: string[] = [];
+      let mediaUploadCount = 0;
+
       for (const file of selectedMediaFiles) {
-        const fileType = file.type || (getFileKind(file) === "image" ? "image/jpeg" : "video/mp4");
+        const kind = getFileKind(file);
+        const fileType = file.type || (kind === "image" ? "image/jpeg" : "video/mp4");
 
         const signedResponse = await fetch(`/api/institute/courses/${courseId}/media/signed-url`, {
           method: "POST",
@@ -245,10 +252,8 @@ export function CourseCreateForm() {
           | null;
 
         if (!signedResponse.ok || !signedBody?.token || !signedBody.path) {
-          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
-          setState("error");
-          setError(signedBody?.error ?? `Failed to prepare upload for "${file.name}".`);
-          return;
+          mediaFailures.push(`Could not prepare upload for "${file.name}".`);
+          continue;
         }
 
         const { error: storageError } = await supabase.storage
@@ -258,10 +263,8 @@ export function CourseCreateForm() {
           });
 
         if (storageError) {
-          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
-          setState("error");
-          setError(`Upload failed for "${file.name}": ${storageError.message}`);
-          return;
+          mediaFailures.push(`Upload failed for "${file.name}": ${storageError.message}`);
+          continue;
         }
 
         const mediaResponse = await fetch(`/api/institute/courses/${courseId}/media`, {
@@ -276,26 +279,27 @@ export function CourseCreateForm() {
 
         if (!mediaResponse.ok) {
           const errorText = await mediaResponse.text().catch(() => "");
-          let mediaBody: { error?: string } | null = null;
-          if (errorText) {
-            try {
-              mediaBody = JSON.parse(errorText) as { error?: string };
-            } catch {
-              mediaBody = null;
-            }
-          }
-          const detailedError =
-            mediaBody?.error || errorText || `Failed to register "${file.name}" (HTTP ${mediaResponse.status})`;
-          await fetch(`/api/institute/courses/${courseId}`, { method: "DELETE" }).catch(() => undefined);
-          setState("error");
-          setError(detailedError);
-          return;
+          mediaFailures.push(errorText || `Failed to register "${file.name}" (HTTP ${mediaResponse.status})`);
+          continue;
         }
+
+        mediaUploadCount += 1;
+      }
+
+      if (mediaUploadCount === 0) {
+        setState("error");
+        setError(mediaFailures[0] ?? "Course was created but media upload failed. Please edit the course and upload media again.");
+        return;
       }
 
       setState("success");
-      setMessage("Course submitted for admin approval.");
+      setMessage(
+        mediaFailures.length > 0
+          ? "Course submitted. Some media files failed to upload; you can add them later from course management."
+          : "Course submitted for admin approval.",
+      );
       setMediaFiles([]);
+      setMediaTouched(false);
       setDates({ startDate: "", endDate: "", admissionDeadline: "" });
       setDurationValue("");
       setDurationUnit("");
@@ -326,7 +330,10 @@ export function CourseCreateForm() {
             <button
               key={label}
               type="button"
-              onClick={() => setCurrentStep(index)}
+              onClick={() => {
+                setError("");
+                setCurrentStep(index);
+              }}
               className={`rounded border px-3 py-2 text-left text-xs sm:text-sm ${
                 isActive
                   ? "border-brand-600 bg-brand-50 font-semibold text-brand-700"
@@ -615,7 +622,10 @@ export function CourseCreateForm() {
           required
           accept="image/png,image/jpeg,image/jpg,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v"
           className="rounded border bg-white px-3 py-2"
-          onChange={(event) => setMediaFiles(Array.from(event.target.files ?? []))}
+          onChange={(event) => {
+            setMediaTouched(true);
+            setMediaFiles(Array.from(event.target.files ?? []));
+          }}
         />
         <p className="text-xs text-slate-500">Upload up to 10 files. Images: max 10MB each. Videos: max 50MB each.</p>
         {mediaFiles.length > 0 ? <p className="text-xs text-slate-600">{mediaFiles.length} file(s) selected.</p> : null}
@@ -624,7 +634,10 @@ export function CourseCreateForm() {
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => setCurrentStep((prev) => Math.max(prev - 1, 0))}
+          onClick={() => {
+            setError("");
+            setCurrentStep((prev) => Math.max(prev - 1, 0));
+          }}
           disabled={currentStep === 0 || state === "submitting"}
           className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -649,7 +662,7 @@ export function CourseCreateForm() {
 
       {dateError ? <FormFeedback tone="error">{dateError}</FormFeedback> : null}
       {descriptionError ? <FormFeedback tone="error">{descriptionError}</FormFeedback> : null}
-      {mediaError ? <FormFeedback tone="warning">{mediaError}</FormFeedback> : null}
+      {currentStep === 4 && mediaTouched && mediaError ? <FormFeedback tone="warning">{mediaError}</FormFeedback> : null}
       {state === "success" && message ? <FormFeedback tone="success">{message}</FormFeedback> : null}
       {state === "error" && error ? <FormFeedback tone="error">{error}</FormFeedback> : null}
     </form>
