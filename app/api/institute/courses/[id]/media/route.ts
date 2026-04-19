@@ -8,7 +8,7 @@ type Params = {
   params: Promise<{ id: string }>;
 };
 
-function isMissingStoragePathColumnError(message: string | undefined) {
+function isMissingStoragePathColumnError(message?: string) {
   if (!message) return false;
   const normalized = message.toLowerCase();
   return normalized.includes("storage_path") && normalized.includes("column");
@@ -22,19 +22,38 @@ export async function POST(request: Request, { params }: Params) {
   const { id: courseId } = await params;
 
   const admin = getSupabaseAdmin();
-  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+  if (!admin.ok) {
+    return NextResponse.json({ error: admin.error }, { status: 500 });
+  }
 
-  const { data: institute } = await admin.data.from("institutes").select("id").eq("user_id", user.id).maybeSingle<{ id: string }>();
-  if (!institute) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
+  const { data: institute, error: instituteError } = await admin.data
+    .from("institutes")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
 
-  const { data: course } = await admin.data
+  if (instituteError) {
+    return NextResponse.json({ error: instituteError.message }, { status: 500 });
+  }
+
+  if (!institute?.id) {
+    return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
+  }
+
+  const { data: course, error: courseError } = await admin.data
     .from("courses")
     .select("id")
     .eq("id", courseId)
     .eq("institute_id", institute.id)
-    .maybeSingle<{ id: string }>();
+    .maybeSingle();
 
-  if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
+  if (courseError) {
+    return NextResponse.json({ error: courseError.message }, { status: 500 });
+  }
+
+  if (!course?.id) {
+    return NextResponse.json({ error: "Course not found" }, { status: 404 });
+  }
 
   const form = await request.formData();
   const file = form.get("file");
@@ -44,7 +63,10 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
-    return NextResponse.json({ error: "Only image and video files are allowed for course media" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Only image and video files are allowed for course media" },
+      { status: 400 }
+    );
   }
 
   const uploaded = await uploadCourseMedia({
@@ -53,7 +75,10 @@ export async function POST(request: Request, { params }: Params) {
     file,
   });
 
-  if (uploaded.error) return NextResponse.json({ error: uploaded.error }, { status: 400 });
+  if (uploaded.error) {
+    return NextResponse.json({ error: uploaded.error }, { status: 400 });
+  }
+
   if (!uploaded.path) {
     return NextResponse.json({ error: "Failed to upload course media" }, { status: 500 });
   }
@@ -67,20 +92,29 @@ export async function POST(request: Request, { params }: Params) {
     storage_path: uploaded.path,
   };
 
-  const { error: mediaError } = await admin.data.from("course_media").insert(mediaPayload);
+  const { error: mediaError } = await admin.data
+    .from("course_media")
+    .insert(mediaPayload);
 
   if (mediaError && isMissingStoragePathColumnError(mediaError.message)) {
-    const { error: fallbackInsertError } = await admin.data.from("course_media").insert({
-      course_id: course.id,
-      file_url: uploaded.publicUrl ?? uploaded.path,
-      type: mediaType,
-    });
+    const { error: fallbackInsertError } = await admin.data
+      .from("course_media")
+      .insert({
+        course_id: course.id,
+        file_url: uploaded.publicUrl ?? uploaded.path,
+        type: mediaType,
+      });
 
-    if (fallbackInsertError) return NextResponse.json({ error: fallbackInsertError.message }, { status: 500 });
+    if (fallbackInsertError) {
+      return NextResponse.json({ error: fallbackInsertError.message }, { status: 500 });
+    }
+
     return NextResponse.json({ ok: true });
   }
 
-  if (mediaError) return NextResponse.json({ error: mediaError.message }, { status: 500 });
+  if (mediaError) {
+    return NextResponse.json({ error: mediaError.message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }
