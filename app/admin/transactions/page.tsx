@@ -25,6 +25,26 @@ function formatAmount(value: number | string | null | undefined, currency = "INR
   return toCurrency(amount, currency);
 }
 
+type AppPaymentTransaction = {
+  id: string;
+  source:
+    | "razorpay_transactions"
+    | "course_orders"
+    | "webinar_orders"
+    | "psychometric_orders"
+    | "featured_listing_orders"
+    | "course_featured_orders"
+    | "webinar_featured_orders";
+  status: string | null;
+  amount: number | string | null;
+  currency: string | null;
+  createdAt: string | null;
+  paidAt: string | null;
+  orderRef: string | null;
+  paymentRef: string | null;
+  extra: string;
+};
+
 export default async function Page() {
   await requireUser("admin");
 
@@ -40,20 +60,51 @@ export default async function Page() {
 
   const supabase = admin.data;
 
-  const [transactionsResult, courseOrdersResult, webinarOrdersResult, enrollmentsResult, webinarRegistrationsResult, payoutsResult] = await Promise.all([
+  const [
+    transactionsResult,
+    courseOrdersResult,
+    webinarOrdersResult,
+    psychometricOrdersResult,
+    featuredListingOrdersResult,
+    courseFeaturedOrdersResult,
+    webinarFeaturedOrdersResult,
+    enrollmentsResult,
+    webinarRegistrationsResult,
+    payoutsResult,
+  ] = await Promise.all([
     supabase
       .from("razorpay_transactions")
-      .select("id,order_kind,amount,payment_status,razorpay_order_id,razorpay_payment_id,created_at,course_order_id,psychometric_order_id")
+      .select("id,order_kind,amount,payment_status,currency,razorpay_order_id,razorpay_payment_id,created_at,course_order_id,psychometric_order_id")
       .order("created_at", { ascending: false })
       .limit(200),
     supabase
       .from("course_orders")
-      .select("id,course_id,student_id,institute_id,payment_status,payout_status,gross_amount,platform_fee_amount,institute_receivable_amount,currency,created_at,paid_at")
+      .select("id,course_id,student_id,institute_id,payment_status,payout_status,gross_amount,platform_fee_amount,institute_receivable_amount,currency,razorpay_order_id,razorpay_payment_id,created_at,paid_at")
       .order("created_at", { ascending: false })
       .limit(200),
     supabase
       .from("webinar_orders")
-      .select("id,webinar_id,student_id,institute_id,payment_status,order_status,access_status,amount,platform_fee_amount,payout_amount,currency,created_at,paid_at")
+      .select("id,webinar_id,student_id,institute_id,payment_status,order_status,access_status,amount,platform_fee_amount,payout_amount,currency,razorpay_order_id,razorpay_payment_id,created_at,paid_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("psychometric_orders")
+      .select("id,user_id,test_id,payment_status,final_amount,currency,razorpay_order_id,razorpay_payment_id,created_at,paid_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("featured_listing_orders")
+      .select("id,institute_id,plan_id,payment_status,order_status,amount,final_payable_amount,currency,razorpay_order_id,razorpay_payment_id,created_at,paid_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("course_featured_orders")
+      .select("id,institute_id,course_id,plan_id,payment_status,order_status,amount,currency,razorpay_order_id,razorpay_payment_id,created_at,paid_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("webinar_featured_orders")
+      .select("id,institute_id,webinar_id,plan_id,payment_status,order_status,amount,currency,razorpay_order_id,razorpay_payment_id,created_at,paid_at")
       .order("created_at", { ascending: false })
       .limit(200),
     supabase
@@ -63,7 +114,7 @@ export default async function Page() {
       .limit(200),
     supabase
       .from("webinar_registrations")
-      .select("id,webinar_id,student_id,institute_id,registration_status,payment_status,access_status,created_at")
+      .select("id,webinar_id,student_id,registration_status,payment_status,access_status,created_at")
       .order("created_at", { ascending: false })
       .limit(200),
     supabase
@@ -77,6 +128,10 @@ export default async function Page() {
     transactionsResult.error ||
     courseOrdersResult.error ||
     webinarOrdersResult.error ||
+    psychometricOrdersResult.error ||
+    featuredListingOrdersResult.error ||
+    courseFeaturedOrdersResult.error ||
+    webinarFeaturedOrdersResult.error ||
     enrollmentsResult.error ||
     webinarRegistrationsResult.error ||
     payoutsResult.error;
@@ -93,11 +148,17 @@ export default async function Page() {
   const transactions = transactionsResult.data ?? [];
   const orders = courseOrdersResult.data ?? [];
   const webinarOrders = webinarOrdersResult.data ?? [];
+  const psychometricOrders = psychometricOrdersResult.data ?? [];
+  const featuredListingOrders = featuredListingOrdersResult.data ?? [];
+  const courseFeaturedOrders = courseFeaturedOrdersResult.data ?? [];
+  const webinarFeaturedOrders = webinarFeaturedOrdersResult.data ?? [];
   const enrollments = enrollmentsResult.data ?? [];
   const webinarRegistrations = webinarRegistrationsResult.data ?? [];
   const payouts = payoutsResult.data ?? [];
 
-  const webinarIds = [...new Set([...webinarOrders, ...webinarRegistrations].map((item) => item.webinar_id).filter((value): value is string => Boolean(value)))];
+  const webinarIds = [
+    ...new Set([...webinarOrders, ...webinarRegistrations, ...webinarFeaturedOrders].map((item) => item.webinar_id).filter((value): value is string => Boolean(value))),
+  ];
 
   const { data: webinarRows, error: webinarsError } = webinarIds.length
     ? await supabase.from("webinars").select("id,title,starts_at,webinar_mode,status").in("id", webinarIds)
@@ -114,52 +175,148 @@ export default async function Page() {
 
   const webinarById = new Map((webinarRows ?? []).map((webinar) => [webinar.id, webinar]));
 
-  const totalCourseRevenue = orders
+  const totalCourseRevenue = orders.filter((row) => row.payment_status === "paid").reduce((sum, row) => sum + Number(row.gross_amount ?? 0), 0);
+  const totalWebinarRevenue = webinarOrders.filter((row) => row.payment_status === "paid").reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+  const totalPsychometricRevenue = psychometricOrders
     .filter((row) => row.payment_status === "paid")
-    .reduce((sum, row) => sum + Number(row.gross_amount ?? 0), 0);
-  const totalWebinarRevenue = webinarOrders
+    .reduce((sum, row) => sum + Number(row.final_amount ?? 0), 0);
+  const totalFeaturedRevenue = [...featuredListingOrders, ...courseFeaturedOrders, ...webinarFeaturedOrders]
     .filter((row) => row.payment_status === "paid")
     .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
-  const pendingPayoutTotal = payouts
-    .filter((row) => row.payout_status !== "processed")
-    .reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
+  const pendingPayoutTotal = payouts.filter((row) => row.payout_status !== "processed").reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
+
+  const appPayments: AppPaymentTransaction[] = [
+    ...transactions.map((row) => ({
+      id: row.id,
+      source: "razorpay_transactions" as const,
+      status: row.payment_status,
+      amount: row.amount,
+      currency: row.currency,
+      createdAt: row.created_at,
+      paidAt: null,
+      orderRef: row.razorpay_order_id,
+      paymentRef: row.razorpay_payment_id,
+      extra: `${toTitleCase(row.order_kind)} · course ${shortId(row.course_order_id)} · test ${shortId(row.psychometric_order_id)}`,
+    })),
+    ...orders.map((row) => ({
+      id: row.id,
+      source: "course_orders" as const,
+      status: row.payment_status,
+      amount: row.gross_amount,
+      currency: row.currency,
+      createdAt: row.created_at,
+      paidAt: row.paid_at,
+      orderRef: row.razorpay_order_id,
+      paymentRef: row.razorpay_payment_id,
+      extra: `course ${shortId(row.course_id)} · student ${shortId(row.student_id)}`,
+    })),
+    ...webinarOrders.map((row) => ({
+      id: row.id,
+      source: "webinar_orders" as const,
+      status: row.payment_status,
+      amount: row.amount,
+      currency: row.currency,
+      createdAt: row.created_at,
+      paidAt: row.paid_at,
+      orderRef: row.razorpay_order_id,
+      paymentRef: row.razorpay_payment_id,
+      extra: `webinar ${shortId(row.webinar_id)} · student ${shortId(row.student_id)}`,
+    })),
+    ...psychometricOrders.map((row) => ({
+      id: row.id,
+      source: "psychometric_orders" as const,
+      status: row.payment_status,
+      amount: row.final_amount,
+      currency: row.currency,
+      createdAt: row.created_at,
+      paidAt: row.paid_at,
+      orderRef: row.razorpay_order_id,
+      paymentRef: row.razorpay_payment_id,
+      extra: `test ${shortId(row.test_id)} · user ${shortId(row.user_id)}`,
+    })),
+    ...featuredListingOrders.map((row) => ({
+      id: row.id,
+      source: "featured_listing_orders" as const,
+      status: row.payment_status,
+      amount: row.final_payable_amount ?? row.amount,
+      currency: row.currency,
+      createdAt: row.created_at,
+      paidAt: row.paid_at,
+      orderRef: row.razorpay_order_id,
+      paymentRef: row.razorpay_payment_id,
+      extra: `institute ${shortId(row.institute_id)} · plan ${shortId(row.plan_id)} · ${toTitleCase(row.order_status)}`,
+    })),
+    ...courseFeaturedOrders.map((row) => ({
+      id: row.id,
+      source: "course_featured_orders" as const,
+      status: row.payment_status,
+      amount: row.amount,
+      currency: row.currency,
+      createdAt: row.created_at,
+      paidAt: row.paid_at,
+      orderRef: row.razorpay_order_id,
+      paymentRef: row.razorpay_payment_id,
+      extra: `course ${shortId(row.course_id)} · institute ${shortId(row.institute_id)} · ${toTitleCase(row.order_status)}`,
+    })),
+    ...webinarFeaturedOrders.map((row) => ({
+      id: row.id,
+      source: "webinar_featured_orders" as const,
+      status: row.payment_status,
+      amount: row.amount,
+      currency: row.currency,
+      createdAt: row.created_at,
+      paidAt: row.paid_at,
+      orderRef: row.razorpay_order_id,
+      paymentRef: row.razorpay_payment_id,
+      extra: `webinar ${shortId(row.webinar_id)} · institute ${shortId(row.institute_id)} · ${toTitleCase(row.order_status)}`,
+    })),
+  ].sort((a, b) => {
+    const aDate = new Date(a.paidAt ?? a.createdAt ?? 0).getTime();
+    const bDate = new Date(b.paidAt ?? b.createdAt ?? 0).getTime();
+    return bDate - aDate;
+  });
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 px-4 py-12">
       <section>
         <h1 className="text-2xl font-semibold">Admin Transactions</h1>
-        <p className="mt-1 text-sm text-slate-600">Monitor payment captures, order records, enrollments, webinar sales, and payout state in one place.</p>
+        <p className="mt-1 text-sm text-slate-600">Monitor all payment transactions throughout the app, plus related orders, enrollments, registrations, and payouts.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded border bg-white p-3">
             <p className="text-xs text-slate-500">Course revenue (paid)</p>
             <p className="text-lg font-semibold">{formatAmount(totalCourseRevenue)}</p>
           </div>
           <div className="rounded border bg-white p-3">
-            <p className="text-xs text-slate-500">Webinar revenue (paid)</p>
-            <p className="text-lg font-semibold">{formatAmount(totalWebinarRevenue)}</p>
+            <p className="text-xs text-slate-500">Webinar + psychometric revenue (paid)</p>
+            <p className="text-lg font-semibold">{formatAmount(totalWebinarRevenue + totalPsychometricRevenue)}</p>
+          </div>
+          <div className="rounded border bg-white p-3">
+            <p className="text-xs text-slate-500">Featured placements revenue (paid)</p>
+            <p className="text-lg font-semibold">{formatAmount(totalFeaturedRevenue)}</p>
           </div>
           <div className="rounded border bg-white p-3">
             <p className="text-xs text-slate-500">Pending institute payouts</p>
             <p className="text-lg font-semibold">{formatAmount(pendingPayoutTotal)}</p>
           </div>
-          <div className="rounded border bg-white p-3">
-            <p className="text-xs text-slate-500">Payment captures tracked</p>
-            <p className="text-lg font-semibold">{transactions.length}</p>
-          </div>
         </div>
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold">Razorpay Transactions</h2>
+        <h2 className="text-lg font-semibold">All Payment Transactions</h2>
+        <p className="mt-1 text-xs text-slate-500">Merged view across Razorpay transactions, course/webinar/test orders, and featured order payments.</p>
         <div className="mt-3 space-y-2">
-          {transactions.map((txn) => (
-            <div key={txn.id} className="rounded border bg-white p-3 text-sm">
-              <p className="font-medium">{toTitleCase(txn.order_kind)} · {formatAmount(txn.amount)} · {toTitleCase(txn.payment_status)}</p>
-              <p className="text-slate-600">Payment ID: {txn.razorpay_payment_id ?? "-"} · Order ID: {txn.razorpay_order_id ?? "-"}</p>
-              <p className="text-xs text-slate-500">Created {toDateTimeLabel(txn.created_at)} · Course Order {shortId(txn.course_order_id)} · Test Order {shortId(txn.psychometric_order_id)}</p>
+          {appPayments.map((txn) => (
+            <div key={`${txn.source}-${txn.id}`} className="rounded border bg-white p-3 text-sm">
+              <p className="font-medium">
+                {toTitleCase(txn.source)} · {formatAmount(txn.amount, txn.currency ?? "INR")} · {toTitleCase(txn.status)}
+              </p>
+              <p className="text-slate-700">{txn.extra}</p>
+              <p className="text-xs text-slate-500">
+                Payment ID: {txn.paymentRef ?? "-"} · Order ID: {txn.orderRef ?? "-"} · Paid {toDateTimeLabel(txn.paidAt)} · Created {toDateTimeLabel(txn.createdAt)}
+              </p>
             </div>
           ))}
-          {transactions.length === 0 ? <p className="rounded border border-dashed bg-white p-3 text-sm text-slate-600">No Razorpay transactions found.</p> : null}
+          {appPayments.length === 0 ? <p className="rounded border border-dashed bg-white p-3 text-sm text-slate-600">No payment transactions found.</p> : null}
         </div>
       </section>
 
