@@ -48,6 +48,13 @@ export default async function AdminDashboardPage() {
     { count: leads },
     { count: tests },
     { count: unreadNotifications },
+    { count: webinarCount },
+    { count: webinarPendingCount },
+    { count: webinarRegistrationCount },
+    { count: webinarOrderCount },
+    { count: instituteFeaturedSubscriptionsCount },
+    { count: courseFeaturedSubscriptionsCount },
+    { count: webinarFeaturedSubscriptionsCount },
     { data: recentNotifications },
     { data: recentPendingCourses },
   ] = await Promise.all([
@@ -63,6 +70,13 @@ export default async function AdminDashboardPage() {
     supabase.from("crm_leads").select("id", { count: "exact", head: true }),
     supabase.from("psychometric_tests").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
+    supabase.from("webinars").select("id", { count: "exact", head: true }),
+    supabase.from("webinars").select("id", { count: "exact", head: true }).eq("approval_status", "pending"),
+    supabase.from("webinar_registrations").select("id", { count: "exact", head: true }),
+    supabase.from("webinar_orders").select("id", { count: "exact", head: true }),
+    supabase.from("institute_featured_subscriptions").select("id", { count: "exact", head: true }),
+    supabase.from("course_featured_subscriptions").select("id", { count: "exact", head: true }),
+    supabase.from("webinar_featured_subscriptions").select("id", { count: "exact", head: true }),
     supabase
       .from("notifications")
       .select("id,title,message,type,is_read,created_at")
@@ -120,10 +134,25 @@ export default async function AdminDashboardPage() {
           Unread notifications: {(unreadNotifications ?? 0) + (pendingCourses ?? 0)}
         </Link>
         <Link href="/admin/webinars" className="rounded border bg-white p-4">
-          Webinar events: Manage live sessions
+          Webinar events: {webinarCount ?? 0}
+        </Link>
+        <Link href="/admin/webinars" className="rounded border bg-white p-4">
+          Pending webinar approvals: {webinarPendingCount ?? 0}
+        </Link>
+        <Link href="/admin/webinars" className="rounded border bg-white p-4">
+          Webinar registrations: {webinarRegistrationCount ?? 0}
+        </Link>
+        <Link href="/admin/webinars" className="rounded border bg-white p-4">
+          Webinar orders: {webinarOrderCount ?? 0}
         </Link>
         <Link href="/admin/featured-listings" className="rounded border bg-white p-4">
-          Featured subscriptions: institute, course, and webinar promotion plans/orders
+          Institute featured listings: {instituteFeaturedSubscriptionsCount ?? 0}
+        </Link>
+        <Link href="/admin/featured-listings" className="rounded border bg-white p-4">
+          Course featured listings: {courseFeaturedSubscriptionsCount ?? 0}
+        </Link>
+        <Link href="/admin/featured-listings" className="rounded border bg-white p-4">
+          Webinar featured promotions: {webinarFeaturedSubscriptionsCount ?? 0}
         </Link>
       </div>
 
