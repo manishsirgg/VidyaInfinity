@@ -35,6 +35,7 @@ type SearchItem = {
 
 const links: Array<{ href: Route; label: string }> = [
   { href: "/courses", label: "Courses" },
+  { href: "/webinars", label: "Webinars" },
   { href: "/institutes", label: "Institutes" },
   { href: "/psychometric-tests", label: "Psychometric Tests" },
   { href: "/blogs", label: "Blogs" },
