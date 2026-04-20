@@ -273,6 +273,37 @@ export default function InstituteFeaturedPage() {
     }
   }
 
+  async function toggleCurrentAutoRenew() {
+    if (!summary?.current?.id || isBusy) return;
+    setBusyPlanId(summary.current.id);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/institute/featured-subscriptions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subscriptionId: summary.current.id,
+          autoRenew: !Boolean(summary.current.auto_renew),
+        }),
+      });
+
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setMessageType("error");
+        setMessage(body?.error ?? "Unable to update renewal preference.");
+        setBusyPlanId(null);
+        return;
+      }
+
+      setMessageType("success");
+      setMessage(!Boolean(summary.current.auto_renew) ? "Auto renew enabled for current subscription." : "Auto renew disabled for current subscription.");
+      await loadData();
+    } finally {
+      setBusyPlanId(null);
+    }
+  }
+
   function getPlanState(plan: FeaturedPlan) {
     const currentPlan = activePlan;
     if (!summary?.current || !currentPlan) {
@@ -329,6 +360,16 @@ export default function InstituteFeaturedPage() {
               <p className="text-xs uppercase text-slate-500">Auto Renew</p>
               <p className="mt-1 font-medium">{summary.current?.auto_renew ? "ON" : "OFF"}</p>
               <p className="text-xs text-slate-500">{renewalMode}</p>
+              {summary.current ? (
+                <button
+                  type="button"
+                  onClick={() => void toggleCurrentAutoRenew()}
+                  disabled={isBusy}
+                  className="mt-2 rounded border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {busyPlanId === summary.current.id ? "Updating..." : summary.current.auto_renew ? "Turn OFF" : "Turn ON"}
+                </button>
+              ) : null}
             </div>
             <div className="rounded border p-3">
               <p className="text-xs uppercase text-slate-500">Queued plan</p>

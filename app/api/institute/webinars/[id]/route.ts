@@ -25,6 +25,23 @@ type WebinarUpdatePayload = {
   status?: "scheduled" | "live" | "completed" | "cancelled";
 };
 
+function parseIso(value: string | undefined) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function isAllowedMeetingUrl(url: string | undefined) {
+  if (!url) return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname.includes("meet.google.com");
+  } catch {
+    return false;
+  }
+}
+
 async function getInstituteId(userId: string) {
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
@@ -83,10 +100,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: existing } = await dataClient
     .from("webinars")
-    .select("id,approval_status")
+    .select("id,approval_status,starts_at,ends_at,meeting_url")
     .eq("id", id)
     .eq("institute_id", instituteId)
-    .maybeSingle<{ id: string; approval_status: string | null }>();
+    .maybeSingle<{ id: string; approval_status: string | null; starts_at: string; ends_at: string | null; meeting_url: string | null }>();
 
   if (!existing) return NextResponse.json({ error: "Webinar not found" }, { status: 404 });
 
@@ -94,6 +111,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const price = mode === "paid" ? Number(payload.price ?? 0) : 0;
   if (mode === "paid" && price <= 0) {
     return NextResponse.json({ error: "Paid webinar must have price greater than zero" }, { status: 400 });
+  }
+
+  const nextStartsAt = typeof payload.startsAt === "string" ? payload.startsAt : existing.starts_at;
+  const nextEndsAt = typeof payload.endsAt === "string" ? payload.endsAt : existing.ends_at;
+  const startAt = parseIso(nextStartsAt);
+  const endAt = parseIso(nextEndsAt ?? undefined);
+  if (!startAt || (endAt && endAt.getTime() <= startAt.getTime())) {
+    return NextResponse.json({ error: "Invalid date range. End time must be after start time." }, { status: 400 });
+  }
+
+  const nextMeetingUrl = typeof payload.meetingUrl === "string" ? payload.meetingUrl.trim() : (existing.meeting_url ?? undefined);
+  if (!isAllowedMeetingUrl(nextMeetingUrl)) {
+    return NextResponse.json({ error: "Meeting URL must be a valid Google Meet link." }, { status: 400 });
   }
 
   const updateData: Record<string, unknown> = {

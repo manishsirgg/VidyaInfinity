@@ -48,7 +48,16 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
   const validationError = useMemo(() => {
     if (!values.title.trim()) return "Title is required.";
     if (!values.startsAt) return "Start date and time are required.";
+    if (values.endsAt && new Date(values.endsAt).getTime() <= new Date(values.startsAt).getTime()) return "End date/time must be after start date/time.";
     if (values.webinarMode === "paid" && Number(values.price) <= 0) return "Paid webinar must have price greater than zero.";
+    if (values.meetingUrl) {
+      try {
+        const parsed = new URL(values.meetingUrl);
+        if (parsed.protocol !== "https:" || !parsed.hostname.includes("meet.google.com")) return "Meeting URL must be a valid Google Meet URL.";
+      } catch {
+        return "Meeting URL must be a valid URL.";
+      }
+    }
     return "";
   }, [values]);
 

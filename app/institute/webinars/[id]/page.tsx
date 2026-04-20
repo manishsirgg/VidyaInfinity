@@ -23,7 +23,7 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
   const { data: institute } = await dataClient.from("institutes").select("id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle<{ id: string }>();
   if (!institute) notFound();
 
-  const [{ data: webinar }, { data: registrations }, { data: orders }, { data: payouts }] = await Promise.all([
+  const [{ data: webinar }, { data: registrations }, { data: orders }] = await Promise.all([
     dataClient
       .from("webinars")
       .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_provider,meeting_url,status,approval_status,rejection_reason")
@@ -32,12 +32,16 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
       .maybeSingle(),
     dataClient.from("webinar_registrations").select("id,payment_status,access_status").eq("webinar_id", id),
     dataClient.from("webinar_orders").select("id,payment_status,amount,platform_fee_amount,payout_amount").eq("webinar_id", id),
-    dataClient.from("institute_payouts").select("id,payout_amount,payout_status").eq("webinar_id", id),
   ]);
 
   if (!webinar) notFound();
 
   const paidOrders = (orders ?? []).filter((order) => order.payment_status === "paid");
+  const paidOrderIds = paidOrders.map((order) => order.id);
+  const { data: payouts } =
+    paidOrderIds.length > 0
+      ? await dataClient.from("institute_payouts").select("id,payout_amount,payout_status").in("webinar_order_id", paidOrderIds)
+      : { data: [] };
   const gross = paidOrders.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
   const platformFee = paidOrders.reduce((sum, row) => sum + Number(row.platform_fee_amount ?? 0), 0);
   const instituteShare = paidOrders.reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
