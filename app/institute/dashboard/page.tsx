@@ -48,7 +48,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -92,6 +92,17 @@ export default async function InstituteDashboardPage() {
       .from("webinar_featured_subscription_summary")
       .select("webinar_id,status,starts_at,ends_at")
       .eq("institute_id", institute.id),
+    dataClient
+      .from("webinars")
+      .select("id,title,status,approval_status,starts_at,created_at")
+      .eq("institute_id", institute.id)
+      .order("created_at", { ascending: false }),
+    dataClient.from("webinar_registrations").select("id,webinar_id", { count: "exact", head: false }).eq("institute_id", institute.id),
+    dataClient
+      .from("webinar_orders")
+      .select("id,payment_status,payout_amount,created_at")
+      .eq("institute_id", institute.id)
+      .order("created_at", { ascending: false }),
   ]);
 
   const courses = coursesResult.data ?? [];
@@ -100,6 +111,9 @@ export default async function InstituteDashboardPage() {
   const payouts = payoutsResult.data ?? [];
   const recentNotifications = recentNotificationsResult.data ?? [];
   const activeFeaturedStatus = featuredStatusResult.data ?? null;
+  const webinars = webinarsResult.data ?? [];
+  const webinarRegistrations = webinarRegistrationsResult.data ?? [];
+  const webinarOrders = webinarOrdersResult.data ?? [];
   const courseFeaturedRows =
     (courseFeaturedSummaryResult.data as Array<{ course_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
   const webinarFeaturedRows =
@@ -132,6 +146,11 @@ export default async function InstituteDashboardPage() {
   const scheduledCourseFeatured = courseFeaturedRows.filter((row) => row.status === "scheduled" && new Date(row.starts_at).getTime() > now).length;
   const activeWebinarFeatured = webinarFeaturedRows.filter((row) => row.status === "active" && new Date(row.starts_at).getTime() <= now && new Date(row.ends_at).getTime() > now).length;
   const scheduledWebinarFeatured = webinarFeaturedRows.filter((row) => row.status === "scheduled" && new Date(row.starts_at).getTime() > now).length;
+  const approvedWebinars = webinars.filter((webinar) => webinar.approval_status === "approved").length;
+  const pendingWebinars = webinars.filter((webinar) => webinar.approval_status === "pending").length;
+  const liveWebinars = webinars.filter((webinar) => webinar.status === "live").length;
+  const webinarPaidOrders = webinarOrders.filter((order) => order.payment_status === "paid");
+  const webinarPayoutTotal = webinarPaidOrders.reduce((sum, order) => sum + Number(order.payout_amount ?? 0), 0);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
@@ -184,6 +203,18 @@ export default async function InstituteDashboardPage() {
           <p className="text-xs uppercase tracking-wide text-slate-500">Unread notifications</p>
           <p className="mt-1 text-2xl font-semibold">{unreadNotificationsResult.count ?? 0}</p>
           <p className="mt-1 text-xs text-slate-600">Institute alerts and moderation updates</p>
+        </Link>
+        <Link href="/institute/webinars" className="rounded border bg-white p-4 transition hover:border-brand-300">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Webinars</p>
+          <p className="mt-1 text-2xl font-semibold">{webinars.length}</p>
+          <p className="mt-1 text-xs text-slate-600">
+            {approvedWebinars} approved · {pendingWebinars} pending · {liveWebinars} live
+          </p>
+        </Link>
+        <Link href="/institute/webinars" className="rounded border bg-white p-4 transition hover:border-brand-300">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Webinar registrations</p>
+          <p className="mt-1 text-2xl font-semibold">{webinarRegistrations.length}</p>
+          <p className="mt-1 text-xs text-slate-600">Paid webinar payouts: {money(webinarPayoutTotal)}</p>
         </Link>
       </div>
 
@@ -275,6 +306,52 @@ export default async function InstituteDashboardPage() {
             </p>
           </div>
           <p className="mt-3 text-xs text-slate-500">Institute account created on {new Date(institute.created_at).toLocaleDateString("en-IN")}.</p>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="rounded border bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold">Webinar performance</h2>
+            <Link href="/institute/webinars" className="text-sm text-brand-700">
+              Open webinar manager
+            </Link>
+          </div>
+          <dl className="mt-3 space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <dt className="text-slate-600">Total webinars</dt>
+              <dd className="font-medium">{webinars.length}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-slate-600">Registrations</dt>
+              <dd className="font-medium">{webinarRegistrations.length}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-slate-600">Paid webinar orders</dt>
+              <dd className="font-medium">{webinarPaidOrders.length}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-slate-600">Webinar payout total</dt>
+              <dd className="font-medium">{money(webinarPayoutTotal)}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="rounded border bg-white p-4">
+          <h2 className="text-base font-semibold">Featured promotion overview</h2>
+          <div className="mt-3 space-y-2 text-sm">
+            <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+              Institute featured listing:{" "}
+              {activeFeaturedStatus
+                ? `Active (${activeFeaturedStatus.plan_code}) until ${new Date(activeFeaturedStatus.ends_at).toLocaleDateString("en-IN")}`
+                : "Not active"}
+            </p>
+            <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+              Course featured listing: {activeCourseFeatured} active · {scheduledCourseFeatured} scheduled
+            </p>
+            <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
+              Webinar featured promotion: {activeWebinarFeatured} active · {scheduledWebinarFeatured} scheduled
+            </p>
+          </div>
         </div>
       </div>
 

@@ -42,6 +42,15 @@ type TestAttemptItem = {
   created_at: string;
 };
 
+type WebinarRegistrationItem = {
+  id: string;
+  webinar_id: string;
+  created_at: string;
+  payment_status: string;
+  access_status: string;
+  webinars: { title: string; starts_at: string; status: string } | { title: string; starts_at: string; status: string }[] | null;
+};
+
 function formatDate(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -63,6 +72,14 @@ function statusTone(status: string) {
   return "text-amber-700";
 }
 
+function webinarInfo(
+  webinar: WebinarRegistrationItem["webinars"],
+): { title: string; starts_at: string; status: string } | null {
+  if (!webinar) return null;
+  if (Array.isArray(webinar)) return webinar[0] ?? null;
+  return webinar;
+}
+
 export default async function StudentDashboardPage() {
   const { user, profile } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
@@ -78,6 +95,9 @@ export default async function StudentDashboardPage() {
     { data: recentInquiries },
     { data: recentEnrollments },
     { data: recentTestAttempts },
+    { count: webinarRegistrationsCount },
+    { count: paidWebinarOrdersCount },
+    { data: recentWebinarRegistrations },
   ] = await Promise.all([
     supabase.from("course_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
     supabase.from("psychometric_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
@@ -124,6 +144,15 @@ export default async function StudentDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<TestAttemptItem[]>(),
+    supabase.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("user_id", user.id),
+    supabase.from("webinar_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
+    supabase
+      .from("webinar_registrations")
+      .select("id,webinar_id,created_at,payment_status,access_status,webinars(title,starts_at,status)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(3)
+      .returns<WebinarRegistrationItem[]>(),
   ]);
 
   const approvalStatus = profile.approval_status ?? "pending";
@@ -199,10 +228,12 @@ export default async function StudentDashboardPage() {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Overview</h2>
-        <div className="mt-3 grid gap-4 md:grid-cols-5">
+        <div className="mt-3 grid gap-4 md:grid-cols-7">
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></Link>
           <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{activeEnrollments ?? 0}</span></Link>
+          <Link href="/webinars" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Webinar Registrations: <span className="font-semibold">{webinarRegistrationsCount ?? 0}</span></Link>
+          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Webinar Orders: <span className="font-semibold">{paidWebinarOrdersCount ?? 0}</span></Link>
           <Link href="/student/leads" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">My Inquiries: <span className="font-semibold">{inquiryCount ?? 0}</span></Link>
           <Link href="/student/notifications" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Unread Notifications: <span className="font-semibold">{unreadNotificationCount ?? 0}</span></Link>
         </div>
@@ -219,12 +250,13 @@ export default async function StudentDashboardPage() {
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/saved-courses">Saved Courses</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/cart">Checkout Cart</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/courses">Browse Courses</Link>
+          <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/webinars">Browse Webinars</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/psychometric-tests">Take Psychometric Test</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/purchases">View Purchases</Link>
         </div>
       </section>
 
-      <section className="mt-6 grid gap-4 lg:grid-cols-2">
+      <section className="mt-6 grid gap-4 lg:grid-cols-3">
         <div className="rounded-xl border bg-white p-4">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-lg font-semibold">Recent Notifications</h2>
@@ -285,6 +317,28 @@ export default async function StudentDashboardPage() {
                 <p className="text-xs text-slate-500">{formatDate(item.created_at)}</p>
               </div>
             ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <h2 className="text-lg font-semibold">Recent Webinar Registrations</h2>
+          <div className="mt-3 space-y-2 text-sm">
+            {(recentWebinarRegistrations ?? []).length === 0 ? <p className="text-slate-500">No webinar registrations yet.</p> : null}
+            {(recentWebinarRegistrations ?? []).map((item) => {
+              const webinar = webinarInfo(item.webinars);
+              return (
+                <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <p className="font-medium text-slate-900">Webinar: {webinar?.title ?? item.webinar_id}</p>
+                  <p className="text-slate-700">
+                    Access: {toTitleCase(item.access_status)} · Payment: {toTitleCase(item.payment_status)}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {webinar?.starts_at ? `Starts: ${formatDate(webinar.starts_at)} · ` : ""}
+                    Registered: {formatDate(item.created_at)}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
