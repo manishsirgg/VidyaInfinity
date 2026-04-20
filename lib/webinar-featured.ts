@@ -50,12 +50,20 @@ export function parseWebinarFeaturedPlans(rows: Array<Record<string, unknown>>):
       name: pickString(row.name ?? row.plan_code ?? row.code, "Webinar Featured Plan"),
       description: typeof row.description === "string" ? row.description : null,
       durationDays: toNumber(row.duration_days),
-      amount: toNumber(row.price ?? row.amount),
+      amount: toNumber(row.amount ?? row.price),
       currency: pickString(row.currency, "INR"),
       isActive: row.is_active === null ? true : toBoolean(row.is_active),
       sortOrder: toNumber(row.sort_order),
     }))
     .filter((row) => row.id.length > 0 && row.durationDays > 0 && row.amount > 0);
+}
+
+export async function expireWebinarFeaturedSubscriptionsSafe(admin: SupabaseClient) {
+  try {
+    await admin.rpc("expire_webinar_featured_subscriptions");
+  } catch {
+    // Best-effort housekeeping call.
+  }
 }
 
 export function isWebinarPromotable(webinar: {

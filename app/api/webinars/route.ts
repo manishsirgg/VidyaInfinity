@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -11,6 +12,9 @@ export async function GET(request: Request) {
   const admin = getSupabaseAdmin();
   const supabase = await createClient();
   const dataClient = admin.ok ? admin.data : supabase;
+  if (admin.ok) {
+    await expireWebinarFeaturedSubscriptionsSafe(admin.data);
+  }
 
   let query = dataClient
     .from("webinars")

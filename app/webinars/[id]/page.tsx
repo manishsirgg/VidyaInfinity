@@ -5,6 +5,7 @@ import { getCurrentUserProfile } from "@/lib/auth/get-session";
 import { shouldShowMeetingJoinWindow, toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
 
 function instituteName(value: unknown) {
   if (Array.isArray(value)) return ((value[0] as { name?: string } | undefined)?.name ?? "Institute");
@@ -17,6 +18,9 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
   const admin = getSupabaseAdmin();
   const supabase = await createClient();
   const dataClient = admin.ok ? admin.data : supabase;
+  if (admin.ok) {
+    await expireWebinarFeaturedSubscriptionsSafe(admin.data);
+  }
 
   const { data: webinar } = await dataClient
     .from("webinars")

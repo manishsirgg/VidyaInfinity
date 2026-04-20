@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { isWebinarPromotable } from "@/lib/webinar-featured";
+import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
 
 import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
@@ -13,6 +14,9 @@ export default async function InstituteWebinarsPage() {
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
+  if (admin.ok) {
+    await expireWebinarFeaturedSubscriptionsSafe(admin.data);
+  }
 
   const { data: institute } = await dataClient.from("institutes").select("id").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1).maybeSingle<{ id: string }>();
   if (!institute) return <div className="mx-auto max-w-6xl px-4 py-10">Institute profile not found.</div>;

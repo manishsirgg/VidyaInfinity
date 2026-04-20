@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getInstituteIdForUser } from "@/lib/course-featured";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
-import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
+import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { getNextWebinarFeaturedWindow, isWebinarPromotable } from "@/lib/webinar-featured";
+import { expireWebinarFeaturedSubscriptionsSafe, getNextWebinarFeaturedWindow, isWebinarPromotable } from "@/lib/webinar-featured";
 
 type VerifyBody = {
   orderId?: string;
@@ -46,6 +46,7 @@ export async function POST(request: Request) {
 
   const instituteId = await getInstituteIdForUser(admin.data, auth.user.id);
   if (!instituteId) return NextResponse.json({ error: "Institute profile not found" }, { status: 404 });
+  await expireWebinarFeaturedSubscriptionsSafe(admin.data);
 
   const { data: existingOrder } = await admin.data
     .from("webinar_featured_orders")
@@ -90,6 +91,43 @@ export async function POST(request: Request) {
       .eq("id", existingOrder.id)
       .in("payment_status", ["pending", "failed"]);
     return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
+  }
+
+  const razorpay = getRazorpayClient();
+  if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
+
+  type RazorpayPayment = {
+    id?: string;
+    order_id?: string;
+    status?: string;
+    amount?: number;
+    currency?: string;
+  };
+
+  let payment: RazorpayPayment;
+  try {
+    payment = (await razorpay.data.payments.fetch(paymentId)) as RazorpayPayment;
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to validate payment details" },
+      { status: 502 },
+    );
+  }
+
+  const expectedAmountInPaise = Math.round(Number(existingOrder.amount) * 100);
+  if (
+    payment.id !== paymentId ||
+    payment.order_id !== orderId ||
+    payment.status !== "captured" ||
+    Number(payment.amount ?? 0) !== expectedAmountInPaise ||
+    (payment.currency ?? "").toUpperCase() !== existingOrder.currency.toUpperCase()
+  ) {
+    await admin.data
+      .from("webinar_featured_orders")
+      .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", existingOrder.id)
+      .in("payment_status", ["pending", "failed"]);
+    return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
   }
 
   const nowIso = new Date().toISOString();

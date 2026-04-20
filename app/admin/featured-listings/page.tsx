@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
 
 function money(value: number, currency = "INR") {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
@@ -109,6 +110,7 @@ export default async function AdminFeaturedListingsPage() {
   } catch {
     // Ignore expiry refresh failures and continue rendering admin data.
   }
+  await expireWebinarFeaturedSubscriptionsSafe(admin.data);
 
   const [{ data: plans }, { data: orders }, { data: subscriptions }, { data: institutes }, { data: coursePlans }, { data: courseOrders }, { data: courseSubscriptions }, { data: courseRows }, { data: webinarPlans }, { data: webinarOrders }, { data: webinarSubscriptions }, { data: webinarRows }, { data: activeFeaturedWebinars }] = await Promise.all([
     admin.data.from("featured_listing_plans").select("*").order("sort_order", { ascending: true }),
