@@ -6,16 +6,15 @@ type RefundStatus = "requested" | "approved" | "rejected" | "processed";
 
 type RefundRow = {
   id: string;
-  user_id: string;
-  order_type: "course" | "psychometric";
+  user_id: string | null;
+  order_kind: "course_enrollment" | "psychometric_test";
   course_order_id: string | null;
   psychometric_order_id: string | null;
-  reason: string;
-  admin_note: string | null;
-  status: RefundStatus;
+  reason: string | null;
+  internal_notes: string | null;
+  refund_status: RefundStatus;
   requested_at: string;
-  reviewed_by: string | null;
-  reviewed_at: string | null;
+  processed_at: string | null;
   created_at: string;
   updated_at: string;
   user: {
@@ -56,13 +55,13 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
   const [message, setMessage] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>(() =>
-    Object.fromEntries(initialRefunds.map((refund) => [refund.id, refund.admin_note ?? ""])),
+    Object.fromEntries(initialRefunds.map((refund) => [refund.id, refund.internal_notes ?? ""])),
   );
 
   const counts = useMemo(() => {
     return refunds.reduce(
       (acc, refund) => {
-        acc[refund.status] += 1;
+        acc[refund.refund_status] += 1;
         return acc;
       },
       { requested: 0, approved: 0, rejected: 0, processed: 0 },
@@ -71,7 +70,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
 
   const visibleRefunds = useMemo(() => {
     if (statusFilter === "all") return refunds;
-    return refunds.filter((refund) => refund.status === statusFilter);
+    return refunds.filter((refund) => refund.refund_status === statusFilter);
   }, [refunds, statusFilter]);
 
   async function updateRefund(refundId: string, nextStatus: RefundStatus) {
@@ -97,9 +96,9 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
         refund.id === refundId
           ? {
               ...refund,
-              status: body.refund.status as RefundStatus,
-              admin_note: draftNotes[refundId]?.trim() || null,
-              reviewed_at: new Date().toISOString(),
+              refund_status: body.refund.refund_status as RefundStatus,
+              internal_notes: draftNotes[refundId]?.trim() || null,
+              processed_at: nextStatus === "processed" ? new Date().toISOString() : refund.processed_at,
               order:
                 nextStatus === "processed" && refund.order
                   ? {
@@ -162,19 +161,19 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
       ) : (
         <div className="space-y-3">
           {visibleRefunds.map((refund) => {
-            const availableTransitions = STATUS_TRANSITIONS[refund.status];
-            const orderId = refund.order_type === "course" ? refund.course_order_id : refund.psychometric_order_id;
+            const availableTransitions = STATUS_TRANSITIONS[refund.refund_status];
+            const orderId = refund.order_kind === "course_enrollment" ? refund.course_order_id : refund.psychometric_order_id;
 
             return (
               <div key={refund.id} className="rounded border bg-white p-4 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="font-semibold">
-                      {refund.order_type === "course" ? "Course" : "Psychometric"} refund · {refund.id.slice(0, 8)}
+                      {refund.order_kind === "course_enrollment" ? "Course" : "Psychometric"} refund · {refund.id.slice(0, 8)}
                     </p>
                     <p className="text-xs text-slate-500">Requested {new Date(refund.requested_at).toLocaleString()}</p>
                   </div>
-                  <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium">Status: {refund.status}</span>
+                  <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium">Status: {refund.refund_status}</span>
                 </div>
 
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -194,7 +193,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
 
                 <div className="mt-3 rounded border p-3">
                   <p className="text-xs uppercase text-slate-500">Reason</p>
-                  <p className="mt-1 whitespace-pre-wrap text-slate-700">{refund.reason}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-slate-700">{refund.reason || "No reason provided."}</p>
                 </div>
 
                 <div className="mt-3">

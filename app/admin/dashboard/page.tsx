@@ -64,7 +64,7 @@ export default async function AdminDashboardPage() {
     supabase.from("institutes").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("courses").select("id", { count: "exact", head: true }).eq("status", "pending"),
     supabase.from("course_orders").select("id", { count: "exact", head: true }),
-    supabase.from("refunds").select("id", { count: "exact", head: true }).eq("status", "requested"),
+    supabase.from("refunds").select("id", { count: "exact", head: true }).eq("refund_status", "requested"),
     supabase.from("blogs").select("id", { count: "exact", head: true }),
     supabase.from("coupons").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("crm_leads").select("id", { count: "exact", head: true }),
