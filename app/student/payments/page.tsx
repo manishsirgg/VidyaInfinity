@@ -2,7 +2,7 @@ import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function Page() {
-  const { user } = await requireUser("student");
+  const { user } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
   const { data: transactions } = await supabase
     .from("razorpay_transactions")
