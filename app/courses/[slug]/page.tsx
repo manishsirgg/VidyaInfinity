@@ -23,6 +23,8 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
 
   const course = byLegacySlug.data;
   if (!course) notFound();
+  const { data: featuredRow } = await dataClient.from("active_featured_courses").select("course_id").eq("course_id", course.id).maybeSingle<{ course_id: string }>();
+  const isFeaturedCourse = Boolean(featuredRow?.course_id);
   const coursePath = `/courses/${slug}`;
   const shareUrl = `${siteConfig.url}${coursePath}`;
 
@@ -34,6 +36,9 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           <p className="mt-2 text-sm text-slate-500">
             {course.category ?? "General"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.language ?? "-"}
           </p>
+          {isFeaturedCourse ? (
+            <p className="mt-2 inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Featured Course</p>
+          ) : null}
           <p className="mt-3 text-slate-700">{course.summary}</p>
           <ShareActions title={course.title} text={course.summary ?? undefined} url={shareUrl} className="mt-4" />
         </div>

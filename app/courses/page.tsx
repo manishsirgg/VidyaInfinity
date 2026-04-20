@@ -5,8 +5,8 @@ import { CourseCompareBar } from "@/components/courses/course-compare-bar";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-type ActiveFeaturedInstituteRecord = {
-  institute_id: string;
+type ActiveFeaturedCourseRecord = {
+  course_id: string;
 };
 
 export default async function CoursesPage() {
@@ -19,22 +19,22 @@ export default async function CoursesPage() {
     .eq("status", "approved")
     .or("is_active.is.null,is_active.eq.true")
     .order("created_at", { ascending: false });
-  const instituteIds = [...new Set((courses ?? []).map((course) => course.institute_id).filter(Boolean))];
-  const featuredRows = instituteIds.length
+  const courseIds = [...new Set((courses ?? []).map((course) => course.id).filter(Boolean))];
+  const featuredRows = courseIds.length
     ? (
         await dataClient
-          .from("active_institute_featured_status")
-          .select("institute_id")
-          .in("institute_id", instituteIds)
+          .from("active_featured_courses")
+          .select("course_id")
+          .in("course_id", courseIds)
       ).data ?? []
     : [];
-  const featuredInstituteIds = new Set(
-    (featuredRows as ActiveFeaturedInstituteRecord[])
-      .map((row) => row.institute_id)
+  const featuredCourseIds = new Set(
+    (featuredRows as ActiveFeaturedCourseRecord[])
+      .map((row) => row.course_id)
       .filter((value): value is string => typeof value === "string" && value.length > 0)
   );
   const sortedCourses = [...(courses ?? [])].sort(
-    (left, right) => Number(featuredInstituteIds.has(right.institute_id)) - Number(featuredInstituteIds.has(left.institute_id))
+    (left, right) => Number(featuredCourseIds.has(right.id)) - Number(featuredCourseIds.has(left.id))
   );
 
   return (
@@ -62,9 +62,9 @@ export default async function CoursesPage() {
                 <div className="mb-3 grid h-40 w-full place-items-center rounded-md border border-dashed text-xs text-slate-500">No preview image</div>
               )}
               <h2 className="text-lg font-medium">{course.title}</h2>
-              {featuredInstituteIds.has(course.institute_id) ? (
+              {featuredCourseIds.has(course.id) ? (
                 <p className="mt-1 inline-flex w-fit rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                  Featured Institute
+                  Featured Course
                 </p>
               ) : null}
               <p className="mt-1 text-xs text-slate-500">
