@@ -48,7 +48,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -88,6 +88,10 @@ export default async function InstituteDashboardPage() {
       .from("course_featured_subscription_summary")
       .select("course_id,status,starts_at,ends_at")
       .eq("institute_id", institute.id),
+    dataClient
+      .from("webinar_featured_subscription_summary")
+      .select("webinar_id,status,starts_at,ends_at")
+      .eq("institute_id", institute.id),
   ]);
 
   const courses = coursesResult.data ?? [];
@@ -98,6 +102,8 @@ export default async function InstituteDashboardPage() {
   const activeFeaturedStatus = featuredStatusResult.data ?? null;
   const courseFeaturedRows =
     (courseFeaturedSummaryResult.data as Array<{ course_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
+  const webinarFeaturedRows =
+    (webinarFeaturedSummaryResult.data as Array<{ webinar_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
 
   const now = Date.now();
   const days30 = 30 * 24 * 60 * 60 * 1000;
@@ -124,6 +130,8 @@ export default async function InstituteDashboardPage() {
   const paidOrdersThisMonth = paidOrders.filter((order) => now - new Date(order.created_at).getTime() <= days30).length;
   const activeCourseFeatured = courseFeaturedRows.filter((row) => row.status === "active" && new Date(row.starts_at).getTime() <= now && new Date(row.ends_at).getTime() > now).length;
   const scheduledCourseFeatured = courseFeaturedRows.filter((row) => row.status === "scheduled" && new Date(row.starts_at).getTime() > now).length;
+  const activeWebinarFeatured = webinarFeaturedRows.filter((row) => row.status === "active" && new Date(row.starts_at).getTime() <= now && new Date(row.ends_at).getTime() > now).length;
+  const scheduledWebinarFeatured = webinarFeaturedRows.filter((row) => row.status === "scheduled" && new Date(row.starts_at).getTime() > now).length;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
@@ -244,6 +252,9 @@ export default async function InstituteDashboardPage() {
             <Link href="/institute/courses/featured" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Feature courses
             </Link>
+            <Link href="/institute/webinars/featured" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              Promote webinars
+            </Link>
           </div>
           <div className="mt-3 rounded border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-900">
             {activeFeaturedStatus ? (
@@ -258,6 +269,9 @@ export default async function InstituteDashboardPage() {
           <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             <p>
               Course featured status: {activeCourseFeatured} active · {scheduledCourseFeatured} scheduled.
+            </p>
+            <p className="mt-1">
+              Webinar featured status: {activeWebinarFeatured} active · {scheduledWebinarFeatured} scheduled.
             </p>
           </div>
           <p className="mt-3 text-xs text-slate-500">Institute account created on {new Date(institute.created_at).toLocaleDateString("en-IN")}.</p>
