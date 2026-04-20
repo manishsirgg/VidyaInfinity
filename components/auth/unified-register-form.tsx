@@ -4,6 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { INSTITUTE_APPROVAL_DOCUMENT_OPTIONS } from "@/lib/constants/institute-documents";
+import { ORGANIZATION_TYPE_OPTIONS } from "@/lib/constants/organization-types";
 
 type Role = "student" | "institute" | "admin";
 
@@ -105,11 +106,11 @@ export function UnifiedRegisterForm() {
           <input name="legalEntityName" placeholder="Legal entity name" className="rounded border px-3 py-2" />
           <select required name="organizationType" className="rounded border px-3 py-2">
             <option value="">Select organization type</option>
-            <option value="school">School</option>
-            <option value="coaching_institute">Coaching Institute</option>
-            <option value="college">College</option>
-            <option value="university">University</option>
-            <option value="edtech">EdTech</option>
+            {ORGANIZATION_TYPE_OPTIONS.map((organizationType) => (
+              <option key={organizationType} value={organizationType}>
+                {organizationType}
+              </option>
+            ))}
           </select>
           <input required name="designation" placeholder="Your designation" className="rounded border px-3 py-2" />
           <input name="registrationNumber" placeholder="Registration number" className="rounded border px-3 py-2" />

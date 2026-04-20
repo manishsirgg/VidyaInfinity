@@ -3,6 +3,7 @@ import type { Route } from "next";
 import Link from "next/link";
 
 import { NewsletterForm } from "@/components/shared/newsletter-form";
+import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { getPublicFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -131,7 +132,7 @@ export default async function HomePage() {
     return {
       ...institute,
       name: institute.name || profile?.organization_name || profile?.full_name || profile?.name || "Institute",
-      organization_type: institute.organization_type || profile?.organization_type || null,
+      organization_type: getOrganizationTypeLabel(institute.organization_type || profile?.organization_type || null),
       city: profile?.city ?? null,
       state: profile?.state ?? null,
       country: profile?.country ?? null,
@@ -164,7 +165,7 @@ export default async function HomePage() {
         slug: null as string | null,
         name: profile.organization_name || profile.full_name || profile.name || "Institute",
         description: null as string | null,
-        organization_type: profile.organization_type ?? null,
+        organization_type: getOrganizationTypeLabel(profile.organization_type ?? null),
         city: profile.city ?? null,
         state: profile.state ?? null,
         country: profile.country ?? null,
@@ -240,7 +241,7 @@ export default async function HomePage() {
   const featuredInstitutes = institutesForHome.slice(0, 3);
   const instituteCategoryGroups = Object.entries(
     institutesForHome.reduce<Record<string, typeof institutesForHome>>((acc, institute) => {
-      const key = institute.organization_type || "General";
+      const key = getOrganizationTypeLabel(institute.organization_type) || "General";
       acc[key] = [...(acc[key] ?? []), institute];
       return acc;
     }, {}),

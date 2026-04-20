@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { INSTITUTE_APPROVAL_DOCUMENT_OPTIONS, getInstituteApprovalSubtypeLabel } from "@/lib/constants/institute-documents";
+import { ORGANIZATION_TYPE_OPTIONS, normalizeOrganizationType } from "@/lib/constants/organization-types";
 
 type Props = {
   role: "student" | "institute" | "admin";
@@ -126,6 +127,11 @@ export function ProfileSettingsForm({ role }: Props) {
 
   const isRejected = effectiveStatus === "rejected";
   const isPending = effectiveStatus === "pending";
+
+  const selectedOrganizationType = useMemo(() => {
+    const profileValue = String(institute.organization_type ?? profile.organization_type ?? "");
+    return normalizeOrganizationType(profileValue) ?? "";
+  }, [institute.organization_type, profile.organization_type]);
 
   const identityDocuments = useMemo(
     () => userDocuments.filter((doc) => doc.document_category === "identity"),
@@ -287,7 +293,14 @@ export function ProfileSettingsForm({ role }: Props) {
           <>
             <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute identity</h3>
             <input name="organizationName" defaultValue={String(profile.organization_name ?? "")} placeholder="Institute / Organization name" className="rounded border px-3 py-2" />
-            <input name="organizationType" defaultValue={String(institute.organization_type ?? profile.organization_type ?? "")} placeholder="Organization type" className="rounded border px-3 py-2" />
+            <select name="organizationType" defaultValue={selectedOrganizationType} className="rounded border px-3 py-2">
+              <option value="">Select organization type</option>
+              {ORGANIZATION_TYPE_OPTIONS.map((organizationType) => (
+                <option key={organizationType} value={organizationType}>
+                  {organizationType}
+                </option>
+              ))}
+            </select>
           </>
         ) : null}
 
