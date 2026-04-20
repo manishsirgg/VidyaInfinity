@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { calculateCommission } from "@/lib/payments/commission";
+import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -61,13 +61,31 @@ export async function POST(request: Request) {
 
   if (existingRegistration) return NextResponse.json({ error: "Already enrolled" }, { status: 409 });
 
-  const { data: settings } = await admin.data
-    .from("platform_commission_settings")
-    .select("commission_percentage")
-    .eq("key", "default")
-    .maybeSingle<{ commission_percentage: number }>();
+  let commissionPercentage: number | null = null;
 
-  const commission = calculateCommission(Number(webinar.price ?? 0), Number(settings?.commission_percentage ?? 12));
+  const { data: webinarCommission, error: webinarCommissionError } = await admin.data
+    .from("webinar_commission_settings")
+    .select("commission_percent")
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ commission_percent: number }>();
+
+  if (!webinarCommissionError) {
+    commissionPercentage = sanitizeCommissionPercentage(webinarCommission?.commission_percent);
+  }
+
+  if (commissionPercentage === null) {
+    const { data: legacyCommission } = await admin.data
+      .from("platform_commission_settings")
+      .select("commission_percentage")
+      .eq("key", "default")
+      .maybeSingle<{ commission_percentage: number }>();
+
+    commissionPercentage = sanitizeCommissionPercentage(legacyCommission?.commission_percentage) ?? 12;
+  }
+
+  const commission = calculateCommission(Number(webinar.price ?? 0), commissionPercentage);
 
   const razorpay = getRazorpayClient();
   if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
