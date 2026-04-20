@@ -1,6 +1,8 @@
 export function sanitizeCommissionPercentage(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
   const numeric = Number(value);
-  if (Number.isNaN(numeric) || numeric < 0 || numeric > 100) return null;
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > 100) return null;
   return Number(numeric.toFixed(2));
 }
 

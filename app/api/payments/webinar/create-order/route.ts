@@ -61,8 +61,6 @@ export async function POST(request: Request) {
 
   if (existingRegistration) return NextResponse.json({ error: "Already enrolled" }, { status: 409 });
 
-  let commissionPercentage: number | null = null;
-
   const { data: webinarCommission, error: webinarCommissionError } = await admin.data
     .from("webinar_commission_settings")
     .select("commission_percent")
@@ -71,18 +69,13 @@ export async function POST(request: Request) {
     .limit(1)
     .maybeSingle<{ commission_percent: number }>();
 
-  if (!webinarCommissionError) {
-    commissionPercentage = sanitizeCommissionPercentage(webinarCommission?.commission_percent);
+  if (webinarCommissionError) {
+    return NextResponse.json({ error: `Unable to read webinar commission settings: ${webinarCommissionError.message}` }, { status: 500 });
   }
 
+  const commissionPercentage = sanitizeCommissionPercentage(webinarCommission?.commission_percent);
   if (commissionPercentage === null) {
-    const { data: legacyCommission } = await admin.data
-      .from("platform_commission_settings")
-      .select("commission_percentage")
-      .eq("key", "default")
-      .maybeSingle<{ commission_percentage: number }>();
-
-    commissionPercentage = sanitizeCommissionPercentage(legacyCommission?.commission_percentage) ?? 12;
+    return NextResponse.json({ error: "Webinar commission is not configured" }, { status: 500 });
   }
 
   const commission = calculateCommission(Number(webinar.price ?? 0), commissionPercentage);

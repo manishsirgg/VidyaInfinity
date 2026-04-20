@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 
 import { detectPaymentSchemaMismatches } from "@/lib/supabase/schema-guard";
 
-const PAYMENT_MIGRATION_PATH =
-  "supabase/migrations/20260417_000002_schema_alignment_for_orders_and_transactions.sql";
+const PAYMENT_MIGRATION_PATHS = [
+  "supabase/migrations/20260417_000002_schema_alignment_for_orders_and_transactions.sql",
+  "supabase/migrations/20260419_000014_webinars_and_featured_subscriptions.sql",
+  "supabase/migrations/20260420_000015_simplified_entity_and_webinar_commissions.sql",
+  "supabase/migrations/20260420_000016_webinar_commission_singleton.sql",
+];
 
 export async function getPaymentSchemaErrorResponse() {
   const result = await detectPaymentSchemaMismatches();
@@ -20,7 +24,7 @@ export async function getPaymentSchemaErrorResponse() {
     {
       error: "Supabase payment schema mismatch",
       missingTables: result.missing,
-      migration: `Run ${PAYMENT_MIGRATION_PATH}`,
+      migration: `Run migrations: ${PAYMENT_MIGRATION_PATHS.join(", ")}`,
     },
     { status: 500 }
   );
