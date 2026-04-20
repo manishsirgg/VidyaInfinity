@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { FormFeedback } from "@/components/shared/form-feedback";
@@ -50,6 +50,13 @@ function getWordCount(value: string) {
   return value.trim().split(/\s+/).length;
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
 type Props = {
   mode: "create" | "edit" | "resubmit";
   submitEndpoint: string;
@@ -80,6 +87,24 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
 
   const descriptionWords = useMemo(() => getWordCount(description), [description]);
   const currentMedia = useMemo(() => initialMedia.filter((item) => !removedMediaIds.includes(item.id)), [initialMedia, removedMediaIds]);
+  const removedMediaSet = useMemo(() => new Set(removedMediaIds), [removedMediaIds]);
+  const newMediaPreviews = useMemo(
+    () =>
+      newMedia.map((file) => ({
+        key: `${file.name}-${file.size}-${file.lastModified}`,
+        name: file.name,
+        size: file.size,
+        kind: getFileKind(file),
+        url: URL.createObjectURL(file),
+      })),
+    [newMedia],
+  );
+
+  useEffect(() => {
+    return () => {
+      newMediaPreviews.forEach((item) => URL.revokeObjectURL(item.url));
+    };
+  }, [newMediaPreviews]);
 
   async function uploadNewMedia(courseId: string) {
     const failures: string[] = [];
@@ -234,6 +259,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
   }
 
   const pageTitle = mode === "create" ? "Add a new course" : mode === "resubmit" ? "Resubmit rejected course" : "Edit course";
+  const totalMediaAfterSave = currentMedia.length + newMedia.length;
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 rounded border bg-white p-4 md:p-6">
@@ -274,33 +300,130 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       </div>
 
       {initialMedia.length > 0 ? (
-        <div className="rounded border border-slate-200 p-3">
-          <p className="text-sm font-medium">Existing media</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="rounded border border-slate-200 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-900">Existing media</p>
+            <p className="text-xs text-slate-500">
+              {currentMedia.length} active • {removedMediaIds.length} marked for deletion
+            </p>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {initialMedia.map((item) => {
-              const removed = removedMediaIds.includes(item.id);
+              const removed = removedMediaSet.has(item.id);
+              const isVideo = item.type === "video";
               return (
-                <label key={item.id} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
-                  <span className="truncate">{item.type}: {item.file_url}</span>
-                  <input type="checkbox" checked={removed} onChange={() => setRemovedMediaIds((prev) => (removed ? prev.filter((id) => id !== item.id) : [...prev, item.id]))} />
-                </label>
+                <article key={item.id} className={`overflow-hidden rounded-lg border ${removed ? "border-rose-200 bg-rose-50/70" : "border-slate-200 bg-white"}`}>
+                  <div className="relative bg-slate-100">
+                    {isVideo ? (
+                      <video className={`h-36 w-full object-cover ${removed ? "opacity-50" : ""}`} src={item.file_url} muted preload="metadata" controls />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img className={`h-36 w-full object-cover ${removed ? "opacity-50" : ""}`} src={item.file_url} alt={initialCourse?.title ?? "Course media"} />
+                    )}
+                    <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-white">
+                      {isVideo ? "Video" : "Image"}
+                    </span>
+                  </div>
+                  <div className="space-y-2 p-3">
+                    <p className="truncate text-xs text-slate-600">{item.file_url}</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRemovedMediaIds((prev) =>
+                          removed ? prev.filter((id) => id !== item.id) : [...prev, item.id],
+                        )
+                      }
+                      className={`rounded px-3 py-1.5 text-xs font-medium ${removed ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "bg-rose-100 text-rose-700 hover:bg-rose-200"}`}
+                    >
+                      {removed ? "Undo delete" : "Mark for delete"}
+                    </button>
+                  </div>
+                </article>
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-slate-500">Select items to remove them on save.</p>
         </div>
       ) : null}
 
-      <div className="rounded border border-slate-200 p-3">
-        <p className="text-sm font-medium">Upload new media</p>
+      <div className="rounded border border-slate-200 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-slate-900">Upload new media</p>
+          <p className="text-xs text-slate-500">Up to {MAX_MEDIA_FILES} files per upload action</p>
+        </div>
         <input
           type="file"
           multiple
           accept="image/png,image/jpeg,image/jpg,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v"
-          className="mt-2 rounded border px-3 py-2"
-          onChange={(event) => setNewMedia(Array.from(event.target.files ?? []))}
+          className="mt-2 w-full rounded border px-3 py-2 text-sm"
+          onChange={(event) => {
+            const incoming = Array.from(event.target.files ?? []);
+            if (incoming.length === 0) return;
+            setNewMedia((prev) => {
+              const seen = new Set(prev.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+              const merged = [...prev];
+              for (const file of incoming) {
+                const key = `${file.name}-${file.size}-${file.lastModified}`;
+                if (!seen.has(key)) {
+                  merged.push(file);
+                  seen.add(key);
+                }
+              }
+              return merged;
+            });
+            event.currentTarget.value = "";
+          }}
         />
-        {newMedia.length > 0 ? <p className="mt-1 text-xs text-slate-600">{newMedia.length} files selected.</p> : null}
+        {newMediaPreviews.length > 0 ? (
+          <div className="mt-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-600">{newMediaPreviews.length} new files queued</p>
+              <button
+                type="button"
+                onClick={() => setNewMedia([])}
+                className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
+              >
+                Clear all
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {newMediaPreviews.map((item) => (
+                <article key={item.key} className="overflow-hidden rounded-lg border border-slate-200">
+                  <div className="relative bg-slate-100">
+                    {item.kind === "video" ? (
+                      <video className="h-32 w-full object-cover" src={item.url} muted preload="metadata" controls />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img className="h-32 w-full object-cover" src={item.url} alt={item.name} />
+                    )}
+                    <span className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-white">
+                      {item.kind === "video" ? "Video" : "Image"}
+                    </span>
+                  </div>
+                  <div className="space-y-2 p-3">
+                    <p className="truncate text-xs font-medium text-slate-800">{item.name}</p>
+                    <p className="text-xs text-slate-500">{formatFileSize(item.size)}</p>
+                    <button
+                      type="button"
+                      onClick={() => setNewMedia((prev) => prev.filter((file) => `${file.name}-${file.size}-${file.lastModified}` !== item.key))}
+                      className="rounded bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-200"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">No new files selected yet.</p>
+        )}
+      </div>
+
+      <div className="rounded border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-800">Media summary after save</p>
+        <p className="mt-1 text-xs text-slate-600">
+          Existing: {currentMedia.length} • New: {newMedia.length} • Total after save: {totalMediaAfterSave}
+        </p>
       </div>
 
       <button type="submit" disabled={state === "submitting"} className="rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-60">
