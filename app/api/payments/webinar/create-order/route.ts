@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   const { data: webinar } = await admin.data
     .from("webinars")
-    .select("id,title,institute_id,webinar_mode,price,currency,approval_status,status")
+    .select("id,title,institute_id,webinar_mode,price,currency,approval_status,status,ends_at,is_public")
     .eq("id", webinarId)
     .maybeSingle<{
       id: string;
@@ -32,11 +32,14 @@ export async function POST(request: Request) {
       currency: string;
       approval_status: string;
       status: string;
+      ends_at: string | null;
+      is_public: boolean | null;
     }>();
 
-  if (!webinar || webinar.approval_status !== "approved") return NextResponse.json({ error: "Webinar unavailable" }, { status: 404 });
+  if (!webinar || webinar.approval_status !== "approved" || webinar.is_public !== true) return NextResponse.json({ error: "Webinar unavailable" }, { status: 404 });
   if (webinar.webinar_mode !== "paid") return NextResponse.json({ error: "This webinar is free" }, { status: 400 });
-  if (webinar.status === "cancelled") return NextResponse.json({ error: "This webinar is cancelled" }, { status: 400 });
+  if (!["scheduled", "live"].includes(webinar.status)) return NextResponse.json({ error: "This webinar is not open for enrollment" }, { status: 400 });
+  if (webinar.ends_at && new Date(webinar.ends_at).getTime() <= Date.now()) return NextResponse.json({ error: "This webinar has ended" }, { status: 400 });
 
   const { data: existingPaid } = await admin.data
     .from("webinar_orders")
@@ -47,6 +50,16 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (existingPaid) return NextResponse.json({ error: "Already purchased" }, { status: 409 });
+
+  const { data: existingRegistration } = await admin.data
+    .from("webinar_registrations")
+    .select("id")
+    .eq("webinar_id", webinar.id)
+    .eq("student_id", auth.user.id)
+    .eq("access_status", "granted")
+    .maybeSingle();
+
+  if (existingRegistration) return NextResponse.json({ error: "Already enrolled" }, { status: 409 });
 
   const { data: settings } = await admin.data
     .from("platform_commission_settings")
@@ -79,7 +92,7 @@ export async function POST(request: Request) {
       amount: commission.grossAmount,
       currency: webinar.currency || "INR",
       payment_status: "pending",
-      order_status: "created",
+      order_status: "pending",
       access_status: "locked",
       platform_fee_percent: commission.commissionPercentage,
       platform_fee_amount: commission.commissionAmount,

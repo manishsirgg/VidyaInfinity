@@ -2,14 +2,37 @@ import { notFound } from "next/navigation";
 
 import { WebinarActionCard } from "@/components/webinars/webinar-action-card";
 import { getCurrentUserProfile } from "@/lib/auth/get-session";
-import { shouldShowMeetingJoinWindow, toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
+import { shouldShowMeetingJoinWindow, toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
 
-function instituteName(value: unknown) {
-  if (Array.isArray(value)) return ((value[0] as { name?: string } | undefined)?.name ?? "Institute");
-  return ((value as { name?: string } | null)?.name ?? "Institute");
+type WebinarRecord = {
+  id: string;
+  title: string;
+  description: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  timezone: string | null;
+  webinar_mode: "free" | "paid";
+  price: number | null;
+  currency: string | null;
+  meeting_url: string | null;
+  meeting_provider: string | null;
+  faculty_name: string | null;
+  faculty_bio: string | null;
+  banner_url: string | null;
+  thumbnail_url: string | null;
+  approval_status: string;
+  status: "scheduled" | "live" | "completed" | "cancelled";
+  is_public: boolean | null;
+  max_attendees: number | null;
+  institutes: { name?: string | null } | Array<{ name?: string | null }> | null;
+};
+
+function instituteName(value: WebinarRecord["institutes"]) {
+  if (Array.isArray(value)) return value[0]?.name ?? "Institute";
+  return value?.name ?? "Institute";
 }
 
 export default async function WebinarDetailPublicPage({ params }: { params: Promise<{ id: string }> }) {
@@ -24,12 +47,11 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
 
   const { data: webinar } = await dataClient
     .from("webinars")
-    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,meeting_provider,faculty_name,faculty_bio,banner_url,thumbnail_url,approval_status,status,institutes(name)")
+    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,meeting_provider,faculty_name,faculty_bio,banner_url,thumbnail_url,approval_status,status,is_public,max_attendees,institutes(name)")
     .eq("id", id)
     .eq("approval_status", "approved")
-    .in("status", ["scheduled", "live"])
-    .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
-    .maybeSingle();
+    .eq("is_public", true)
+    .maybeSingle<WebinarRecord>();
 
   if (!webinar) notFound();
 
@@ -44,10 +66,27 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
     hasAccess = registration?.access_status === "granted";
   }
 
-  const canJoin = hasAccess && shouldShowMeetingJoinWindow(webinar.starts_at, webinar.ends_at);
+  const isEnded = webinar.ends_at ? new Date(webinar.ends_at).getTime() < Date.now() : false;
+  const isCancelled = webinar.status === "cancelled";
+  const isCompleted = webinar.status === "completed" || isEnded;
+  const enrollmentOpen = ["scheduled", "live"].includes(webinar.status) && !isEnded;
 
-  const { data: featuredRow } = await dataClient.from("active_featured_webinars").select("webinar_id").eq("webinar_id", webinar.id).maybeSingle<{ webinar_id: string }>();
+  const canJoin = hasAccess && !isCancelled && !isCompleted && shouldShowMeetingJoinWindow(webinar.starts_at, webinar.ends_at);
+
+  const { data: featuredRow } = await dataClient
+    .from("active_featured_webinars")
+    .select("webinar_id")
+    .eq("webinar_id", webinar.id)
+    .maybeSingle<{ webinar_id: string }>();
   const isFeaturedWebinar = Boolean(featuredRow?.webinar_id);
+
+  const statusLabel = isCancelled
+    ? "Webinar Cancelled"
+    : isCompleted
+    ? "Webinar Completed"
+    : webinar.status === "live"
+      ? "Live"
+      : "Upcoming";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -58,16 +97,24 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
             <h1 className="text-2xl font-semibold">{webinar.title}</h1>
             {isFeaturedWebinar ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Featured</span> : null}
           </div>
-          <p className="mt-1 text-sm text-slate-600">{instituteName(webinar.institutes)} · {toDateTimeLabel(webinar.starts_at)}</p>
+          <p className="mt-1 text-sm text-slate-600">{instituteName(webinar.institutes)}</p>
+          <p className="mt-1 text-sm text-slate-600">Starts: {toDateTimeLabel(webinar.starts_at)}</p>
+          <p className="text-sm text-slate-600">Ends: {toDateTimeLabel(webinar.ends_at)}</p>
+          <p className="text-sm text-slate-600">Timezone: {webinar.timezone ?? "Asia/Kolkata"}</p>
+
           <p className="mt-3 text-sm text-slate-700">{webinar.description ?? "No description provided."}</p>
           <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
             <p><span className="font-medium">Mode:</span> {webinar.webinar_mode}</p>
-            <p><span className="font-medium">Price:</span> {webinar.webinar_mode === "paid" ? toCurrency(Number(webinar.price), webinar.currency) : "Free"}</p>
-            <p><span className="font-medium">Timezone:</span> {webinar.timezone}</p>
+            <p><span className="font-medium">Price:</span> {webinar.webinar_mode === "paid" ? toCurrency(Number(webinar.price ?? 0), webinar.currency ?? "INR") : "Free"}</p>
             <p><span className="font-medium">Provider:</span> {webinar.meeting_provider ?? "google_meet"}</p>
+            {typeof webinar.max_attendees === "number" ? <p><span className="font-medium">Capacity:</span> {webinar.max_attendees}</p> : null}
           </div>
+
           {webinar.faculty_name ? <p className="mt-3 text-sm"><span className="font-medium">Faculty:</span> {webinar.faculty_name}</p> : null}
           {webinar.faculty_bio ? <p className="mt-1 text-sm text-slate-600">{webinar.faculty_bio}</p> : null}
+
+          {isCancelled ? <p className="mt-3 rounded bg-rose-50 p-2 text-sm text-rose-700">This webinar has been cancelled.</p> : null}
+          {isCompleted ? <p className="mt-3 rounded bg-slate-100 p-2 text-sm text-slate-700">This webinar is completed.</p> : null}
         </section>
 
         <WebinarActionCard
@@ -75,9 +122,12 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
           webinarTitle={webinar.title}
           webinarMode={webinar.webinar_mode}
           price={Number(webinar.price ?? 0)}
-          canJoin={canJoin}
-          meetingUrl={canJoin ? webinar.meeting_url : null}
           isLoggedIn={Boolean(viewer?.user)}
+          enrollmentStatus={hasAccess ? "enrolled" : "none"}
+          enrollmentOpen={enrollmentOpen}
+          statusLabel={statusLabel}
+          canJoin={canJoin}
+          joinUrl={canJoin ? webinar.meeting_url : null}
         />
       </div>
     </div>
