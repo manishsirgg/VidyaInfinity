@@ -88,19 +88,28 @@ export async function POST(request: Request) {
   if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
 
   const receipt = `webinar_featured_${body.webinarId.slice(0, 8)}_${Date.now()}`;
-  const order = await razorpay.data.orders.create({
-    amount: Math.round(amount * 100),
-    currency,
-    receipt,
-    notes: {
-      userId: auth.user.id,
-      instituteId,
-      webinarId: body.webinarId,
-      planId: body.planId,
-      productType: "webinar_featured_listing",
-      payoutEligible: "false",
-    },
-  });
+  let order: { id: string; receipt: string | null };
+  try {
+    const created = await razorpay.data.orders.create({
+      amount: Math.round(amount * 100),
+      currency,
+      receipt,
+      notes: {
+        userId: auth.user.id,
+        instituteId,
+        webinarId: body.webinarId,
+        planId: body.planId,
+        productType: "webinar_featured_listing",
+        payoutEligible: "false",
+      },
+    });
+    order = { id: created.id, receipt: created.receipt ?? null };
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to create Razorpay order" },
+      { status: 502 },
+    );
+  }
 
   const nowIso = new Date().toISOString();
   const { data: inserted, error: insertError } = await admin.data

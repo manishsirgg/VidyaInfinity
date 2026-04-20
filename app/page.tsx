@@ -6,11 +6,15 @@ import { NewsletterForm } from "@/components/shared/newsletter-form";
 import { getPublicFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
 
 export default async function HomePage() {
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
+  if (admin.ok) {
+    await expireWebinarFeaturedSubscriptionsSafe(admin.data);
+  }
 
   const { data: listedCourses } = await dataClient
     .from("courses")

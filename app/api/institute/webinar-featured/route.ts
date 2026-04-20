@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getInstituteIdForUser } from "@/lib/course-featured";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { isWebinarPromotable, parseWebinarFeaturedPlans } from "@/lib/webinar-featured";
+import { expireWebinarFeaturedSubscriptionsSafe, isWebinarPromotable, parseWebinarFeaturedPlans } from "@/lib/webinar-featured";
 
 type InstituteWebinar = {
   id: string;
@@ -57,11 +57,7 @@ export async function GET() {
     return NextResponse.json({ plans: [], webinars: [], subscriptions: [], orders: [], summary: { activeCount: 0, scheduledCount: 0, expiringSoonCount: 0 } });
   }
 
-  try {
-    await admin.data.rpc("expire_webinar_featured_subscriptions");
-  } catch {
-    // ignore cleanup failures on read path
-  }
+  await expireWebinarFeaturedSubscriptionsSafe(admin.data);
 
   const [plansResult, allWebinarsResult, subscriptionsResult, ordersResult] = await Promise.all([
     admin.data.from("webinar_featured_plans").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
