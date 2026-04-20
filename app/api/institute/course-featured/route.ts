@@ -26,6 +26,21 @@ type SubscriptionSummary = {
   currency: string;
 };
 
+type CourseFeaturedOrderRow = {
+  id: string;
+  course_id: string;
+  plan_id: string | null;
+  amount: number;
+  currency: string;
+  duration_days: number;
+  payment_status: string;
+  order_status: string;
+  paid_at: string | null;
+  created_at: string;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+};
+
 export async function GET() {
   const auth = await requireApiUser("institute");
   if ("error" in auth) return auth.error;
@@ -44,15 +59,9 @@ export async function GET() {
     // ignore cleanup failures on read path
   }
 
-  const [plansResult, coursesResult, subscriptionsResult, ordersResult] = await Promise.all([
+  const [plansResult, allCoursesResult, subscriptionsResult, ordersResult] = await Promise.all([
     admin.data.from("course_featured_plans").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
-    admin.data
-      .from("courses")
-      .select("id,title,category,level,status,is_active")
-      .eq("institute_id", instituteId)
-      .eq("status", "approved")
-      .or("is_active.is.null,is_active.eq.true")
-      .order("created_at", { ascending: false }),
+    admin.data.from("courses").select("id,title,category,level,status,is_active").eq("institute_id", instituteId).order("created_at", { ascending: false }),
     admin.data
       .from("course_featured_subscription_summary")
       .select("id,course_id,plan_code,plan_name,starts_at,ends_at,status,queued_from_previous,amount,currency")
@@ -65,8 +74,20 @@ export async function GET() {
       .order("created_at", { ascending: false }),
   ]);
 
-  const nowMs = Date.now();
+  const allCourses = (allCoursesResult.data ?? []) as InstituteCourse[];
+  const eligibleCourses = allCourses.filter((course) => course.status === "approved" && course.is_active !== false);
+  const courseTitleById = new Map(allCourses.map((course) => [course.id, course.title]));
+
   const subscriptions = (subscriptionsResult.data ?? []) as SubscriptionSummary[];
+  const orders = (ordersResult.data ?? []) as CourseFeaturedOrderRow[];
+
+  const historicalPlanIds = [...new Set(orders.map((item) => item.plan_id).filter((item): item is string => typeof item === "string" && item.length > 0))];
+  const historicalPlansResult = historicalPlanIds.length
+    ? await admin.data.from("course_featured_plans").select("id,name,plan_code,code").in("id", historicalPlanIds)
+    : { data: [] as Array<{ id: string; name: string | null; plan_code: string | null; code: string | null }> };
+  const planNameById = new Map((historicalPlansResult.data ?? []).map((item) => [item.id, item.name ?? item.plan_code ?? item.code ?? "Course Plan"]));
+
+  const nowMs = Date.now();
   const summary = {
     activeCount: subscriptions.filter((item) => item.status === "active" && new Date(item.starts_at).getTime() <= nowMs && new Date(item.ends_at).getTime() > nowMs).length,
     scheduledCount: subscriptions.filter((item) => item.status === "scheduled" && new Date(item.starts_at).getTime() > nowMs).length,
@@ -80,9 +101,17 @@ export async function GET() {
 
   return NextResponse.json({
     plans: parseCourseFeaturedPlans((plansResult.data ?? []) as Array<Record<string, unknown>>),
-    courses: (coursesResult.data ?? []) as InstituteCourse[],
-    subscriptions,
-    orders: ordersResult.data ?? [],
+    courses: eligibleCourses,
+    subscriptions: subscriptions.map((item) => ({
+      ...item,
+      course_title: courseTitleById.get(item.course_id) ?? "Course",
+      plan_name: item.plan_name ?? item.plan_code ?? "Plan",
+    })),
+    orders: orders.map((item) => ({
+      ...item,
+      course_title: courseTitleById.get(item.course_id) ?? "Course",
+      plan_name: item.plan_id ? planNameById.get(item.plan_id) ?? "Plan" : "Plan",
+    })),
     summary,
   });
 }
