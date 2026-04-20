@@ -1,8 +1,11 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const paymentTables = [
-  "platform_commission_settings",
+  "entity_commissions",
+  "webinar_commission_settings",
   "course_orders",
+  "webinar_orders",
+  "webinar_registrations",
   "psychometric_orders",
   "razorpay_transactions",
   "course_enrollments",

@@ -58,29 +58,24 @@ export async function POST(request: Request) {
 
     const normalizedOrganizationType = normalizeOrganizationType(institute?.organization_type ?? "");
 
-    let commissionPercentage: number | null = null;
-
-    if (normalizedOrganizationType) {
-      const { data: entityCommission, error: entityCommissionError } = await admin.data
-        .from("entity_commissions")
-        .select("commission_percent")
-        .eq("entity_type", normalizedOrganizationType)
-        .eq("is_active", true)
-        .maybeSingle<{ commission_percent: number }>();
-
-      if (!entityCommissionError) {
-        commissionPercentage = sanitizeCommissionPercentage(entityCommission?.commission_percent);
-      }
+    if (!normalizedOrganizationType) {
+      return NextResponse.json({ error: "Institute organization type is not configured for commission" }, { status: 500 });
     }
 
-    if (commissionPercentage === null) {
-      const { data: legacyCommission } = await admin.data
-        .from("platform_commission_settings")
-        .select("commission_percentage")
-        .eq("key", "default")
-        .maybeSingle<{ commission_percentage: number }>();
+    const { data: entityCommission, error: entityCommissionError } = await admin.data
+      .from("entity_commissions")
+      .select("commission_percent")
+      .eq("entity_type", normalizedOrganizationType)
+      .eq("is_active", true)
+      .maybeSingle<{ commission_percent: number }>();
 
-      commissionPercentage = sanitizeCommissionPercentage(legacyCommission?.commission_percentage) ?? 12;
+    if (entityCommissionError) {
+      return NextResponse.json({ error: `Unable to read commission settings: ${entityCommissionError.message}` }, { status: 500 });
+    }
+
+    const commissionPercentage = sanitizeCommissionPercentage(entityCommission?.commission_percent);
+    if (commissionPercentage === null) {
+      return NextResponse.json({ error: `Commission not configured for ${normalizedOrganizationType}` }, { status: 500 });
     }
 
     const commission = calculateCommission(Number(course.fees ?? 0), commissionPercentage);
