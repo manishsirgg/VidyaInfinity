@@ -48,6 +48,10 @@ export default async function InstituteCoursesLandingPage() {
           <h2 className="font-semibold">Rejected Courses</h2>
           <p className="mt-1 text-sm text-slate-600">Fix rejected courses and resubmit for moderation.</p>
         </Link>
+        <Link href="/institute/courses/featured" className="rounded border bg-white p-4 hover:bg-slate-50">
+          <h2 className="font-semibold">Feature Courses</h2>
+          <p className="mt-1 text-sm text-slate-600">Promote approved courses with course-level featured plans.</p>
+        </Link>
       </div>
 
       <div className="mt-6 rounded border bg-white p-4">

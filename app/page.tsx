@@ -19,6 +19,7 @@ export default async function HomePage() {
     .or("is_active.is.null,is_active.eq.true")
     .order("created_at", { ascending: false })
     .limit(18);
+  const { data: activeFeaturedCourseRows } = await dataClient.from("active_featured_courses").select("course_id");
 
   const instituteSelectWithSlug = "id,user_id,slug,name,description,organization_type,website_url,verified";
   const instituteSelectWithoutSlug = "id,user_id,name,description,organization_type,website_url,verified";
@@ -194,9 +195,15 @@ export default async function HomePage() {
   }
 
   const courses = listedCourses ?? [];
-  const featuredCourses = courses.slice(0, 3);
+  const activeFeaturedCourseIds = new Set(
+    ((activeFeaturedCourseRows ?? []) as Array<{ course_id: string | null }>)
+      .map((item) => item.course_id)
+      .filter((item): item is string => typeof item === "string" && item.length > 0),
+  );
+  const rankedCourses = [...courses].sort((left, right) => Number(activeFeaturedCourseIds.has(right.id)) - Number(activeFeaturedCourseIds.has(left.id)));
+  const featuredCourses = rankedCourses.filter((course) => activeFeaturedCourseIds.has(course.id)).slice(0, 3);
   const courseCategoryGroups = Object.entries(
-    courses.reduce<Record<string, typeof courses>>((acc, course) => {
+    rankedCourses.reduce<Record<string, typeof rankedCourses>>((acc, course) => {
       const key = course.category || "General";
       acc[key] = [...(acc[key] ?? []), course];
       return acc;
