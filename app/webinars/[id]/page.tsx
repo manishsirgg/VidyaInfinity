@@ -4,12 +4,12 @@ import { WebinarActionCard } from "@/components/webinars/webinar-action-card";
 import { getCurrentUserProfile } from "@/lib/auth/get-session";
 import { shouldShowMeetingJoinWindow, toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 function instituteName(value: unknown) {
   if (Array.isArray(value)) return ((value[0] as { name?: string } | undefined)?.name ?? "Institute");
   return ((value as { name?: string } | null)?.name ?? "Institute");
 }
-import { createClient } from "@/lib/supabase/server";
 
 export default async function WebinarDetailPublicPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,6 +23,8 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
     .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,meeting_provider,faculty_name,faculty_bio,banner_url,thumbnail_url,approval_status,status,institutes(name)")
     .eq("id", id)
     .eq("approval_status", "approved")
+    .in("status", ["scheduled", "live"])
+    .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
     .maybeSingle();
 
   if (!webinar) notFound();
@@ -40,12 +42,18 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
 
   const canJoin = hasAccess && shouldShowMeetingJoinWindow(webinar.starts_at, webinar.ends_at);
 
+  const { data: featuredRow } = await dataClient.from("active_featured_webinars").select("webinar_id").eq("webinar_id", webinar.id).maybeSingle<{ webinar_id: string }>();
+  const isFeaturedWebinar = Boolean(featuredRow?.webinar_id);
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       {webinar.banner_url ? <img src={webinar.banner_url} alt={webinar.title} className="h-56 w-full rounded-xl object-cover" /> : null}
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_320px]">
         <section className="rounded-xl border bg-white p-5">
-          <h1 className="text-2xl font-semibold">{webinar.title}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">{webinar.title}</h1>
+            {isFeaturedWebinar ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Featured</span> : null}
+          </div>
           <p className="mt-1 text-sm text-slate-600">{instituteName(webinar.institutes)} · {toDateTimeLabel(webinar.starts_at)}</p>
           <p className="mt-3 text-sm text-slate-700">{webinar.description ?? "No description provided."}</p>
           <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">

@@ -20,6 +20,17 @@ export default async function HomePage() {
     .order("created_at", { ascending: false })
     .limit(18);
   const { data: activeFeaturedCourseRows } = await dataClient.from("active_featured_courses").select("course_id");
+  const [{ data: featuredWebinarRows }, { data: listedWebinars }] = await Promise.all([
+    dataClient.from("active_featured_webinars").select("webinar_id"),
+    dataClient
+      .from("webinars")
+      .select("id,title,starts_at,webinar_mode,price,currency,thumbnail_url,status,approval_status")
+      .eq("approval_status", "approved")
+      .in("status", ["scheduled", "live"])
+      .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
+      .order("starts_at", { ascending: true })
+      .limit(24),
+  ]);
 
   const instituteSelectWithSlug = "id,user_id,slug,name,description,organization_type,website_url,verified";
   const instituteSelectWithoutSlug = "id,user_id,name,description,organization_type,website_url,verified";
@@ -202,6 +213,15 @@ export default async function HomePage() {
   );
   const rankedCourses = [...courses].sort((left, right) => Number(activeFeaturedCourseIds.has(right.id)) - Number(activeFeaturedCourseIds.has(left.id)));
   const featuredCourses = rankedCourses.filter((course) => activeFeaturedCourseIds.has(course.id)).slice(0, 3);
+  const featuredWebinarIdSet = new Set(
+    ((featuredWebinarRows ?? []) as Array<{ webinar_id: string | null }>)
+      .map((row) => row.webinar_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
+  const rankedWebinars = [...(listedWebinars ?? [])].sort(
+    (left, right) => Number(featuredWebinarIdSet.has(right.id)) - Number(featuredWebinarIdSet.has(left.id)),
+  );
+  const featuredWebinars = rankedWebinars.filter((webinar) => featuredWebinarIdSet.has(webinar.id)).slice(0, 3);
   const courseCategoryGroups = Object.entries(
     rankedCourses.reduce<Record<string, typeof rankedCourses>>((acc, course) => {
       const key = course.category || "General";
@@ -347,6 +367,37 @@ export default async function HomePage() {
           ))}
         </div>
         {courseCategoryGroups.length === 0 ? <p className="mt-4 text-sm text-slate-600">No course categories available yet.</p> : null}
+      </section>
+
+      <section className="mt-14">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold">Featured Webinars</h2>
+            <p className="text-sm text-slate-600">Promoted live sessions from approved institutes.</p>
+          </div>
+          <Link href="/webinars" className="text-sm text-brand-700">
+            Browse webinars
+          </Link>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {featuredWebinars.map((webinar) => (
+            <article key={webinar.id} className="overflow-hidden rounded-xl border bg-white">
+              {webinar.thumbnail_url ? <img src={webinar.thumbnail_url} alt={webinar.title} className="h-40 w-full object-cover" /> : null}
+              <div className="p-4">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold">{webinar.title}</h3>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Featured</span>
+                </div>
+                <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
+                <p className="mt-1 text-sm text-slate-600">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
+                <Link href={`/webinars/${webinar.id}`} className="mt-3 inline-flex rounded border px-3 py-1.5 text-sm">
+                  View webinar
+                </Link>
+              </div>
+            </article>
+          ))}
+        </div>
+        {featuredWebinars.length === 0 ? <p className="mt-4 text-sm text-slate-600">No featured webinars available right now.</p> : null}
       </section>
 
       <section className="mt-14">

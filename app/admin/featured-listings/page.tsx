@@ -52,6 +52,35 @@ type CourseFeaturedOrderRecord = {
   created_at: string;
 };
 
+
+type WebinarFeaturedOrderRecord = {
+  id: string;
+  institute_id: string;
+  webinar_id: string;
+  plan_id: string | null;
+  amount: number;
+  currency: string;
+  payment_status: string;
+  order_status: string;
+  paid_at: string | null;
+  created_at: string;
+};
+
+type WebinarFeaturedSubscriptionRecord = {
+  id: string;
+  institute_id: string;
+  webinar_id: string;
+  plan_code: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  starts_at: string;
+  ends_at: string;
+  queued_from_previous: boolean | null;
+  order_id: string | null;
+  created_at: string;
+};
+
 type CourseFeaturedSubscriptionRecord = {
   id: string;
   institute_id: string;
@@ -81,7 +110,7 @@ export default async function AdminFeaturedListingsPage() {
     // Ignore expiry refresh failures and continue rendering admin data.
   }
 
-  const [{ data: plans }, { data: orders }, { data: subscriptions }, { data: institutes }, { data: coursePlans }, { data: courseOrders }, { data: courseSubscriptions }, { data: courseRows }] = await Promise.all([
+  const [{ data: plans }, { data: orders }, { data: subscriptions }, { data: institutes }, { data: coursePlans }, { data: courseOrders }, { data: courseSubscriptions }, { data: courseRows }, { data: webinarPlans }, { data: webinarOrders }, { data: webinarSubscriptions }, { data: webinarRows }, { data: activeFeaturedWebinars }] = await Promise.all([
     admin.data.from("featured_listing_plans").select("*").order("sort_order", { ascending: true }),
     admin.data.from("featured_listing_orders").select("id,institute_id,plan_id,amount,currency,payment_status,order_status,paid_at,created_at").order("created_at", { ascending: false }).limit(200),
     admin.data.from("institute_featured_subscriptions").select("id,institute_id,plan_code,amount,currency,status,starts_at,ends_at,queued_from_previous,order_id,created_at").order("created_at", { ascending: false }).limit(200),
@@ -90,6 +119,11 @@ export default async function AdminFeaturedListingsPage() {
     admin.data.from("course_featured_orders").select("id,institute_id,course_id,plan_id,amount,currency,payment_status,order_status,paid_at,created_at").order("created_at", { ascending: false }).limit(200),
     admin.data.from("course_featured_subscriptions").select("id,institute_id,course_id,plan_code,amount,currency,status,starts_at,ends_at,queued_from_previous,order_id,created_at").order("created_at", { ascending: false }).limit(200),
     admin.data.from("courses").select("id,title"),
+    admin.data.from("webinar_featured_plans").select("*").order("sort_order", { ascending: true }),
+    admin.data.from("webinar_featured_orders").select("id,institute_id,webinar_id,plan_id,amount,currency,payment_status,order_status,paid_at,created_at").order("created_at", { ascending: false }).limit(200),
+    admin.data.from("webinar_featured_subscriptions").select("id,institute_id,webinar_id,plan_code,amount,currency,status,starts_at,ends_at,queued_from_previous,order_id,created_at").order("created_at", { ascending: false }).limit(200),
+    admin.data.from("webinars").select("id,title"),
+    admin.data.from("active_featured_webinars").select("webinar_id"),
   ]);
 
   const instituteNameMap = new Map((institutes as InstituteRecord[] | null | undefined)?.map((item) => [item.id, item.name ?? "Institute"]) ?? []);
@@ -98,7 +132,10 @@ export default async function AdminFeaturedListingsPage() {
   const revenue = paidOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const paidCourseOrders = ((courseOrders ?? []) as CourseFeaturedOrderRecord[]).filter((order) => order.payment_status === "paid");
   const courseRevenue = paidCourseOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
+  const paidWebinarOrders = ((webinarOrders ?? []) as WebinarFeaturedOrderRecord[]).filter((order) => order.payment_status === "paid");
+  const webinarRevenue = paidWebinarOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const courseNameMap = new Map(((courseRows ?? []) as Array<{ id: string; title: string | null }>).map((item) => [item.id, item.title ?? "Course"]));
+  const webinarNameMap = new Map(((webinarRows ?? []) as Array<{ id: string; title: string | null }>).map((item) => [item.id, item.title ?? "Webinar"]));
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12">
@@ -125,6 +162,14 @@ export default async function AdminFeaturedListingsPage() {
         <div className="rounded border bg-white p-4 text-sm">
           <p className="text-xs uppercase text-slate-500">Course Featured Revenue</p>
           <p className="mt-1 text-2xl font-semibold">{money(courseRevenue)}</p>
+        </div>
+        <div className="rounded border bg-white p-4 text-sm">
+          <p className="text-xs uppercase text-slate-500">Webinar Featured Revenue</p>
+          <p className="mt-1 text-2xl font-semibold">{money(webinarRevenue)}</p>
+        </div>
+        <div className="rounded border bg-white p-4 text-sm">
+          <p className="text-xs uppercase text-slate-500">Active Featured Webinars</p>
+          <p className="mt-1 text-2xl font-semibold">{activeFeaturedWebinars?.length ?? 0}</p>
         </div>
       </div>
 
@@ -203,6 +248,58 @@ export default async function AdminFeaturedListingsPage() {
             </div>
           ))}
           {(courseSubscriptions?.length ?? 0) === 0 ? <p className="text-sm text-slate-500">No course featured subscriptions found.</p> : null}
+        </div>
+      </section>
+
+      <section className="mt-8 rounded border bg-white p-4">
+        <h2 className="text-lg font-semibold">Webinar Featured Plans</h2>
+        <div className="mt-3 space-y-2">
+          {(webinarPlans ?? []).map((plan: Record<string, unknown>) => (
+            <div key={String(plan.id)} className="rounded border p-3 text-sm">
+              <p className="font-medium">{String(plan.name ?? plan.plan_code ?? plan.code ?? "Webinar Plan")}</p>
+              <p className="text-slate-600">
+                {String(plan.duration_days ?? "-")} days · {money(Number(plan.price ?? plan.amount ?? 0), String(plan.currency ?? "INR"))}
+              </p>
+              <p className="text-xs text-slate-500">Status: {plan.is_active ? "Active" : "Inactive"}</p>
+            </div>
+          ))}
+          {(webinarPlans?.length ?? 0) === 0 ? <p className="text-sm text-slate-500">No webinar featured plans found.</p> : null}
+        </div>
+      </section>
+
+      <section className="mt-8 rounded border bg-white p-4">
+        <h2 className="text-lg font-semibold">Webinar Featured Orders</h2>
+        <div className="mt-3 space-y-2">
+          {((webinarOrders ?? []) as WebinarFeaturedOrderRecord[]).map((order) => (
+            <div key={order.id} className="rounded border p-3 text-sm">
+              <p className="font-medium">
+                {webinarNameMap.get(order.webinar_id) ?? "Webinar"} · {instituteNameMap.get(order.institute_id) ?? "Institute"} · {money(Number(order.amount ?? 0), order.currency ?? "INR")}
+              </p>
+              <p className="text-slate-600">Payment: {order.payment_status} · Order: {order.order_status}</p>
+              <p className="text-xs text-slate-500">Paid at: {formatDate(order.paid_at)} · Created: {formatDate(order.created_at)}</p>
+            </div>
+          ))}
+          {(webinarOrders?.length ?? 0) === 0 ? <p className="text-sm text-slate-500">No webinar featured orders found.</p> : null}
+        </div>
+      </section>
+
+      <section className="mt-8 rounded border bg-white p-4">
+        <h2 className="text-lg font-semibold">Webinar Featured Subscription Ledger</h2>
+        <div className="mt-3 space-y-2">
+          {((webinarSubscriptions ?? []) as WebinarFeaturedSubscriptionRecord[]).map((subscription) => (
+            <div key={subscription.id} className="rounded border p-3 text-sm">
+              <p className="font-medium">
+                {webinarNameMap.get(subscription.webinar_id) ?? "Webinar"} · {instituteNameMap.get(subscription.institute_id) ?? "Institute"} · {subscription.plan_code ?? "Plan"} · {money(Number(subscription.amount ?? 0), subscription.currency ?? "INR")}
+              </p>
+              <p className="text-slate-600">
+                Status: {subscription.status} · Starts: {formatDate(subscription.starts_at)} · Ends: {formatDate(subscription.ends_at)}
+              </p>
+              <p className="text-xs text-slate-500">
+                Queued from previous: {subscription.queued_from_previous ? "Yes" : "No"} · Linked order: {subscription.order_id ?? "-"}
+              </p>
+            </div>
+          ))}
+          {(webinarSubscriptions?.length ?? 0) === 0 ? <p className="text-sm text-slate-500">No webinar featured subscriptions found.</p> : null}
         </div>
       </section>
 

@@ -17,6 +17,7 @@ const adminModules = [
   { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/webinars", label: "Webinars" },
   { href: "/admin/featured-listings", label: "Featured Listings" },
+  { href: "/admin/featured-listings", label: "Webinar Promotions" },
   { href: "/admin/profile", label: "Admin Profile" },
 ];
 
@@ -122,7 +123,7 @@ export default async function AdminDashboardPage() {
           Webinar events: Manage live sessions
         </Link>
         <Link href="/admin/featured-listings" className="rounded border bg-white p-4">
-          Featured subscriptions: Plans, orders, and active windows
+          Featured subscriptions: institute, course, and webinar promotion plans/orders
         </Link>
       </div>
 
