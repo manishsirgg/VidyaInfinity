@@ -88,7 +88,7 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
-  const { error: updateError } = await admin.data
+  const { data: updatedOrder, error: updateError } = await admin.data
     .from("webinar_orders")
     .update({
       payment_status: "paid",
@@ -101,13 +101,17 @@ export async function POST(request: Request) {
     })
     .eq("id", order.id)
     .in("payment_status", ["pending", "failed"])
-    .neq("order_status", "cancelled");
+    .neq("order_status", "cancelled")
+    .select("id")
+    .maybeSingle<{ id: string }>();
 
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+  if (!updatedOrder) return NextResponse.json({ ok: true, idempotent: true });
 
   const { error: registrationError } = await admin.data.from("webinar_registrations").upsert(
     {
       webinar_id: order.webinar_id,
+      institute_id: order.institute_id,
       student_id: order.student_id,
       webinar_order_id: order.id,
       registration_status: "registered",
