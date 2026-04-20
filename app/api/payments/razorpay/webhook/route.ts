@@ -42,6 +42,7 @@ export async function POST(request: Request) {
         event_id: eventId,
         event_type: eventType,
         signature: signature || null,
+        signature_valid: verifyResult.valid,
         processed: false,
         payload,
         headers: {

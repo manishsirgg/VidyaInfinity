@@ -8,6 +8,7 @@ const PAYMENT_MIGRATION_PATHS = [
   "supabase/migrations/20260420_000015_simplified_entity_and_webinar_commissions.sql",
   "supabase/migrations/20260420_000016_webinar_commission_singleton.sql",
   "supabase/migrations/20260420_000017_webinar_orders_and_registrations.sql",
+  "supabase/migrations/20260420_000018_razorpay_reconciliation_schema_alignment.sql",
 ];
 
 export async function getPaymentSchemaErrorResponse() {
@@ -17,7 +18,7 @@ export async function getPaymentSchemaErrorResponse() {
     return NextResponse.json({ error: result.envError }, { status: 500 });
   }
 
-  if (!result.missing.length) {
+  if (!result.missing.length && !result.missingColumns.length) {
     return null;
   }
 
@@ -25,6 +26,7 @@ export async function getPaymentSchemaErrorResponse() {
     {
       error: "Supabase payment schema mismatch",
       missingTables: result.missing,
+      missingColumns: result.missingColumns,
       migration: `Run migrations: ${PAYMENT_MIGRATION_PATHS.join(", ")}`,
     },
     { status: 500 }
