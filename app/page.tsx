@@ -30,6 +30,7 @@ export default async function HomePage() {
       .from("webinars")
       .select("id,title,starts_at,webinar_mode,price,currency,thumbnail_url,status,approval_status")
       .eq("approval_status", "approved")
+      .eq("is_public", true)
       .in("status", ["scheduled", "live"])
       .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
       .order("starts_at", { ascending: true })

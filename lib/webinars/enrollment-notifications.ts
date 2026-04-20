@@ -24,43 +24,50 @@ export async function notifyWebinarEnrollment(payload: EnrollmentNotificationPay
   const instituteUserId = institute?.user_id;
   const adminIds = (adminProfiles ?? []).map((admin) => admin.id);
 
-  const dedupeTargets = [payload.studentId, instituteUserId, ...adminIds].filter((value): value is string => Boolean(value));
-  if (dedupeTargets.length > 0) {
-    const { data: existing } = await payload.supabase
-      .from("notifications")
-      .select("id,user_id")
-      .in("user_id", dedupeTargets)
-      .eq("type", "approval")
-      .eq("title", "Webinar enrollment confirmed")
-      .like("message", `%Enrollment:${payload.webinarId}%`);
-
-    if ((existing ?? []).length > 0) return;
-  }
-
-  await Promise.allSettled([
-    createAccountNotification({
+  const enrollmentToken = `Enrollment:${payload.webinarId}:${payload.studentId}`;
+  const recipients: Array<{ userId: string; title: string; message: string }> = [
+    {
       userId: payload.studentId,
-      type: "approval",
       title: "Webinar enrollment confirmed",
-      message: `You are successfully enrolled in ${payload.webinarTitle} (${modeLabel}). Enrollment:${payload.webinarId}`,
-    }),
+      message: `You are successfully enrolled in ${payload.webinarTitle} (${modeLabel}). ${enrollmentToken}`,
+    },
     ...(instituteUserId
       ? [
-          createAccountNotification({
+          {
             userId: instituteUserId,
-            type: "approval",
             title: "New webinar enrollment",
-            message: `${studentName} enrolled in your webinar ${payload.webinarTitle}. Enrollment:${payload.webinarId}`,
-          }),
+            message: `${studentName} enrolled in your webinar ${payload.webinarTitle}. ${enrollmentToken}`,
+          },
         ]
       : []),
-    ...adminIds.map((adminId) =>
+    ...adminIds.map((adminId) => ({
+      userId: adminId,
+      title: "Webinar enrollment confirmed",
+      message: `New webinar enrollment in ${payload.webinarTitle}. Institute: ${instituteName}. Student: ${studentName}. ${enrollmentToken}`,
+    })),
+  ];
+
+  const targetIds = [...new Set(recipients.map((item) => item.userId))];
+  const { data: existing } = targetIds.length
+    ? await payload.supabase
+        .from("notifications")
+        .select("user_id,message")
+        .in("user_id", targetIds)
+        .eq("type", "approval")
+        .like("message", `%${enrollmentToken}%`)
+    : { data: [] as Array<{ user_id: string | null; message: string | null }> };
+
+  const existingByUserId = new Set((existing ?? []).map((row) => row.user_id).filter((value): value is string => Boolean(value)));
+  const pendingCreates = recipients.filter((item) => !existingByUserId.has(item.userId));
+
+  await Promise.allSettled(
+    pendingCreates.map((item) =>
       createAccountNotification({
-        userId: adminId,
+        userId: item.userId,
         type: "approval",
-        title: "Webinar enrollment confirmed",
-        message: `New webinar enrollment in ${payload.webinarTitle}. Institute: ${instituteName}. Student: ${studentName}. Enrollment:${payload.webinarId}`,
+        title: item.title,
+        message: item.message,
       }),
     ),
-  ]);
+  );
 }

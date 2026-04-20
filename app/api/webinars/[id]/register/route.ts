@@ -43,9 +43,22 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     return NextResponse.json({ error: "Use paid checkout for paid webinar" }, { status: 400 });
   }
 
+  const { data: existingRegistration } = await admin.data
+    .from("webinar_registrations")
+    .select("id,access_status")
+    .eq("webinar_id", webinar.id)
+    .eq("student_id", auth.user.id)
+    .maybeSingle<{ id: string; access_status: string | null }>();
+
+  const alreadyGranted = existingRegistration?.access_status === "granted";
+  if (alreadyGranted) {
+    return NextResponse.json({ ok: true, idempotent: true });
+  }
+
   const { error } = await admin.data.from("webinar_registrations").upsert(
     {
       webinar_id: webinar.id,
+      institute_id: webinar.institute_id,
       student_id: auth.user.id,
       registration_status: "registered",
       payment_status: "not_required",
@@ -57,14 +70,16 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  await notifyWebinarEnrollment({
-    supabase: admin.data,
-    webinarId: webinar.id,
-    webinarTitle: webinar.title,
-    studentId: auth.user.id,
-    instituteId: webinar.institute_id,
-    mode: "free",
-  }).catch(() => undefined);
+  if (!alreadyGranted) {
+    await notifyWebinarEnrollment({
+      supabase: admin.data,
+      webinarId: webinar.id,
+      webinarTitle: webinar.title,
+      studentId: auth.user.id,
+      instituteId: webinar.institute_id,
+      mode: "free",
+    }).catch(() => undefined);
+  }
 
   return NextResponse.json({ ok: true });
 }

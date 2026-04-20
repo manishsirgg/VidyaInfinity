@@ -57,13 +57,23 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
 
   let hasAccess = false;
   if (viewer?.user.id) {
-    const { data: registration } = await dataClient
+    const [{ data: registration }, { data: paidOrder }] = await Promise.all([
+      dataClient
       .from("webinar_registrations")
       .select("access_status")
       .eq("webinar_id", id)
       .eq("student_id", viewer.user.id)
-      .maybeSingle<{ access_status: string }>();
-    hasAccess = registration?.access_status === "granted";
+      .maybeSingle<{ access_status: string }>(),
+      dataClient
+        .from("webinar_orders")
+        .select("access_status,payment_status,order_status")
+        .eq("webinar_id", id)
+        .eq("student_id", viewer.user.id)
+        .eq("payment_status", "paid")
+        .eq("order_status", "confirmed")
+        .maybeSingle<{ access_status: string | null; payment_status: string; order_status: string }>(),
+    ]);
+    hasAccess = registration?.access_status === "granted" || paidOrder?.access_status === "granted";
   }
 
   const isEnded = webinar.ends_at ? new Date(webinar.ends_at).getTime() < Date.now() : false;
