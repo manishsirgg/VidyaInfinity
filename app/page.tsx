@@ -226,7 +226,7 @@ export default async function HomePage() {
   const rankedWebinars = [...(listedWebinars ?? [])].sort(
     (left, right) => Number(featuredWebinarIdSet.has(right.id)) - Number(featuredWebinarIdSet.has(left.id)),
   );
-  const featuredWebinars = rankedWebinars.filter((webinar) => featuredWebinarIdSet.has(webinar.id)).slice(0, 3);
+  const homeWebinars = rankedWebinars.slice(0, 3);
   const courseCategoryGroups = Object.entries(
     rankedCourses.reduce<Record<string, typeof rankedCourses>>((acc, course) => {
       const key = course.category || "General";
@@ -374,36 +374,39 @@ export default async function HomePage() {
         {courseCategoryGroups.length === 0 ? <p className="mt-4 text-sm text-slate-600">No course categories available yet.</p> : null}
       </section>
 
-      <section className="mt-14">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold">Featured Webinars</h2>
-            <p className="text-sm text-slate-600">Promoted live sessions from approved institutes.</p>
+      {homeWebinars.length > 0 ? (
+        <section className="mt-14">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-semibold">Upcoming Webinars</h2>
+              <p className="text-sm text-slate-600">Scheduled and live sessions from approved institutes.</p>
+            </div>
+            <Link href="/webinars" className="text-sm text-brand-700">
+              Browse webinars
+            </Link>
           </div>
-          <Link href="/webinars" className="text-sm text-brand-700">
-            Browse webinars
-          </Link>
-        </div>
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          {featuredWebinars.map((webinar) => (
-            <article key={webinar.id} className="overflow-hidden rounded-xl border bg-white">
-              {webinar.thumbnail_url ? <img src={webinar.thumbnail_url} alt={webinar.title} className="h-40 w-full object-cover" /> : null}
-              <div className="p-4">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold">{webinar.title}</h3>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Featured</span>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            {homeWebinars.map((webinar) => (
+              <article key={webinar.id} className="overflow-hidden rounded-xl border bg-white">
+                {webinar.thumbnail_url ? <img src={webinar.thumbnail_url} alt={webinar.title} className="h-40 w-full object-cover" /> : null}
+                <div className="p-4">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold">{webinar.title}</h3>
+                    {featuredWebinarIdSet.has(webinar.id) ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Featured</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
+                  <p className="mt-1 text-sm text-slate-600">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
+                  <Link href={`/webinars/${webinar.id}`} className="mt-3 inline-flex rounded border px-3 py-1.5 text-sm">
+                    View webinar
+                  </Link>
                 </div>
-                <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
-                <p className="mt-1 text-sm text-slate-600">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
-                <Link href={`/webinars/${webinar.id}`} className="mt-3 inline-flex rounded border px-3 py-1.5 text-sm">
-                  View webinar
-                </Link>
-              </div>
-            </article>
-          ))}
-        </div>
-        {featuredWebinars.length === 0 ? <p className="mt-4 text-sm text-slate-600">No featured webinars available right now.</p> : null}
-      </section>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-14">
         <div className="flex items-end justify-between gap-3">
