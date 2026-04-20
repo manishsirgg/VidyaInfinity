@@ -57,6 +57,18 @@ function formatFileSize(bytes: number) {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 
+function resolveMediaUrl(fileUrl: string | null | undefined, storagePath?: string | null) {
+  const direct = String(fileUrl ?? "").trim();
+  if (/^https?:\/\//i.test(direct)) return direct;
+
+  const path = String(storagePath ?? direct).trim().replace(/^\/+/, "");
+  if (!path) return "";
+
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!baseUrl) return path;
+  return `${baseUrl.replace(/\/+$/, "")}/storage/v1/object/public/course-media/${path}`;
+}
+
 type Props = {
   mode: "create" | "edit" | "resubmit";
   submitEndpoint: string;
@@ -80,6 +92,10 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
   const [newMedia, setNewMedia] = useState<File[]>([]);
   const [removedMediaIds, setRemovedMediaIds] = useState<string[]>([]);
   const [replacementMedia, setReplacementMedia] = useState<Record<string, File>>({});
+  const [savedMedia, setSavedMedia] = useState<InstituteCourseMedia[]>(
+    initialMedia.map((item) => ({ ...item, file_url: resolveMediaUrl(item.file_url, item.storage_path) })),
+  );
+  const [isLoadingSavedMedia, setIsLoadingSavedMedia] = useState(false);
 
   const computedDuration = useMemo(() => {
     if (durationValue && durationUnit) return `${durationValue} ${durationUnit}`;
@@ -87,7 +103,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
   }, [durationUnit, durationValue, initialCourse?.duration]);
 
   const descriptionWords = useMemo(() => getWordCount(description), [description]);
-  const currentMedia = useMemo(() => initialMedia.filter((item) => !removedMediaIds.includes(item.id)), [initialMedia, removedMediaIds]);
+  const currentMedia = useMemo(() => savedMedia.filter((item) => !removedMediaIds.includes(item.id)), [savedMedia, removedMediaIds]);
   const removedMediaSet = useMemo(() => new Set(removedMediaIds), [removedMediaIds]);
   const newMediaPreviews = useMemo(
     () =>
@@ -106,6 +122,56 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       newMediaPreviews.forEach((item) => URL.revokeObjectURL(item.url));
     };
   }, [newMediaPreviews]);
+
+  useEffect(() => {
+    setSavedMedia(initialMedia.map((item) => ({ ...item, file_url: resolveMediaUrl(item.file_url, item.storage_path) })));
+  }, [initialMedia]);
+
+  useEffect(() => {
+    if (mode === "create" || !initialCourse?.id || initialMedia.length > 0) return;
+
+    let active = true;
+    setIsLoadingSavedMedia(true);
+
+    fetch(`/api/institute/courses/${initialCourse.id}`, { method: "GET" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json().catch(() => null)) as
+          | {
+              media?: Array<{
+                id?: string;
+                file_url?: string | null;
+                storage_path?: string | null;
+                type?: string | null;
+                media_type?: string | null;
+              }>;
+            }
+          | null;
+      })
+      .then((body) => {
+        if (!active || !body?.media) return;
+        const normalized = body.media
+          .map((item) => {
+            const id = String(item.id ?? "").trim();
+            const typeRaw = String(item.type ?? item.media_type ?? "").trim().toLowerCase();
+            const type = typeRaw === "video" ? "video" : typeRaw === "image" ? "image" : "";
+            const fileUrl = resolveMediaUrl(item.file_url, item.storage_path);
+            if (!id || !type || !fileUrl) return null;
+            return { id, type, file_url: fileUrl, storage_path: item.storage_path ?? null } as InstituteCourseMedia;
+          })
+          .filter((item): item is InstituteCourseMedia => item !== null);
+        if (normalized.length > 0) {
+          setSavedMedia(normalized);
+        }
+      })
+      .finally(() => {
+        if (active) setIsLoadingSavedMedia(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [initialCourse?.id, initialMedia.length, mode]);
 
   async function uploadFiles(courseId: string, files: File[]) {
     const failures: string[] = [];
@@ -334,8 +400,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         <input name="supportPhone" defaultValue={initialCourse?.support_phone ?? ""} placeholder="Support phone" className="rounded border px-3 py-2" />
       </div>
 
-      {initialMedia.length > 0 ? (
-        <div className="rounded border border-slate-200 p-4">
+      <div className="rounded border border-slate-200 p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold text-slate-900">Existing media</p>
             <p className="text-xs text-slate-500">
@@ -343,7 +408,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
             </p>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {initialMedia.map((item) => {
+            {savedMedia.map((item) => {
               const removed = removedMediaSet.has(item.id);
               const isVideo = item.type === "video";
               const replacement = replacementMedia[item.id];
@@ -437,8 +502,12 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
               );
             })}
           </div>
-        </div>
-      ) : null}
+          {savedMedia.length === 0 ? (
+            <p className="mt-3 rounded border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
+              {isLoadingSavedMedia ? "Loading saved media..." : "No saved media found for this course yet. You can add new media below."}
+            </p>
+          ) : null}
+      </div>
 
       <div className="rounded border border-slate-200 p-4">
         <div className="flex items-center justify-between gap-2">
