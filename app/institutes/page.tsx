@@ -109,11 +109,15 @@ export default async function InstitutesPage() {
     : statusWithoutSlugResponse;
   const instituteRows = (institutesResponse.data ?? []) as InstituteRecord[];
   const instituteIds = instituteRows.map((item) => item.id);
+  const nowIso = new Date().toISOString();
   const featuredInstituteRows = instituteIds.length
     ? (
         await admin.data
-          .from("active_institute_featured_status")
+          .from("institute_featured_subscriptions")
           .select("institute_id")
+          .eq("status", "active")
+          .lte("starts_at", nowIso)
+          .gt("ends_at", nowIso)
           .in("institute_id", instituteIds)
       ).data ?? []
     : [];

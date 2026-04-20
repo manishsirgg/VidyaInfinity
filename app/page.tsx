@@ -160,6 +160,28 @@ export default async function HomePage() {
         website_url: null as string | null,
         verified: null as boolean | null,
       }));
+  const instituteIds = [...new Set(institutesForHome.map((institute) => institute.id).filter(Boolean))] as string[];
+  const nowIso = new Date().toISOString();
+  const featuredInstituteRows = instituteIds.length
+    ? (
+        await dataClient
+          .from("institute_featured_subscriptions")
+          .select("institute_id")
+          .eq("status", "active")
+          .lte("starts_at", nowIso)
+          .gt("ends_at", nowIso)
+          .in("institute_id", instituteIds)
+      ).data ?? []
+    : [];
+  const featuredInstituteIds = new Set(
+    (
+      featuredInstituteRows as Array<{
+        institute_id: string | null;
+      }>
+    )
+      .map((row) => row.institute_id)
+      .filter((value): value is string => typeof value === "string" && value.length > 0),
+  );
 
   const instituteMediaLookupIds = [...new Set(institutesForHome.flatMap((institute) => [institute.id, institute.user_id].filter(Boolean)))] as string[];
   const instituteMediaRows = instituteMediaLookupIds.length
@@ -205,7 +227,7 @@ export default async function HomePage() {
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(0, 4);
 
-  const featuredInstitutes = institutesForHome.slice(0, 3);
+  const featuredInstitutes = institutesForHome.filter((institute) => featuredInstituteIds.has(institute.id)).slice(0, 3);
   const instituteCategoryGroups = Object.entries(
     institutesForHome.reduce<Record<string, typeof institutesForHome>>((acc, institute) => {
       const key = institute.organization_type || "General";

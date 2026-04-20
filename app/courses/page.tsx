@@ -20,11 +20,15 @@ export default async function CoursesPage() {
     .or("is_active.is.null,is_active.eq.true")
     .order("created_at", { ascending: false });
   const instituteIds = [...new Set((courses ?? []).map((course) => course.institute_id).filter(Boolean))];
+  const nowIso = new Date().toISOString();
   const featuredRows = instituteIds.length
     ? (
         await dataClient
-          .from("active_institute_featured_status")
+          .from("institute_featured_subscriptions")
           .select("institute_id")
+          .eq("status", "active")
+          .lte("starts_at", nowIso)
+          .gt("ends_at", nowIso)
           .in("institute_id", instituteIds)
       ).data ?? []
     : [];
