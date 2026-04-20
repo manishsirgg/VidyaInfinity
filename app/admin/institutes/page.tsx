@@ -2,6 +2,7 @@ import { ModerationActions } from "@/components/admin/moderation-actions";
 import { ModerationPagination } from "@/components/admin/moderation-pagination";
 import { requireUser } from "@/lib/auth/get-session";
 import { getInstituteApprovalSubtypeLabel } from "@/lib/constants/institute-documents";
+import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -210,7 +211,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         </p>
 
         <div className="mt-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
-          Legal entity: {institute.legal_entity_name ?? "-"} · Org type: {institute.organization_type ?? "-"}
+          Legal entity: {institute.legal_entity_name ?? "-"} · Org type: {getOrganizationTypeLabel(institute.organization_type) ?? "-"}
           <br />
           Registration #: {institute.registration_number ?? "-"} · Accreditation #: {institute.accreditation_affiliation_number ?? "-"}
           <br />

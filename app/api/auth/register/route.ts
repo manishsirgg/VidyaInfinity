@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-documents";
+import { normalizeOrganizationType } from "@/lib/constants/organization-types";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   STORAGE_BUCKETS,
@@ -86,6 +87,9 @@ export async function POST(request: Request) {
     const password = String(form.get("password") ?? "");
     const phone = text(form, "phone");
 
+    const instituteOrganizationType = text(form, "organizationType");
+    const canonicalInstituteOrganizationType = normalizeOrganizationType(instituteOrganizationType);
+
     const missingCore = missing(
       ["fullName", fullName],
       ["email", email],
@@ -161,6 +165,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: `Missing required fields: ${roleMissing.join(", ")}` }, { status: 400 });
       }
 
+      if (!canonicalInstituteOrganizationType) {
+        return NextResponse.json({ error: "organizationType must be one of the supported institute organization types" }, { status: 400 });
+      }
+
       if (countWords(description) > 2500) {
         return NextResponse.json({ error: "Institute description must not exceed 2500 words" }, { status: 400 });
       }
@@ -198,7 +206,6 @@ export async function POST(request: Request) {
     const totalStaff = parseOptionalInteger(text(form, "totalStaff"));
     const instituteName = text(form, "instituteName");
     const organizationName = text(form, "organizationName");
-    const instituteOrganizationType = text(form, "organizationType");
     const instituteMediaFiles = form
       .getAll("instituteMedia")
       .filter((entry): entry is File => entry instanceof File && entry.size > 0);
@@ -264,7 +271,7 @@ export async function POST(request: Request) {
       country: country || null,
       designation: role === "admin" || role === "institute" ? text(form, "designation") || null : null,
       organization_name: role === "institute" ? organizationName || null : null,
-      organization_type: role === "institute" ? instituteOrganizationType || null : null,
+      organization_type: role === "institute" ? canonicalInstituteOrganizationType : null,
       avatar_url: avatarUrl,
     });
 
@@ -295,7 +302,7 @@ export async function POST(request: Request) {
           status: "pending",
           verified: false,
           legal_entity_name: text(form, "legalEntityName") || null,
-          organization_type: instituteOrganizationType || null,
+          organization_type: canonicalInstituteOrganizationType,
           registration_number: text(form, "registrationNumber") || null,
           accreditation_affiliation_number: text(form, "accreditationAffiliationNumber") || null,
           website_url: text(form, "websiteUrl") || null,

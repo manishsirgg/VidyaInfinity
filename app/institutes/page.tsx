@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 
+import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type InstituteRecord = {
@@ -157,7 +158,7 @@ export default async function InstitutesPage() {
       name: institute.name || profile?.organization_name || profile?.full_name || profile?.name || "Institute",
       description: institute.description,
       websiteUrl: institute.website_url,
-      organizationType: institute.organization_type || profile?.organization_type || null,
+      organizationType: getOrganizationTypeLabel(institute.organization_type || profile?.organization_type || null),
       legalEntityName: institute.legal_entity_name,
       registrationNumber: institute.registration_number,
       accreditationNumber: institute.accreditation_affiliation_number,
@@ -199,7 +200,7 @@ export default async function InstitutesPage() {
         name: profile.organization_name || profile.full_name || profile.name || "Institute",
         description: null as string | null,
         websiteUrl: null as string | null,
-        organizationType: profile.organization_type ?? null,
+        organizationType: getOrganizationTypeLabel(profile.organization_type ?? null),
         legalEntityName: null as string | null,
         registrationNumber: null as string | null,
         accreditationNumber: null as string | null,

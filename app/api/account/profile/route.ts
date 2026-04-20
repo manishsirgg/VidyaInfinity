@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-documents";
+import { normalizeOrganizationType } from "@/lib/constants/organization-types";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -166,6 +167,7 @@ export async function PATCH(request: Request) {
   const nextEmail = val(form, "email").toLowerCase();
   const fullName = val(form, "fullName");
   const organizationType = val(form, "organizationType");
+  const canonicalOrganizationType = normalizeOrganizationType(organizationType);
   const instituteName = val(form, "instituteName");
   const organizationName = val(form, "organizationName");
 
@@ -182,6 +184,9 @@ export async function PATCH(request: Request) {
     }
     if (!organizationType) {
       return NextResponse.json({ error: "organizationType is required for institute profiles" }, { status: 400 });
+    }
+    if (!canonicalOrganizationType) {
+      return NextResponse.json({ error: "organizationType must be one of the supported institute organization types" }, { status: 400 });
     }
   }
 
@@ -243,7 +248,7 @@ export async function PATCH(request: Request) {
     state: val(form, "state") || null,
     country: val(form, "country") || null,
     organization_name: organizationName || null,
-    organization_type: organizationType || null,
+    organization_type: canonicalOrganizationType,
     designation: val(form, "designation") || null,
   };
 
@@ -439,7 +444,7 @@ export async function PATCH(request: Request) {
       name: instituteName || null,
       description: val(form, "description") || null,
       legal_entity_name: val(form, "legalEntityName") || null,
-      organization_type: organizationType || null,
+      organization_type: canonicalOrganizationType,
       registration_number: val(form, "registrationNumber") || null,
       accreditation_affiliation_number: val(form, "accreditationAffiliationNumber") || null,
       website_url: val(form, "websiteUrl") || null,

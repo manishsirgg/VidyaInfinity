@@ -1,6 +1,7 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
 import { ModerationPagination } from "@/components/admin/moderation-pagination";
 import { requireUser } from "@/lib/auth/get-session";
+import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -167,7 +168,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         <p className="text-slate-600">Submitted: {new Date(user.created_at).toLocaleString()}</p>
         {(user.organization_name || user.designation) && (
           <p className="text-slate-600">
-            Organization: {user.organization_name ?? "-"} ({user.organization_type ?? "-"}) · Designation: {user.designation ?? "-"}
+            Organization: {user.organization_name ?? "-"} ({getOrganizationTypeLabel(user.organization_type) ?? "-"}) · Designation: {user.designation ?? "-"}
           </p>
         )}
 

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { InstituteMediaGallery } from "@/components/institutes/institute-media-gallery";
 import { ShareActions } from "@/components/shared/share-actions";
+import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { siteConfig } from "@/lib/constants/site";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -118,7 +119,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
   const instituteDescription = "description" in institute ? institute.description : null;
   const instituteWebsite = "website_url" in institute ? institute.website_url : null;
   const instituteType =
-    ("organization_type" in institute ? institute.organization_type : null) ?? ownerProfile?.organization_type ?? null;
+    getOrganizationTypeLabel(("organization_type" in institute ? institute.organization_type : null) ?? ownerProfile?.organization_type ?? null);
   const instituteLegal = "legal_entity_name" in institute ? institute.legal_entity_name : null;
   const instituteRegistration = "registration_number" in institute ? institute.registration_number : null;
   const instituteAccreditation =
