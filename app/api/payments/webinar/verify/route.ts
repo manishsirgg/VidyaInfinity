@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
+import { reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications";
 
 export async function POST(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse();
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
   const { data: order } = await admin.data
     .from("webinar_orders")
-    .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,payout_amount,platform_fee_amount,order_status,access_status")
+    .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,order_status,access_status")
     .eq("razorpay_order_id", orderId)
     .eq("student_id", auth.user.id)
     .maybeSingle<{
@@ -39,8 +39,6 @@ export async function POST(request: Request) {
       amount: number;
       currency: string;
       payment_status: string;
-      payout_amount: number;
-      platform_fee_amount: number;
       order_status: string;
       access_status: string;
     }>();
@@ -87,79 +85,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
   }
 
-  const now = new Date().toISOString();
-  const { data: updatedOrder, error: updateError } = await admin.data
-    .from("webinar_orders")
-    .update({
-      payment_status: "paid",
-      order_status: "confirmed",
-      access_status: "granted",
-      razorpay_payment_id: paymentId,
-      razorpay_signature: signature,
-      paid_at: now,
-      updated_at: now,
-    })
-    .eq("id", order.id)
-    .in("payment_status", ["pending", "failed"])
-    .neq("order_status", "cancelled")
-    .select("id")
-    .maybeSingle<{ id: string }>();
+  const reconciled = await reconcileWebinarOrderPaid({
+    supabase: admin.data,
+    order,
+    razorpayOrderId: orderId,
+    razorpayPaymentId: paymentId,
+    razorpaySignature: signature,
+    source: "verify_api",
+    paymentEventType: "payment.verify",
+  });
 
-  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
-  if (!updatedOrder) return NextResponse.json({ ok: true, idempotent: true });
-
-  const { error: registrationError } = await admin.data.from("webinar_registrations").upsert(
-    {
-      webinar_id: order.webinar_id,
-      institute_id: order.institute_id,
-      student_id: order.student_id,
-      webinar_order_id: order.id,
-      registration_status: "registered",
-      payment_status: "paid",
-      access_status: "granted",
-      registered_at: now,
-    },
-    { onConflict: "webinar_id,student_id" }
-  );
-  if (registrationError) return NextResponse.json({ error: registrationError.message }, { status: 500 });
-
-  const { data: existingPayout } = await admin.data
-    .from("institute_payouts")
-    .select("id")
-    .eq("webinar_order_id", order.id)
-    .maybeSingle<{ id: string }>();
-
-  if (!existingPayout) {
-    const { error: payoutError } = await admin.data.from("institute_payouts").insert({
-      institute_id: order.institute_id,
-      webinar_order_id: order.id,
-      payout_source: "webinar",
-      gross_amount: order.amount,
-      platform_fee_amount: order.platform_fee_amount,
-      payout_amount: order.payout_amount,
-      payout_status: "pending",
-      source_reference_id: order.id,
-      source_reference_type: "webinar_order",
-    });
-    if (payoutError) return NextResponse.json({ error: payoutError.message }, { status: 500 });
+  if (reconciled.error) {
+    return NextResponse.json({ error: reconciled.error }, { status: 500 });
   }
 
-  const { data: webinar } = await admin.data
-    .from("webinars")
-    .select("id,title,institute_id")
-    .eq("id", order.webinar_id)
-    .maybeSingle<{ id: string; title: string; institute_id: string }>();
-
-  if (webinar) {
-    await notifyWebinarEnrollment({
-      supabase: admin.data,
-      webinarId: webinar.id,
-      webinarTitle: webinar.title,
-      studentId: auth.user.id,
-      instituteId: webinar.institute_id,
-      mode: "paid",
-    }).catch(() => undefined);
-  }
-
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, idempotent: order.payment_status === "paid" });
 }

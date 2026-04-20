@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { verifyRazorpayWebhookSignature } from "@/lib/payments/razorpay";
-import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
+import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -72,9 +72,24 @@ export async function POST(request: Request) {
     const paymentEntity = payload?.payload?.payment?.entity;
     const razorpayOrderId = paymentEntity?.order_id;
     const razorpayPaymentId = paymentEntity?.id;
+    const paymentStatus = typeof paymentEntity?.status === "string" ? paymentEntity.status.toLowerCase() : null;
 
     if (!razorpayOrderId || !razorpayPaymentId) {
       return NextResponse.json({ ok: true, skipped: true, reason: "Missing order/payment id" });
+    }
+
+    if (paymentStatus !== "captured" || eventType !== "payment.captured") {
+      if (insertedLog?.id) {
+        await admin.data
+          .from("razorpay_webhook_logs")
+          .update({
+            processed: true,
+            processed_at: new Date().toISOString(),
+            notes: `ignored_payment_status:${paymentStatus ?? "unknown"}`,
+          })
+          .eq("id", insertedLog.id);
+      }
+      return NextResponse.json({ ok: true, skipped: true, reason: "Payment is not captured" });
     }
 
     const { data: courseOrder } = await admin.data
@@ -133,6 +148,37 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ ok: true, reconciled: "psychometric_order" });
+    }
+
+    const { data: webinarOrder } = await admin.data
+      .from("webinar_orders")
+      .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,order_status,access_status")
+      .eq("razorpay_order_id", razorpayOrderId)
+      .maybeSingle();
+
+    if (webinarOrder) {
+      const reconciled = await reconcileWebinarOrderPaid({
+        supabase: admin.data,
+        order: webinarOrder,
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature: signature || undefined,
+        source: "webhook",
+        paymentEventType: eventType,
+      });
+
+      if (reconciled.error) {
+        return NextResponse.json({ error: reconciled.error }, { status: 500 });
+      }
+
+      if (insertedLog?.id) {
+        await admin.data
+          .from("razorpay_webhook_logs")
+          .update({ processed: true, processed_at: new Date().toISOString(), notes: "webinar_order_reconciled" })
+          .eq("id", insertedLog.id);
+      }
+
+      return NextResponse.json({ ok: true, reconciled: "webinar_order" });
     }
 
     return NextResponse.json({ ok: true, skipped: true, reason: "No order mapping" });

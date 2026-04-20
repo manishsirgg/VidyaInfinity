@@ -7,6 +7,7 @@ const PAYMENT_MIGRATION_PATHS = [
   "supabase/migrations/20260419_000014_webinars_and_featured_subscriptions.sql",
   "supabase/migrations/20260420_000015_simplified_entity_and_webinar_commissions.sql",
   "supabase/migrations/20260420_000016_webinar_commission_singleton.sql",
+  "supabase/migrations/20260420_000017_webinar_orders_and_registrations.sql",
 ];
 
 export async function getPaymentSchemaErrorResponse() {
