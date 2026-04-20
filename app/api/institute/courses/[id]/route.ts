@@ -95,7 +95,7 @@ export async function GET(_: Request, { params }: Params) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
 
-  const { data: media } = await instituteData.admin.from("course_media").select("*").eq("course_id", id).order("created_at", { ascending: true });
+  const { data: media } = await instituteData.admin.from("course_media").select("*").eq("course_id", id).order("id", { ascending: true });
 
   return NextResponse.json({ ok: true, course, media: media ?? [] });
 }

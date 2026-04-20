@@ -92,7 +92,7 @@ export async function getInstituteCourseById(userId: string, courseId: string) {
     .from("course_media")
     .select("id,file_url,type,storage_path")
     .eq("course_id", courseId)
-    .order("created_at", { ascending: true });
+    .order("id", { ascending: true });
 
   if (mediaWithPath) {
     return {
@@ -105,7 +105,7 @@ export async function getInstituteCourseById(userId: string, courseId: string) {
     .from("course_media")
     .select("id,file_url,type")
     .eq("course_id", courseId)
-    .order("created_at", { ascending: true });
+    .order("id", { ascending: true });
 
   return {
     course: course as InstituteCourseRecord,
