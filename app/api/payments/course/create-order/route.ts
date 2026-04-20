@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { calculateCommission } from "@/lib/payments/commission";
+import { normalizeOrganizationType } from "@/lib/constants/organization-types";
+import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -49,13 +50,40 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "You are already enrolled in this course" }, { status: 409 });
     }
 
-    const { data: settings } = await admin.data
-      .from("platform_commission_settings")
-      .select("commission_percentage")
-      .eq("key", "default")
-      .maybeSingle();
+    const { data: institute } = await admin.data
+      .from("institutes")
+      .select("organization_type")
+      .eq("id", course.institute_id)
+      .maybeSingle<{ organization_type: string | null }>();
 
-    const commission = calculateCommission(Number(course.fees ?? 0), Number(settings?.commission_percentage ?? 12));
+    const normalizedOrganizationType = normalizeOrganizationType(institute?.organization_type ?? "");
+
+    let commissionPercentage: number | null = null;
+
+    if (normalizedOrganizationType) {
+      const { data: entityCommission, error: entityCommissionError } = await admin.data
+        .from("entity_commissions")
+        .select("commission_percent")
+        .eq("entity_type", normalizedOrganizationType)
+        .eq("is_active", true)
+        .maybeSingle<{ commission_percent: number }>();
+
+      if (!entityCommissionError) {
+        commissionPercentage = sanitizeCommissionPercentage(entityCommission?.commission_percent);
+      }
+    }
+
+    if (commissionPercentage === null) {
+      const { data: legacyCommission } = await admin.data
+        .from("platform_commission_settings")
+        .select("commission_percentage")
+        .eq("key", "default")
+        .maybeSingle<{ commission_percentage: number }>();
+
+      commissionPercentage = sanitizeCommissionPercentage(legacyCommission?.commission_percentage) ?? 12;
+    }
+
+    const commission = calculateCommission(Number(course.fees ?? 0), commissionPercentage);
 
     const razorpay = getRazorpayClient();
     if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
