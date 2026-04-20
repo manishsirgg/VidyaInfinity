@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { ServiceInquiryForm } from "@/components/forms/service-inquiry-form";
 import { siteConfig } from "@/lib/constants/site";
+import { shouldHideReviewOnWebsite } from "@/lib/integrations/google-business-automation";
 
 type GooglePlaceReview = {
   author_name: string;
@@ -64,6 +65,7 @@ async function getLatestGoogleReviews() {
 
 export default async function ContactPage() {
   const googleReviews = await getLatestGoogleReviews();
+  const visibleReviews = googleReviews?.reviews.filter((review) => !shouldHideReviewOnWebsite(review.text, review.rating)) ?? [];
 
   return (
     <div className="mx-auto grid w-full max-w-5xl gap-8 px-4 py-12 md:grid-cols-[1.2fr,1fr]">
@@ -111,12 +113,12 @@ export default async function ContactPage() {
             </Link>
           </div>
 
-          {googleReviews?.reviews.length ? (
+          {visibleReviews.length ? (
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                {googleReviews.name} · {googleReviews.rating?.toFixed(1)}★ ({googleReviews.totalRatings ?? 0} reviews)
+                {googleReviews?.name} · {googleReviews?.rating?.toFixed(1)}★ ({googleReviews?.totalRatings ?? 0} reviews)
               </p>
-              {googleReviews.reviews.map((review, index) => (
+              {visibleReviews.map((review, index) => (
                 <article key={`${review.author_name}-${index}`} className="rounded-lg border border-slate-200 p-4">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                     <p className="font-semibold text-slate-900">{review.author_name}</p>
