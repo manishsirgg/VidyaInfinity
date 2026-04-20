@@ -79,6 +79,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
   const [durationUnit, setDurationUnit] = useState(initialCourse?.duration_unit ?? "");
   const [newMedia, setNewMedia] = useState<File[]>([]);
   const [removedMediaIds, setRemovedMediaIds] = useState<string[]>([]);
+  const [replacementMedia, setReplacementMedia] = useState<Record<string, File>>({});
 
   const computedDuration = useMemo(() => {
     if (durationValue && durationUnit) return `${durationValue} ${durationUnit}`;
@@ -106,10 +107,10 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     };
   }, [newMediaPreviews]);
 
-  async function uploadNewMedia(courseId: string) {
+  async function uploadFiles(courseId: string, files: File[]) {
     const failures: string[] = [];
 
-    for (const file of newMedia) {
+    for (const file of files) {
       const kind = getFileKind(file);
       if (!kind) {
         failures.push(`Unsupported media: ${file.name}`);
@@ -149,6 +150,10 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     return failures;
   }
 
+  async function uploadNewMedia(courseId: string) {
+    return uploadFiles(courseId, newMedia);
+  }
+
   async function removeMarkedMedia(courseId: string) {
     for (const mediaId of removedMediaIds) {
       await fetch(`/api/institute/courses/${courseId}/media`, {
@@ -157,6 +162,35 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         body: JSON.stringify({ mediaId }),
       });
     }
+  }
+
+  async function replaceMarkedMedia(courseId: string) {
+    const replacements = Object.entries(replacementMedia);
+    const failures: string[] = [];
+
+    for (const [mediaId, file] of replacements) {
+      const replaceValidationError = mediaError([file]);
+      if (replaceValidationError) {
+        failures.push(`Replacement failed for ${file.name}: ${replaceValidationError}`);
+        continue;
+      }
+
+      const removeResponse = await fetch(`/api/institute/courses/${courseId}/media`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaId }),
+      });
+      if (!removeResponse.ok) {
+        const removeBody = (await removeResponse.json().catch(() => null)) as { error?: string } | null;
+        failures.push(removeBody?.error ?? `Failed to remove media for replacement (${file.name}).`);
+        continue;
+      }
+
+      const uploadFailures = await uploadFiles(courseId, [file]);
+      failures.push(...uploadFailures.map((item) => `Replacement failed for ${file.name}: ${item}`));
+    }
+
+    return failures;
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -245,7 +279,8 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     }
 
     await removeMarkedMedia(courseId);
-    const mediaFailures = await uploadNewMedia(courseId);
+    const replacementFailures = await replaceMarkedMedia(courseId);
+    const mediaFailures = [...replacementFailures, ...(await uploadNewMedia(courseId))];
 
     setState(mediaFailures.length ? "error" : "success");
     setMessage(successMessage);
@@ -311,6 +346,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
             {initialMedia.map((item) => {
               const removed = removedMediaSet.has(item.id);
               const isVideo = item.type === "video";
+              const replacement = replacementMedia[item.id];
               return (
                 <article key={item.id} className={`overflow-hidden rounded-lg border ${removed ? "border-rose-200 bg-rose-50/70" : "border-slate-200 bg-white"}`}>
                   <div className="relative bg-slate-100">
@@ -326,12 +362,71 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
                   </div>
                   <div className="space-y-2 p-3">
                     <p className="truncate text-xs text-slate-600">{item.file_url}</p>
+                    <a
+                      href={item.file_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex rounded bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                    >
+                      View full media
+                    </a>
+                    {!removed ? (
+                      <div className="space-y-2">
+                        <label className="block text-xs font-medium text-slate-700">
+                          Replace media
+                          <input
+                            type="file"
+                            accept={isVideo ? "video/mp4,video/webm,video/quicktime,video/x-m4v" : "image/png,image/jpeg,image/jpg,image/webp"}
+                            className="mt-1 w-full rounded border px-2 py-1.5 text-xs"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              if (!file) return;
+                              const nextKind = getFileKind(file);
+                              if ((isVideo && nextKind !== "video") || (!isVideo && nextKind !== "image")) {
+                                setError(`Replacement for ${isVideo ? "video" : "image"} media must be the same file type.`);
+                                event.currentTarget.value = "";
+                                return;
+                              }
+                              setError("");
+                              setReplacementMedia((prev) => ({ ...prev, [item.id]: file }));
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                        {replacement ? (
+                          <div className="flex items-center justify-between gap-2 rounded border border-brand-200 bg-brand-50 px-2 py-1.5">
+                            <p className="truncate text-[11px] text-brand-800">{replacement.name}</p>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setReplacementMedia((prev) => {
+                                  const next = { ...prev };
+                                  delete next[item.id];
+                                  return next;
+                                })
+                              }
+                              className="rounded bg-white px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-slate-100"
+                            >
+                              Undo replace
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() =>
-                        setRemovedMediaIds((prev) =>
-                          removed ? prev.filter((id) => id !== item.id) : [...prev, item.id],
-                        )
+                        setRemovedMediaIds((prev) => {
+                          if (removed) {
+                            return prev.filter((id) => id !== item.id);
+                          }
+                          setReplacementMedia((current) => {
+                            const next = { ...current };
+                            delete next[item.id];
+                            return next;
+                          });
+                          return [...prev, item.id];
+                        })
                       }
                       className={`rounded px-3 py-1.5 text-xs font-medium ${removed ? "bg-slate-100 text-slate-700 hover:bg-slate-200" : "bg-rose-100 text-rose-700 hover:bg-rose-200"}`}
                     >
