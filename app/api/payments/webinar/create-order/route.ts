@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { normalizeCouponCode, validateCouponForScope } from "@/lib/coupons";
 import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
   const auth = await requireApiUser("student", { requireApproved: false });
   if ("error" in auth) return auth.error;
 
-  const { webinarId } = (await request.json()) as { webinarId?: string };
+  const { webinarId, couponCode } = (await request.json()) as { webinarId?: string; couponCode?: string };
   if (!webinarId) return NextResponse.json({ error: "webinarId is required" }, { status: 400 });
 
   const admin = getSupabaseAdmin();
@@ -78,7 +79,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Webinar commission is not configured" }, { status: 500 });
   }
 
-  const commission = calculateCommission(Number(webinar.price ?? 0), commissionPercentage);
+  const normalizedCouponCode = normalizeCouponCode(couponCode);
+  let discountAmount = 0;
+  let appliedCouponCode: string | null = null;
+  const grossAmount = Number(webinar.price ?? 0);
+
+  if (normalizedCouponCode) {
+    const { data: coupon } = await admin.data
+      .from("coupons")
+      .select("code,discount_percent,active,expiry_date,applies_to")
+      .eq("code", normalizedCouponCode)
+      .eq("applies_to", "webinar")
+      .maybeSingle();
+
+    const couponCheck = validateCouponForScope(coupon, "webinar");
+    if (!couponCheck.ok || !coupon) return NextResponse.json({ error: couponCheck.reason }, { status: 400 });
+
+    discountAmount = Math.max(0, (grossAmount * Number(coupon.discount_percent)) / 100);
+    appliedCouponCode = coupon.code;
+  }
+
+  const discountedAmount = Math.max(0, grossAmount - discountAmount);
+  const commission = calculateCommission(discountedAmount, commissionPercentage);
 
   const razorpay = getRazorpayClient();
   if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
@@ -110,7 +132,12 @@ export async function POST(request: Request) {
       payout_amount: commission.instituteReceivable,
       razorpay_order_id: order.id,
       razorpay_receipt: order.receipt ?? null,
-      metadata: { source: "webinar_create_order_api" },
+      metadata: {
+        source: "webinar_create_order_api",
+        coupon_code: appliedCouponCode,
+        coupon_discount_amount: discountAmount,
+        base_amount: grossAmount,
+      },
     })
     .select("id")
     .single<{ id: string }>();

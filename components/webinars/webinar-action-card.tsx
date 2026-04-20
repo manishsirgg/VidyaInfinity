@@ -36,6 +36,7 @@ export function WebinarActionCard({
 }: WebinarActionCardProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [couponCode, setCouponCode] = useState("");
 
   async function registerFree() {
     setLoading(true);
@@ -58,7 +59,7 @@ export function WebinarActionCard({
     const createRes = await fetch("/api/payments/webinar/create-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ webinarId }),
+      body: JSON.stringify({ webinarId, couponCode: couponCode.trim() || null }),
     });
     const createBody = await createRes.json().catch(() => null);
 
@@ -124,9 +125,20 @@ export function WebinarActionCard({
           {loading ? "Processing..." : isEnrolled ? "Enrolled" : "Enroll Free"}
         </button>
       ) : (
-        <button type="button" disabled={ctaDisabled} onClick={payNow} className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
-          {loading ? "Processing..." : isEnrolled ? "Enrolled" : `Pay ₹${price} & Enroll`}
-        </button>
+        <>
+          <div className="mt-3">
+            <label className="text-xs text-slate-600">Coupon code (optional)</label>
+            <input
+              value={couponCode}
+              onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+              placeholder="WEBINAR20"
+              className="mt-1 w-full rounded border px-3 py-2 text-sm"
+            />
+          </div>
+          <button type="button" disabled={ctaDisabled} onClick={payNow} className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
+            {loading ? "Processing..." : isEnrolled ? "Enrolled" : `Pay ₹${price} & Enroll`}
+          </button>
+        </>
       )}
 
       {!enrollmentOpen ? <p className="mt-2 text-xs text-slate-600">Enrollment is closed for this webinar.</p> : null}
