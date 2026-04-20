@@ -21,6 +21,7 @@ export function CoursePurchaseCard({
 }) {
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+  const [couponCode, setCouponCode] = useState("");
   const [cartBusy, setCartBusy] = useState(false);
   const [savedBusy, setSavedBusy] = useState(false);
   const [inCart, setInCart] = useState(false);
@@ -61,7 +62,7 @@ export function CoursePurchaseCard({
       const createOrderResponse = await fetch("/api/payments/course/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseId }),
+        body: JSON.stringify({ courseId, couponCode: couponCode.trim() || null }),
       });
 
       const createOrderBody = await createOrderResponse.json().catch(() => null);
@@ -189,6 +190,15 @@ export function CoursePurchaseCard({
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
       <p className="text-sm text-slate-600">Course fee</p>
       <p className="text-2xl font-semibold">₹{feeAmount}</p>
+      <div className="mt-3">
+        <label className="text-xs text-slate-600">Coupon code (optional)</label>
+        <input
+          value={couponCode}
+          onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+          placeholder="COURSE20"
+          className="mt-1 w-full rounded border px-3 py-2 text-sm"
+        />
+      </div>
       <button
         type="button"
         onClick={enrollNow}

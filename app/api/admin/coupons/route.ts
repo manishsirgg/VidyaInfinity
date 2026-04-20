@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { couponScopes, isCouponScope, normalizeCouponCode } from "@/lib/coupons";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function GET() {
@@ -13,7 +14,7 @@ export async function GET() {
 
   const { data, error } = await admin.data
     .from("coupons")
-    .select("id,code,discount_percentage,is_active,created_at,updated_at")
+    .select("id,code,discount_percent,expiry_date,active,applies_to,created_at")
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -27,12 +28,18 @@ export async function POST(request: Request) {
   if ("error" in auth) return auth.error;
 
   const body = await request.json();
-  const code = String(body.code ?? "").trim().toUpperCase();
+  const code = normalizeCouponCode(body.code);
+  const appliesTo = body.appliesTo;
   const discountPercentage = Number(body.discountPercentage);
+  const expiryDate = body.expiryDate ? String(body.expiryDate) : null;
   const isActive = Boolean(body.isActive ?? true);
 
-  if (!code || Number.isNaN(discountPercentage) || discountPercentage <= 0 || discountPercentage > 100) {
-    return NextResponse.json({ error: "Valid code and discountPercentage (0-100) are required" }, { status: 400 });
+  if (!code || !isCouponScope(appliesTo) || Number.isNaN(discountPercentage) || discountPercentage <= 0 || discountPercentage > 100) {
+    return NextResponse.json({ error: `Valid code, appliesTo (${couponScopes.join(", ")}), and discountPercentage (0-100) are required` }, { status: 400 });
+  }
+
+  if (expiryDate && Number.isNaN(new Date(expiryDate).getTime())) {
+    return NextResponse.json({ error: "expiryDate must be a valid date" }, { status: 400 });
   }
 
   const admin = getSupabaseAdmin();
@@ -42,12 +49,12 @@ export async function POST(request: Request) {
     .from("coupons")
     .insert({
       code,
-      discount_percentage: discountPercentage,
-      is_active: isActive,
-      created_by: auth.user.id,
-      updated_by: auth.user.id,
+      applies_to: appliesTo,
+      discount_percent: discountPercentage,
+      expiry_date: expiryDate,
+      active: isActive,
     })
-    .select("id,code,discount_percentage,is_active")
+    .select("id,code,discount_percent,expiry_date,active,applies_to,created_at")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -57,7 +64,13 @@ export async function POST(request: Request) {
     action: "COUPON_CREATED",
     targetTable: "coupons",
     targetId: data.id,
-    metadata: { code: data.code, discountPercentage: data.discount_percentage, isActive: data.is_active },
+    metadata: {
+      code: data.code,
+      appliesTo: data.applies_to,
+      discountPercentage: data.discount_percent,
+      expiryDate: data.expiry_date,
+      isActive: data.active,
+    },
   });
 
   return NextResponse.json({ ok: true, coupon: data });
