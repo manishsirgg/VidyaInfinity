@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ModerationActions } from "@/components/admin/moderation-actions";
+import { ModerationPagination } from "@/components/admin/moderation-pagination";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -17,7 +18,9 @@ function relationName(value: unknown) {
 
 export default async function AdminWebinarsPage({ searchParams }: { searchParams: Promise<{ approval_status?: string }> }) {
   await requireUser("admin");
-  const { approval_status } = await searchParams;
+  const { approval_status, page } = (await searchParams) as { approval_status?: string; page?: string };
+  const pageNumber = Math.max(1, Number(page) || 1);
+  const pageSize = 10;
   const admin = getSupabaseAdmin();
   if (!admin.ok) throw new Error(admin.error);
 
@@ -31,6 +34,8 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
   }
 
   const { data: webinars } = await query;
+  const totalItems = webinars?.length ?? 0;
+  const paginatedWebinars = (webinars ?? []).slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -43,7 +48,7 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
       </div>
 
       <div className="mt-4 space-y-3">
-        {(webinars ?? []).map((item) => (
+        {paginatedWebinars.map((item) => (
           <article key={item.id} className="rounded-xl border bg-white p-4 text-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
@@ -61,6 +66,13 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
           </article>
         ))}
       </div>
+      <ModerationPagination
+        page={pageNumber}
+        pageSize={pageSize}
+        totalItems={totalItems}
+        pathname="/admin/webinars"
+        query={{ approval_status }}
+      />
     </div>
   );
 }

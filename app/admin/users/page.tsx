@@ -1,4 +1,5 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
+import { ModerationPagination } from "@/components/admin/moderation-pagination";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -52,8 +53,18 @@ function getLatestPendingDocsByCategory(docs: UserDocWithLink[]) {
   return Array.from(latestByCategory.values());
 }
 
-export default async function Page() {
+const PAGE_SIZE = 10;
+
+function parsePage(value: string | undefined) {
+  const page = Number(value);
+  if (!Number.isFinite(page) || page < 1) return 1;
+  return Math.floor(page);
+}
+
+export default async function Page({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   await requireUser("admin");
+  const { page } = await searchParams;
+  const currentPage = parsePage(page);
   const admin = getSupabaseAdmin();
   if (!admin.ok) {
     throw new Error(admin.error);
@@ -106,6 +117,13 @@ export default async function Page() {
   const detailsByUser = new Map((details ?? []).map((item) => [item.user_id, item]));
   const pendingUsers = ((users ?? []) as UserRow[]).filter((item) => item.approval_status === "pending");
   const reviewedUsers = ((users ?? []) as UserRow[]).filter((item) => item.approval_status !== "pending");
+  const sortedUsers = [...pendingUsers, ...reviewedUsers];
+
+  const totalUsers = sortedUsers.length;
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const paginatedUsers = sortedUsers.slice(startIndex, startIndex + PAGE_SIZE);
+  const paginatedPendingUsers = paginatedUsers.filter((item) => item.approval_status === "pending");
+  const paginatedReviewedUsers = paginatedUsers.filter((item) => item.approval_status !== "pending");
 
   function renderDoc(doc: UserDocWithLink) {
     return (
@@ -200,10 +218,13 @@ export default async function Page() {
       </div>
 
       <h2 className="mt-6 text-lg font-semibold">Pending queue</h2>
-      <div className="mt-3 space-y-3">{pendingUsers.map(renderUser)}</div>
+      <div className="mt-3 space-y-3">{paginatedPendingUsers.map(renderUser)}</div>
+      {paginatedPendingUsers.length === 0 ? <p className="mt-3 rounded border bg-white p-3 text-sm text-slate-600">No pending users on this page.</p> : null}
 
-      {reviewedUsers.length > 0 ? <h2 className="mt-8 text-lg font-semibold">Reviewed users</h2> : null}
-      <div className="mt-3 space-y-3">{reviewedUsers.map(renderUser)}</div>
+      {paginatedReviewedUsers.length > 0 ? <h2 className="mt-8 text-lg font-semibold">Reviewed users</h2> : null}
+      <div className="mt-3 space-y-3">{paginatedReviewedUsers.map(renderUser)}</div>
+
+      <ModerationPagination page={currentPage} pageSize={PAGE_SIZE} totalItems={totalUsers} pathname="/admin/users" query={{}} />
     </div>
   );
 }
