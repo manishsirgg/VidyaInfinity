@@ -1,4 +1,5 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
+import { ModerationPagination } from "@/components/admin/moderation-pagination";
 import { requireUser } from "@/lib/auth/get-session";
 import { getInstituteApprovalSubtypeLabel } from "@/lib/constants/institute-documents";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
@@ -51,8 +52,18 @@ function disabledReasonFromStatus(status: string) {
   return "No active pending submission";
 }
 
-export default async function Page() {
+const PAGE_SIZE = 10;
+
+function parsePage(value: string | undefined) {
+  const page = Number(value);
+  if (!Number.isFinite(page) || page < 1) return 1;
+  return Math.floor(page);
+}
+
+export default async function Page({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   await requireUser("admin");
+  const { page } = await searchParams;
+  const currentPage = parsePage(page);
   const admin = getSupabaseAdmin();
   if (!admin.ok) {
     throw new Error(admin.error);
@@ -125,6 +136,13 @@ export default async function Page() {
 
   const pendingInstitutes = typedInstitutes.filter((institute) => institute.status === "pending");
   const reviewedInstitutes = typedInstitutes.filter((institute) => institute.status !== "pending");
+  const sortedInstitutes = [...pendingInstitutes, ...reviewedInstitutes];
+
+  const totalInstitutes = sortedInstitutes.length;
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const paginatedInstitutes = sortedInstitutes.slice(startIndex, startIndex + PAGE_SIZE);
+  const paginatedPendingInstitutes = paginatedInstitutes.filter((institute) => institute.status === "pending");
+  const paginatedReviewedInstitutes = paginatedInstitutes.filter((institute) => institute.status !== "pending");
 
   function renderInstituteDoc(doc: InstituteDocWithLink) {
     return (
@@ -255,10 +273,13 @@ export default async function Page() {
       </div>
 
       <h2 className="mt-6 text-lg font-semibold">Pending queue</h2>
-      <div className="mt-3 space-y-3">{pendingInstitutes.map(renderInstitute)}</div>
+      <div className="mt-3 space-y-3">{paginatedPendingInstitutes.map(renderInstitute)}</div>
+      {paginatedPendingInstitutes.length === 0 ? <p className="mt-3 rounded border bg-white p-3 text-sm text-slate-600">No pending institutes on this page.</p> : null}
 
-      {reviewedInstitutes.length > 0 ? <h2 className="mt-8 text-lg font-semibold">Reviewed institutes</h2> : null}
-      <div className="mt-3 space-y-3">{reviewedInstitutes.map(renderInstitute)}</div>
+      {paginatedReviewedInstitutes.length > 0 ? <h2 className="mt-8 text-lg font-semibold">Reviewed institutes</h2> : null}
+      <div className="mt-3 space-y-3">{paginatedReviewedInstitutes.map(renderInstitute)}</div>
+
+      <ModerationPagination page={currentPage} pageSize={PAGE_SIZE} totalItems={totalInstitutes} pathname="/admin/institutes" query={{}} />
     </div>
   );
 }
