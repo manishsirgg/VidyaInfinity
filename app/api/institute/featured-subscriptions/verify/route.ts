@@ -62,6 +62,37 @@ async function getCurrentActiveSubscription(admin: SupabaseClient, instituteId: 
   return data ?? null;
 }
 
+async function getNextSubscriptionWindow(admin: SupabaseClient, instituteId: string) {
+  const nowIso = new Date().toISOString();
+  const argVariants: Array<Record<string, unknown>> = [{ p_institute_id: instituteId }, { institute_id: instituteId }];
+
+  for (const args of argVariants) {
+    const { data, error } = await admin.rpc("get_next_featured_subscription_window", args);
+    if (error) continue;
+
+    const row = Array.isArray(data) ? (data[0] as Record<string, unknown> | undefined) : (data as Record<string, unknown> | null);
+    if (!row) continue;
+
+    const startAtRaw = row.start_at ?? row.starts_at ?? row.window_start ?? row.next_start_at;
+    const startAtIso = typeof startAtRaw === "string" ? startAtRaw : nowIso;
+    const shouldQueue = new Date(startAtIso).getTime() > new Date(nowIso).getTime();
+    return { startAtIso, shouldQueue };
+  }
+
+  const { data: tail } = await admin
+    .from("institute_featured_subscriptions")
+    .select("ends_at")
+    .eq("institute_id", instituteId)
+    .in("status", ["active", "scheduled"])
+    .order("ends_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ ends_at: string }>();
+
+  if (!tail?.ends_at) return { startAtIso: nowIso, shouldQueue: false };
+  const shouldQueue = new Date(tail.ends_at).getTime() > new Date(nowIso).getTime();
+  return { startAtIso: shouldQueue ? tail.ends_at : nowIso, shouldQueue };
+}
+
 export async function POST(request: Request) {
   const auth = await requireApiUser("institute");
   if ("error" in auth) return auth.error;
@@ -140,13 +171,14 @@ export async function POST(request: Request) {
   const baseAmount = toNumber(existingOrder.base_amount ?? existingOrder.amount);
   const creditAdjustmentAmount = toNumber(existingOrder.credit_adjustment_amount);
   const finalPayableAmount = toNumber(existingOrder.final_payable_amount ?? existingOrder.amount);
-  const shouldQueue = !isUpgrade && Boolean(currentActive);
+  const nextWindow = await getNextSubscriptionWindow(admin.data, institute.id);
+  const shouldQueue = !isUpgrade && nextWindow.shouldQueue;
 
   let startsAt = paidAt;
   let status: "active" | "scheduled" = "active";
 
-  if (shouldQueue && currentActive) {
-    startsAt = currentActive.ends_at;
+  if (shouldQueue) {
+    startsAt = nextWindow.startAtIso;
     status = "scheduled";
   }
 

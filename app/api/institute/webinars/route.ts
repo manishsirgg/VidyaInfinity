@@ -24,6 +24,26 @@ type CreateWebinarPayload = {
   learningPoints?: string;
 };
 
+function isValidDateRange(startsAt?: string, endsAt?: string) {
+  if (!startsAt) return false;
+  const start = new Date(startsAt);
+  if (Number.isNaN(start.getTime())) return false;
+  if (!endsAt) return true;
+  const end = new Date(endsAt);
+  if (Number.isNaN(end.getTime())) return false;
+  return end.getTime() > start.getTime();
+}
+
+function isAllowedMeetingUrl(url: string | undefined) {
+  if (!url) return true;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname.includes("meet.google.com");
+  } catch {
+    return false;
+  }
+}
+
 async function getInstituteId(userId: string) {
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
@@ -100,6 +120,12 @@ export async function POST(request: Request) {
 
   if (!body.title || !body.startsAt) {
     return NextResponse.json({ error: "Title and start date are required." }, { status: 400 });
+  }
+  if (!isValidDateRange(body.startsAt, body.endsAt)) {
+    return NextResponse.json({ error: "Invalid date range. End time must be after start time." }, { status: 400 });
+  }
+  if (!isAllowedMeetingUrl(body.meetingUrl)) {
+    return NextResponse.json({ error: "Meeting URL must be a valid Google Meet link." }, { status: 400 });
   }
 
   const mode = normalizeWebinarMode(body.webinarMode);

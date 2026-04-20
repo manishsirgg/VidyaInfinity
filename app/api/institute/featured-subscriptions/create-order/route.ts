@@ -9,6 +9,10 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 type PlanRow = Record<string, unknown>;
 type SubscriptionRow = Record<string, unknown>;
 type RpcResultRow = Record<string, unknown>;
+type SubscriptionWindow = {
+  startAtIso: string;
+  shouldQueue: boolean;
+};
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -47,6 +51,41 @@ async function getCurrentActiveSubscription(admin: SupabaseClient, instituteId: 
     .maybeSingle();
 
   return (data ?? null) as SubscriptionRow | null;
+}
+
+async function getNextSubscriptionWindow(admin: SupabaseClient, instituteId: string): Promise<SubscriptionWindow> {
+  const nowIso = new Date().toISOString();
+  const argVariants: Array<Record<string, unknown>> = [{ p_institute_id: instituteId }, { institute_id: instituteId }];
+
+  for (const args of argVariants) {
+    const { data, error } = await admin.rpc("get_next_featured_subscription_window", args);
+    if (error) continue;
+
+    const row = resolveRpcRow(data);
+    if (!row) continue;
+
+    const startAtRaw = row.start_at ?? row.starts_at ?? row.window_start ?? row.next_start_at;
+    const startAtIso = typeof startAtRaw === "string" ? startAtRaw : nowIso;
+    const shouldQueue = new Date(startAtIso).getTime() > new Date(nowIso).getTime();
+    return { startAtIso, shouldQueue };
+  }
+
+  const { data: tail } = await admin
+    .from("institute_featured_subscriptions")
+    .select("ends_at")
+    .eq("institute_id", instituteId)
+    .in("status", ["active", "scheduled"])
+    .order("ends_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ ends_at: string }>();
+
+  if (!tail?.ends_at) return { startAtIso: nowIso, shouldQueue: false };
+
+  const shouldQueue = new Date(tail.ends_at).getTime() > new Date(nowIso).getTime();
+  return {
+    startAtIso: shouldQueue ? tail.ends_at : nowIso,
+    shouldQueue,
+  };
 }
 
 async function calculateUpgradeCredit(
@@ -120,6 +159,7 @@ export async function POST(request: Request) {
   }
 
   const active = await getCurrentActiveSubscription(admin.data, institute.id);
+  const window = await getNextSubscriptionWindow(admin.data, institute.id);
   let currentTierRank = -1;
   let currentSubscriptionId: string | null = null;
   let queuedOrder = false;
@@ -147,6 +187,8 @@ export async function POST(request: Request) {
       queuedOrder = true;
     }
   }
+
+  if (!isUpgrade && window.shouldQueue) queuedOrder = true;
 
   const finalPayableAmount = Math.max(0, baseAmount - creditAdjustmentAmount);
 

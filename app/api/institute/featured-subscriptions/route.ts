@@ -63,6 +63,7 @@ function buildSummary(subscriptions: SubscriptionRecord[], plans: ReturnType<typ
 
   const active = normalized
     .filter((subscription) => {
+      if (subscription.status !== "active") return false;
       const startsAt = new Date(String(subscription.starts_at)).getTime();
       const endsAt = new Date(String(subscription.ends_at)).getTime();
       return startsAt <= now && endsAt > now;
@@ -70,7 +71,7 @@ function buildSummary(subscriptions: SubscriptionRecord[], plans: ReturnType<typ
     .sort((left, right) => new Date(String(right.ends_at)).getTime() - new Date(String(left.ends_at)).getTime())[0] ?? null;
 
   const scheduled = normalized
-    .filter((subscription) => new Date(String(subscription.starts_at)).getTime() > now)
+    .filter((subscription) => subscription.status === "scheduled" && new Date(String(subscription.starts_at)).getTime() > now)
     .sort((left, right) => new Date(String(left.starts_at)).getTime() - new Date(String(right.starts_at)).getTime())[0] ?? null;
 
   const currentPlanId = typeof active?.plan_id === "string" ? active.plan_id : null;
@@ -127,4 +128,51 @@ export async function GET() {
     subscriptions: parsedSubscriptions,
     summary: buildSummary(parsedSubscriptions, parsedPlans),
   });
+}
+
+export async function PATCH(request: Request) {
+  const auth = await requireApiUser("institute");
+  if ("error" in auth) return auth.error;
+
+  const body = (await request.json()) as { subscriptionId?: string; autoRenew?: boolean };
+  if (!body.subscriptionId || typeof body.autoRenew !== "boolean") {
+    return NextResponse.json({ error: "subscriptionId and autoRenew are required" }, { status: 400 });
+  }
+
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  const { data: institute } = await admin.data
+    .from("institutes")
+    .select("id")
+    .eq("user_id", auth.user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (!institute) return NextResponse.json({ error: "Institute profile not found" }, { status: 404 });
+
+  const { data: existing } = await admin.data
+    .from("institute_featured_subscriptions")
+    .select("id,plan_id")
+    .eq("id", body.subscriptionId)
+    .eq("institute_id", institute.id)
+    .in("status", ["active", "scheduled"])
+    .maybeSingle<{ id: string; plan_id: string | null }>();
+
+  if (!existing) return NextResponse.json({ error: "Subscription not found" }, { status: 404 });
+
+  const nowIso = new Date().toISOString();
+  const { error } = await admin.data
+    .from("institute_featured_subscriptions")
+    .update({
+      auto_renew: body.autoRenew,
+      end_behavior: body.autoRenew ? "auto_renew" : "stop",
+      auto_renew_plan_id: body.autoRenew ? existing.plan_id : null,
+      updated_at: nowIso,
+    })
+    .eq("id", existing.id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }
