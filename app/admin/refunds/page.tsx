@@ -17,7 +17,7 @@ export default async function Page() {
   const { data: refunds, error } = await admin.data
     .from("refunds")
     .select(
-      "id,user_id,order_type,course_order_id,psychometric_order_id,reason,admin_note,status,requested_at,reviewed_by,reviewed_at,created_at,updated_at",
+      "id,user_id,order_kind,course_order_id,psychometric_order_id,reason,internal_notes,refund_status,amount,requested_at,processed_at,created_at,updated_at",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -30,7 +30,7 @@ export default async function Page() {
     );
   }
 
-  const userIds = [...new Set((refunds ?? []).map((refund) => refund.user_id))];
+  const userIds = [...new Set((refunds ?? []).map((refund) => refund.user_id).filter((value): value is string => Boolean(value)))];
   const courseOrderIds = [...new Set((refunds ?? []).map((refund) => refund.course_order_id).filter((value): value is string => Boolean(value)))];
   const psychometricOrderIds = [
     ...new Set((refunds ?? []).map((refund) => refund.psychometric_order_id).filter((value): value is string => Boolean(value))),
@@ -66,7 +66,7 @@ export default async function Page() {
     ...refund,
     user: profilesById.get(refund.user_id) ?? null,
     order:
-      refund.order_type === "course"
+      refund.order_kind === "course_enrollment"
         ? (refund.course_order_id ? courseOrdersById.get(refund.course_order_id) ?? null : null)
         : (refund.psychometric_order_id ? psychometricOrdersById.get(refund.psychometric_order_id) ?? null : null),
   }));

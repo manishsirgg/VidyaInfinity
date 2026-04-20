@@ -15,35 +15,43 @@ export async function POST(request: Request) {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
+  let refundAmount: number | null = null;
+  let instituteId: string | null = null;
+
   if (orderType === "course") {
     const { data: order } = await admin.data
       .from("course_orders")
-      .select("id")
+      .select("id,final_paid_amount,institute_id")
       .eq("id", orderId)
       .eq("user_id", auth.user.id)
       .eq("payment_status", "paid")
       .maybeSingle();
 
     if (!order) return NextResponse.json({ error: "Eligible course order not found" }, { status: 404 });
+    refundAmount = Number(order.final_paid_amount ?? 0);
+    instituteId = order.institute_id ?? null;
   } else {
     const { data: order } = await admin.data
       .from("psychometric_orders")
-      .select("id")
+      .select("id,final_paid_amount")
       .eq("id", orderId)
       .eq("user_id", auth.user.id)
       .eq("payment_status", "paid")
       .maybeSingle();
 
     if (!order) return NextResponse.json({ error: "Eligible psychometric order not found" }, { status: 404 });
+    refundAmount = Number(order.final_paid_amount ?? 0);
   }
 
   const { error } = await admin.data.from("refunds").insert({
     user_id: auth.user.id,
-    order_type: orderType,
+    institute_id: instituteId,
+    order_kind: orderType === "course" ? "course_enrollment" : "psychometric_test",
     course_order_id: orderType === "course" ? orderId : null,
     psychometric_order_id: orderType === "psychometric" ? orderId : null,
+    amount: refundAmount ?? 0,
     reason,
-    status: "requested",
+    refund_status: "requested",
     requested_at: new Date().toISOString(),
   });
 

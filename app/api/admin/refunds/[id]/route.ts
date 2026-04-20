@@ -27,7 +27,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: currentRefund, error: fetchError } = await admin.data
     .from("refunds")
-    .select("id,status,course_order_id,psychometric_order_id")
+    .select("id,refund_status,course_order_id,psychometric_order_id")
     .eq("id", id)
     .single();
 
@@ -35,11 +35,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: fetchError?.message ?? "Refund not found" }, { status: 404 });
   }
 
-  if (currentRefund.status !== status && !ALLOWED_NEXT_STATUS[currentRefund.status]?.includes(status)) {
+  if (currentRefund.refund_status !== status && !ALLOWED_NEXT_STATUS[currentRefund.refund_status]?.includes(status)) {
     return NextResponse.json(
       {
-        error: `Cannot move refund from ${currentRefund.status} to ${status}. Allowed: ${
-          ALLOWED_NEXT_STATUS[currentRefund.status]?.join(", ") || "none"
+        error: `Cannot move refund from ${currentRefund.refund_status} to ${status}. Allowed: ${
+          ALLOWED_NEXT_STATUS[currentRefund.refund_status]?.join(", ") || "none"
         }`,
       },
       { status: 400 },
@@ -49,13 +49,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: refund, error } = await admin.data
     .from("refunds")
     .update({
-      status,
-      admin_note: adminNote ?? null,
-      reviewed_by: auth.user.id,
-      reviewed_at: new Date().toISOString(),
+      refund_status: status,
+      internal_notes: adminNote ?? null,
+      processed_at: status === "processed" ? new Date().toISOString() : null,
     })
     .eq("id", id)
-    .select("id,status,course_order_id,psychometric_order_id")
+    .select("id,refund_status,course_order_id,psychometric_order_id")
     .single();
 
   if (error || !refund) return NextResponse.json({ error: error?.message ?? "Refund not found" }, { status: 500 });
@@ -83,7 +82,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     action: "REFUND_STATUS_UPDATED",
     targetTable: "refunds",
     targetId: refund.id,
-    metadata: { status, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
+    metadata: { refundStatus: status, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
   });
 
   return NextResponse.json({ ok: true, refund });
