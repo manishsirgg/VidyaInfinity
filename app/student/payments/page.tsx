@@ -6,7 +6,7 @@ export default async function Page() {
   const supabase = await createClient();
   const { data: transactions } = await supabase
     .from("razorpay_transactions")
-    .select("id,order_type,amount,status,razorpay_payment_id,created_at")
+    .select("id,order_kind,amount,payment_status,razorpay_payment_id,created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -16,7 +16,7 @@ export default async function Page() {
       <div className="mt-4 space-y-2">
         {transactions?.map((txn) => (
           <div key={txn.id} className="rounded border bg-white p-3 text-sm">
-            {txn.order_type} · ₹{txn.amount} · {txn.status}
+            {txn.order_kind} · ₹{txn.amount} · {txn.payment_status}
           </div>
         ))}
       </div>

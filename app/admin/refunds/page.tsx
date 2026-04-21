@@ -41,7 +41,7 @@ export default async function Page() {
       ? admin.data.from("profiles").select("id,full_name,email").in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
     courseOrderIds.length
-      ? admin.data.from("course_orders").select("id,final_paid_amount,currency,payment_status,paid_at").in("id", courseOrderIds)
+      ? admin.data.from("course_orders").select("id,gross_amount,currency,payment_status,paid_at").in("id", courseOrderIds)
       : Promise.resolve({ data: [], error: null }),
     psychometricOrderIds.length
       ? admin.data.from("psychometric_orders").select("id,final_paid_amount,currency,payment_status,paid_at").in("id", psychometricOrderIds)
@@ -67,7 +67,15 @@ export default async function Page() {
     user: profilesById.get(refund.user_id) ?? null,
     order:
       refund.order_kind === "course_enrollment"
-        ? (refund.course_order_id ? courseOrdersById.get(refund.course_order_id) ?? null : null)
+        ? (() => {
+            const order = refund.course_order_id ? courseOrdersById.get(refund.course_order_id) ?? null : null;
+            return order
+              ? {
+                  ...order,
+                  final_paid_amount: Number(order.gross_amount ?? 0),
+                }
+              : null;
+          })()
         : (refund.psychometric_order_id ? psychometricOrdersById.get(refund.psychometric_order_id) ?? null : null),
   }));
 
