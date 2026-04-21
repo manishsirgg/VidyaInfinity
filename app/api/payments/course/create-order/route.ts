@@ -36,6 +36,38 @@ type InstituteRow = {
 
 const ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE = ["pending", "active", "suspended", "completed"] as const;
 
+function extractUnknownErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message;
+
+  if (typeof error === "string" && error.trim()) return error;
+
+  if (error && typeof error === "object") {
+    const errorRecord = error as Record<string, unknown>;
+
+    const nestedError = errorRecord.error;
+    if (nestedError && typeof nestedError === "object") {
+      const nestedRecord = nestedError as Record<string, unknown>;
+      const nestedDescription = nestedRecord.description;
+      if (typeof nestedDescription === "string" && nestedDescription.trim()) {
+        return nestedDescription;
+      }
+
+      const nestedMessage = nestedRecord.message;
+      if (typeof nestedMessage === "string" && nestedMessage.trim()) {
+        return nestedMessage;
+      }
+    }
+
+    const description = errorRecord.description;
+    if (typeof description === "string" && description.trim()) return description;
+
+    const message = errorRecord.message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+
+  return "Unable to create course order.";
+}
+
 function normalizeStatus(value: string | null | undefined) {
   return String(value ?? "")
     .trim()
@@ -430,16 +462,29 @@ export async function POST(request: Request) {
     const razorpay = getRazorpayClient();
     if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
 
-    const order = await razorpay.data.orders.create({
-      amount: Math.round(finalPayableAmount * 100),
-      currency: "INR",
-      receipt: `course_${ensuredCourse.id.slice(0, 8)}_${Date.now()}`,
-      notes: {
+    let order: { id: string; receipt?: string | null };
+
+    try {
+      order = await razorpay.data.orders.create({
+        amount: Math.round(finalPayableAmount * 100),
+        currency: "INR",
+        receipt: `course_${ensuredCourse.id.slice(0, 8)}_${Date.now()}`,
+        notes: {
+          studentId,
+          courseId: ensuredCourse.id,
+          instituteId: ensuredCourse.institute_id,
+        },
+      });
+    } catch (error) {
+      const errorMessage = extractUnknownErrorMessage(error);
+      console.error("[course/create-order] razorpay order creation failed", {
         studentId,
         courseId: ensuredCourse.id,
-        instituteId: ensuredCourse.institute_id,
-      },
-    });
+        error,
+        errorMessage,
+      });
+      return NextResponse.json({ error: `Razorpay order creation failed: ${errorMessage}` }, { status: 502 });
+    }
 
     const { error: updateOrderError } = await admin.data
       .from("course_orders")
@@ -473,7 +518,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to create course order." },
+      { error: extractUnknownErrorMessage(error) },
       { status: 500 }
     );
   }
