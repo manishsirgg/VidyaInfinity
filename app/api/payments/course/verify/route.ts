@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { buildCoursePaymentRedirect, resolveCourseVerifyState } from "@/lib/payments/course-payment-status";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
@@ -89,16 +90,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Order not found for this user." }, { status: 404 });
     }
 
+    const { data: existingEnrollment } = await admin.data
+      .from("course_enrollments")
+      .select("id")
+      .eq("course_order_id", order.id)
+      .maybeSingle();
+
     if (order.payment_status === "paid") {
-      return NextResponse.json({ ok: true, idempotent: true, message: "Order already verified." });
+      const state = resolveCourseVerifyState({ paymentStatus: order.payment_status, enrolled: Boolean(existingEnrollment) });
+      const redirectTo = buildCoursePaymentRedirect({
+        state,
+        orderId,
+        paymentId: order.razorpay_payment_id ?? paymentId,
+      });
+
+      return NextResponse.json({ ok: true, idempotent: true, state, redirectTo, orderId, paymentId: order.razorpay_payment_id ?? paymentId });
     }
 
     const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
     if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
 
     if (!signatureResult.valid) {
-      await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id);
-      return NextResponse.json({ error: "Payment signature validation failed." }, { status: 400 });
+      await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id).neq("payment_status", "paid");
+      const redirectTo = buildCoursePaymentRedirect({ state: "failed", orderId, paymentId, reason: "signature_invalid" });
+      return NextResponse.json({ ok: false, state: "failed", redirectTo, error: "Payment signature validation failed." }, { status: 400 });
     }
 
     const razorpay = getRazorpayClient();
@@ -111,25 +126,36 @@ export async function POST(request: Request) {
       amount?: number;
       currency?: string;
       method?: string;
+      error_code?: string;
+      error_description?: string;
     };
 
     let payment: RazorpayPayment;
     try {
       payment = (await razorpay.data.payments.fetch(paymentId)) as RazorpayPayment;
     } catch (error) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to validate payment." }, { status: 502 });
+      console.error("[course/verify] payment fetch failed", { orderId, paymentId, error: error instanceof Error ? error.message : error });
+      const redirectTo = buildCoursePaymentRedirect({ state: "pending", orderId, paymentId, reason: "payment_fetch_uncertain" });
+      return NextResponse.json({ ok: false, state: "pending", redirectTo, error: "Payment status is not yet confirmed." }, { status: 202 });
     }
 
     const expectedAmountInPaise = Math.round(Number(order.gross_amount) * 100);
-    if (
+    const payloadMismatch =
       payment.id !== paymentId ||
       payment.order_id !== orderId ||
-      payment.status !== "captured" ||
       Number(payment.amount ?? 0) !== expectedAmountInPaise ||
-      (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase()
-    ) {
+      (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase();
+
+    if (payloadMismatch) {
       await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id).in("payment_status", ["created", "failed"]);
-      return NextResponse.json({ error: "Payment validation failed." }, { status: 400 });
+      const redirectTo = buildCoursePaymentRedirect({ state: "failed", orderId, paymentId, reason: "amount_or_order_mismatch" });
+      return NextResponse.json({ ok: false, state: "failed", redirectTo, error: "Payment validation failed." }, { status: 400 });
+    }
+
+    if ((payment.status ?? "").toLowerCase() !== "captured") {
+      const redirectTo = buildCoursePaymentRedirect({ state: "pending", orderId, paymentId, reason: "awaiting_capture" });
+      console.info("[course/verify] payment not captured yet", { orderId, paymentId, paymentStatus: payment.status ?? null });
+      return NextResponse.json({ ok: false, state: "pending", redirectTo, message: "Payment captured event pending." }, { status: 202 });
     }
 
     const reconciled = await reconcileCourseOrderPaid({
@@ -145,12 +171,24 @@ export async function POST(request: Request) {
     });
 
     if (reconciled.error) {
+      console.error("[course/verify] reconciliation failed", { orderId, paymentId, error: reconciled.error });
       return NextResponse.json({ error: reconciled.error }, { status: 500 });
     }
 
     await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", order.course_id);
 
-    return NextResponse.json({ ok: true, idempotent: false, message: "Payment verified and enrollment confirmed." });
+    const redirectTo = buildCoursePaymentRedirect({ state: "success", orderId, paymentId });
+    console.info("[course/verify] payment verified", { orderId, paymentId, orderRecordId: order.id, studentId });
+
+    return NextResponse.json({
+      ok: true,
+      state: "success",
+      redirectTo,
+      idempotent: false,
+      orderId,
+      paymentId,
+      message: "Payment verified and enrollment confirmed.",
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to verify course payment." },

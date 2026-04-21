@@ -17,7 +17,9 @@ export async function POST(request: Request) {
     const payload = raw ? JSON.parse(raw) : {};
 
     const eventType = payload?.event ?? "unknown";
-    const eventId = payload?.payload?.payment?.entity?.id ?? payload?.payload?.order?.entity?.id ?? null;
+    const paymentEntity = payload?.payload?.payment?.entity ?? null;
+    const orderEntity = payload?.payload?.order?.entity ?? null;
+    const eventId = paymentEntity?.id ?? orderEntity?.id ?? null;
 
     const verifyResult = verifyRazorpayWebhookSignature(raw, signature);
     if (!verifyResult.ok) {
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (existing) {
+        console.info("[razorpay/webhook] duplicate event ignored", { eventType, eventId });
         return NextResponse.json({ ok: true, idempotent: true });
       }
     }
@@ -64,38 +67,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 400 });
     }
 
-    if (!eventType.startsWith("payment.")) {
+    const handledPaymentEvents = ["payment.captured", "payment.failed", "order.paid"];
+    if (!handledPaymentEvents.includes(eventType)) {
       if (insertedLog?.id) {
         await admin.data
           .from("razorpay_webhook_logs")
-          .update({ processed: true, processed_at: new Date().toISOString(), notes: "ignored_non_payment_event" })
+          .update({ processed: true, processed_at: new Date().toISOString(), notes: "ignored_event_type" })
           .eq("id", insertedLog.id);
       }
       return NextResponse.json({ ok: true, skipped: true, reason: "Unsupported event type" });
     }
 
-    const paymentEntity = payload?.payload?.payment?.entity;
-    const razorpayOrderId = paymentEntity?.order_id;
-    const razorpayPaymentId = paymentEntity?.id;
+    const razorpayOrderId = paymentEntity?.order_id ?? orderEntity?.id ?? null;
+    const razorpayPaymentId = paymentEntity?.id ?? null;
     const paymentStatus = typeof paymentEntity?.status === "string" ? paymentEntity.status.toLowerCase() : null;
 
-    if (!razorpayOrderId || !razorpayPaymentId) {
-      return NextResponse.json({ ok: true, skipped: true, reason: "Missing order/payment id" });
+    if (!razorpayOrderId) {
+      return NextResponse.json({ ok: true, skipped: true, reason: "Missing order id" });
     }
 
-    if (paymentStatus !== "captured" || eventType !== "payment.captured") {
-      if (insertedLog?.id) {
-        await admin.data
-          .from("razorpay_webhook_logs")
-          .update({
-            processed: true,
-            processed_at: new Date().toISOString(),
-            notes: `ignored_payment_status:${paymentStatus ?? "unknown"}`,
-          })
-          .eq("id", insertedLog.id);
-      }
-      return NextResponse.json({ ok: true, skipped: true, reason: "Payment is not captured" });
-    }
+    const isPaidEvent = eventType === "payment.captured" || eventType === "order.paid";
+    const isFailureEvent = eventType === "payment.failed" || paymentStatus === "failed";
 
     const { data: courseOrder } = await admin.data
       .from("course_orders")
@@ -104,45 +96,90 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (courseOrder) {
-      const eventAmount = Number(paymentEntity?.amount ?? 0);
-      const expectedAmount = Math.round(Number(courseOrder.gross_amount ?? 0) * 100);
-      const eventCurrency = String(paymentEntity?.currency ?? "").toUpperCase();
-      const expectedCurrency = String(courseOrder.currency ?? "").toUpperCase();
+      if (isFailureEvent) {
+        await admin.data
+          .from("course_orders")
+          .update({ payment_status: "failed" })
+          .eq("id", courseOrder.id)
+          .neq("payment_status", "paid");
 
-      if (eventAmount !== expectedAmount || !eventCurrency || eventCurrency !== expectedCurrency) {
+        if (razorpayPaymentId) {
+          await admin.data.from("razorpay_transactions").upsert(
+            {
+              order_kind: "course_enrollment",
+              course_order_id: courseOrder.id,
+              user_id: courseOrder.student_id,
+              institute_id: courseOrder.institute_id,
+              razorpay_order_id: razorpayOrderId,
+              razorpay_payment_id: razorpayPaymentId,
+              event_type: eventType,
+              payment_status: "failed",
+              amount: courseOrder.gross_amount,
+              currency: courseOrder.currency,
+              verified: false,
+              gateway_response: { source: "webhook", payment_status: paymentStatus },
+            },
+            { onConflict: "razorpay_payment_id" }
+          );
+        }
+
         if (insertedLog?.id) {
           await admin.data
             .from("razorpay_webhook_logs")
-            .update({
-              processed: true,
-              processed_at: new Date().toISOString(),
-              notes: `course_amount_currency_mismatch:${eventAmount}:${eventCurrency}`,
-            })
+            .update({ processed: true, processed_at: new Date().toISOString(), notes: "course_order_marked_failed" })
             .eq("id", insertedLog.id);
         }
-        return NextResponse.json({ error: "Webhook payment amount/currency mismatch for course order." }, { status: 400 });
+        console.warn("[razorpay/webhook] course payment failed", { eventType, razorpayOrderId, razorpayPaymentId });
+        return NextResponse.json({ ok: true, reconciled: "course_order_failed" });
       }
 
-      const reconciled = await reconcileCourseOrderPaid({
-        supabase: admin.data,
-        order: courseOrder,
-        razorpayOrderId,
-        razorpayPaymentId,
-        source: "webhook",
-      });
+      if (isPaidEvent) {
+        const eventAmount = Number(paymentEntity?.amount ?? orderEntity?.amount_paid ?? 0);
+        const expectedAmount = Math.round(Number(courseOrder.gross_amount ?? 0) * 100);
+        const eventCurrency = String(paymentEntity?.currency ?? orderEntity?.currency ?? "").toUpperCase();
+        const expectedCurrency = String(courseOrder.currency ?? "").toUpperCase();
 
-      if (reconciled.error) {
-        return NextResponse.json({ error: reconciled.error }, { status: 500 });
+        if (eventAmount && (eventAmount !== expectedAmount || !eventCurrency || eventCurrency !== expectedCurrency)) {
+          if (insertedLog?.id) {
+            await admin.data
+              .from("razorpay_webhook_logs")
+              .update({
+                processed: true,
+                processed_at: new Date().toISOString(),
+                notes: `course_amount_currency_mismatch:${eventAmount}:${eventCurrency}`,
+              })
+              .eq("id", insertedLog.id);
+          }
+          return NextResponse.json({ error: "Webhook payment amount/currency mismatch for course order." }, { status: 400 });
+        }
+
+        if (!razorpayPaymentId) {
+          return NextResponse.json({ ok: true, skipped: true, reason: "Missing payment id for paid event" });
+        }
+
+        const reconciled = await reconcileCourseOrderPaid({
+          supabase: admin.data,
+          order: courseOrder,
+          razorpayOrderId,
+          razorpayPaymentId,
+          source: "webhook",
+          gatewayResponse: { webhookEventType: eventType, paymentStatus: paymentStatus ?? null },
+        });
+
+        if (reconciled.error) {
+          return NextResponse.json({ error: reconciled.error }, { status: 500 });
+        }
+
+        if (insertedLog?.id) {
+          await admin.data
+            .from("razorpay_webhook_logs")
+            .update({ processed: true, processed_at: new Date().toISOString(), notes: "course_order_reconciled" })
+            .eq("id", insertedLog.id);
+        }
+
+        console.info("[razorpay/webhook] course payment reconciled", { eventType, razorpayOrderId, razorpayPaymentId });
+        return NextResponse.json({ ok: true, reconciled: "course_order" });
       }
-
-      if (insertedLog?.id) {
-        await admin.data
-          .from("razorpay_webhook_logs")
-          .update({ processed: true, processed_at: new Date().toISOString(), notes: "course_order_reconciled" })
-          .eq("id", insertedLog.id);
-      }
-
-      return NextResponse.json({ ok: true, reconciled: "course_order" });
     }
 
     const { data: psychometricOrder } = await admin.data
@@ -151,7 +188,7 @@ export async function POST(request: Request) {
       .eq("razorpay_order_id", razorpayOrderId)
       .maybeSingle();
 
-    if (psychometricOrder) {
+    if (psychometricOrder && isPaidEvent && razorpayPaymentId) {
       const reconciled = await reconcilePsychometricOrderPaid({
         supabase: admin.data,
         order: psychometricOrder,
@@ -180,7 +217,7 @@ export async function POST(request: Request) {
       .eq("razorpay_order_id", razorpayOrderId)
       .maybeSingle();
 
-    if (webinarOrder) {
+    if (webinarOrder && isPaidEvent && razorpayPaymentId) {
       const reconciled = await reconcileWebinarOrderPaid({
         supabase: admin.data,
         order: webinarOrder,

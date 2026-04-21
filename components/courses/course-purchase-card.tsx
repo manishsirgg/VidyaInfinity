@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Script from "next/script";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 declare global {
   interface Window {
@@ -30,6 +31,8 @@ export function CoursePurchaseCard({
   const [savedBusy, setSavedBusy] = useState(false);
   const [inCart, setInCart] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const router = useRouter();
+  const checkoutResolvedRef = useRef(false);
 
   useEffect(() => {
     let ignore = false;
@@ -102,6 +105,8 @@ export function CoursePurchaseCard({
       }
 
       const order = createOrderBody.order as { id: string; amount: number; currency: string };
+      const pendingUrl = `/student/payments/pending?order_id=${encodeURIComponent(order.id)}&razorpay_order_id=${encodeURIComponent(order.id)}`;
+      checkoutResolvedRef.current = false;
 
       const razorpay = new window.Razorpay({
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
@@ -111,6 +116,9 @@ export function CoursePurchaseCard({
         name: "Vidya Infinity",
         description: `Enrollment: ${courseTitle}`,
         handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          checkoutResolvedRef.current = true;
+          setMessage("Confirming payment with server...");
+
           const verifyResponse = await fetch("/api/payments/course/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -122,15 +130,18 @@ export function CoursePurchaseCard({
           });
 
           const verifyBody = await verifyResponse.json().catch(() => null);
+          const redirectTarget =
+            verifyBody?.redirectTo ||
+            `/student/payments/pending?order_id=${encodeURIComponent(response.razorpay_order_id)}&payment_id=${encodeURIComponent(
+              response.razorpay_payment_id
+            )}&reason=verify_uncertain`;
 
-          if (!verifyResponse.ok) {
+          if (!verifyResponse.ok && verifyBody?.state === "failed") {
             setState("error");
             setMessage(verifyBody?.error ?? "Payment verification failed.");
+            router.replace(redirectTarget);
             return;
           }
-
-          setState("success");
-          setMessage("Payment verified and enrollment confirmed. You can now review your enrollment in the dashboard.");
 
           await fetch("/api/student/cart", {
             method: "DELETE",
@@ -139,18 +150,21 @@ export function CoursePurchaseCard({
           }).catch(() => null);
 
           setInCart(false);
+          router.replace(redirectTarget);
         },
         modal: {
           ondismiss: () => {
-            setState((current) => {
-              if (current !== "success") {
-                setMessage("Payment cancelled.");
-                return "idle";
-              }
-              return current;
-            });
+            if (checkoutResolvedRef.current) return;
+            setState("idle");
+            setMessage("Checkout closed before confirmation. We will keep checking payment status.");
+            router.replace(`${pendingUrl}&reason=checkout_closed`);
           },
         },
+      });
+
+      (razorpay as unknown as { on: (event: string, callback: () => void) => void }).on("payment.failed", () => {
+        checkoutResolvedRef.current = true;
+        router.replace(`/student/payments/failed?order_id=${encodeURIComponent(order.id)}&reason=payment_failed`);
       });
 
       razorpay.open();
