@@ -39,10 +39,21 @@ export function getServerEnv(): EnvResult<ServerEnv> {
   const publicEnv = getPublicEnv();
   if (!publicEnv.ok) return publicEnv;
 
+  const publicRazorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+  const privateRazorpayKeyId = process.env.RAZORPAY_KEY_ID;
+
+  if (publicRazorpayKeyId && privateRazorpayKeyId && publicRazorpayKeyId !== privateRazorpayKeyId) {
+    return {
+      ok: false,
+      error:
+        "Razorpay key mismatch: RAZORPAY_KEY_ID and NEXT_PUBLIC_RAZORPAY_KEY_ID must match for consistent checkout/auth.",
+    };
+  }
+
   const serverValues = {
     ...publicEnv.data,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID,
+    RAZORPAY_KEY_ID: privateRazorpayKeyId ?? publicRazorpayKeyId,
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
     RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
   };
