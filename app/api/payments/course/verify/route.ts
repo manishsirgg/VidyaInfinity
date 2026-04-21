@@ -33,7 +33,15 @@ export async function POST(request: Request) {
     };
 
     if (!orderId || !paymentId || !signature) {
-      return NextResponse.json({ error: "orderId, paymentId, signature are required" }, { status: 400 });
+      return NextResponse.json(
+        {
+          ok: false,
+          state: "failed",
+          error: "orderId, paymentId, signature are required",
+          redirectUrl: "/student/payments/failed",
+        },
+        { status: 400 }
+      );
     }
 
     const admin = getSupabaseAdmin();
@@ -86,11 +94,21 @@ export async function POST(request: Request) {
       }>();
 
     if (orderFetchError || !order) {
-      return NextResponse.json({ error: "Order not found for this user." }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, state: "failed", error: "Order not found for this user.", redirectUrl: "/student/payments/failed" },
+        { status: 404 }
+      );
     }
 
     if (order.payment_status === "paid") {
-      return NextResponse.json({ ok: true, idempotent: true, message: "Order already verified." });
+      console.info("[course/verify] idempotent paid response", { orderId: order.id, razorpayOrderId: orderId, paymentId });
+      return NextResponse.json({
+        ok: true,
+        idempotent: true,
+        state: "success",
+        message: "Order already verified.",
+        redirectUrl: "/student/payments/success",
+      });
     }
 
     const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
@@ -98,7 +116,11 @@ export async function POST(request: Request) {
 
     if (!signatureResult.valid) {
       await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id);
-      return NextResponse.json({ error: "Payment signature validation failed." }, { status: 400 });
+      console.warn("[course/verify] signature invalid", { orderId: order.id, razorpayOrderId: orderId, paymentId });
+      return NextResponse.json(
+        { ok: false, state: "failed", error: "Payment signature validation failed.", redirectUrl: "/student/payments/failed" },
+        { status: 400 }
+      );
     }
 
     const razorpay = getRazorpayClient();
@@ -117,7 +139,21 @@ export async function POST(request: Request) {
     try {
       payment = (await razorpay.data.payments.fetch(paymentId)) as RazorpayPayment;
     } catch (error) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to validate payment." }, { status: 502 });
+      console.error("[course/verify] payment fetch failed", {
+        orderId: order.id,
+        razorpayOrderId: orderId,
+        paymentId,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          state: "pending",
+          error: error instanceof Error ? error.message : "Unable to validate payment.",
+          redirectUrl: `/student/payments/pending?razorpay_order_id=${encodeURIComponent(orderId)}`,
+        },
+        { status: 502 }
+      );
     }
 
     const expectedAmountInPaise = Math.round(Number(order.gross_amount) * 100);
@@ -129,7 +165,16 @@ export async function POST(request: Request) {
       (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase()
     ) {
       await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id).in("payment_status", ["created", "failed"]);
-      return NextResponse.json({ error: "Payment validation failed." }, { status: 400 });
+      console.warn("[course/verify] payment validation failed", {
+        orderId: order.id,
+        razorpayOrderId: orderId,
+        paymentId,
+        paymentStatus: payment.status,
+      });
+      return NextResponse.json(
+        { ok: false, state: "failed", error: "Payment validation failed.", redirectUrl: "/student/payments/failed" },
+        { status: 400 }
+      );
     }
 
     const reconciled = await reconcileCourseOrderPaid({
@@ -145,15 +190,35 @@ export async function POST(request: Request) {
     });
 
     if (reconciled.error) {
-      return NextResponse.json({ error: reconciled.error }, { status: 500 });
+      return NextResponse.json(
+        {
+          ok: false,
+          state: "pending",
+          error: reconciled.error,
+          redirectUrl: `/student/payments/pending?razorpay_order_id=${encodeURIComponent(orderId)}`,
+        },
+        { status: 500 }
+      );
     }
 
     await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", order.course_id);
 
-    return NextResponse.json({ ok: true, idempotent: false, message: "Payment verified and enrollment confirmed." });
+    console.info("[course/verify] payment verified", { orderId: order.id, razorpayOrderId: orderId, paymentId });
+    return NextResponse.json({
+      ok: true,
+      idempotent: false,
+      state: "success",
+      message: "Payment verified and enrollment confirmed.",
+      redirectUrl: "/student/payments/success",
+    });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to verify course payment." },
+      {
+        ok: false,
+        state: "pending",
+        error: error instanceof Error ? error.message : "Unable to verify course payment.",
+        redirectUrl: "/student/payments/pending",
+      },
       { status: 500 }
     );
   }

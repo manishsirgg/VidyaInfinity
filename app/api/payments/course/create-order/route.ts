@@ -110,6 +110,11 @@ export async function POST(request: Request) {
     }
 
     const studentId = studentProfile.id;
+    console.info("[course/create-order] request accepted", {
+      studentId,
+      courseId,
+      hasCoupon: Boolean(couponCode),
+    });
 
     const { data: course, error: courseError } = await admin.data
       .from("courses")
@@ -373,6 +378,12 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ error: "Failed order insert. Please retry." }, { status: 500 });
     }
+    console.info("[course/create-order] order record created", {
+      orderRecordId: insertedOrder.id,
+      studentId,
+      courseId: ensuredCourse.id,
+      grossAmount: finalPayableAmount,
+    });
 
     if (finalPayableAmount <= 0) {
       const freeOrderId = `free_order_${insertedOrder.id}`;
@@ -438,6 +449,13 @@ export async function POST(request: Request) {
       .eq("id", insertedOrder.id);
 
     if (updateOrderError) return NextResponse.json({ error: updateOrderError.message }, { status: 500 });
+    console.info("[course/create-order] razorpay order created", {
+      orderRecordId: insertedOrder.id,
+      razorpayOrderId: order.id,
+      studentId,
+      courseId: ensuredCourse.id,
+      finalPayableAmount,
+    });
 
     return NextResponse.json({
       order,
