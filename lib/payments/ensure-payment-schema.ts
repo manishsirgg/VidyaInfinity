@@ -24,7 +24,7 @@ export async function getPaymentSchemaErrorResponse(domains?: PaymentSchemaDomai
 
   return NextResponse.json(
     {
-      error: "Supabase payment schema mismatch",
+      error: "Payment schema is missing required tables or columns.",
       missingTables: result.missing,
       missingColumns: result.missingColumns,
       migration: `Run migrations: ${PAYMENT_MIGRATION_PATHS.join(", ")}`,
