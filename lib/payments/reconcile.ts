@@ -36,6 +36,7 @@ export async function reconcileCourseOrderPaid({
   gatewayResponse?: Record<string, unknown>;
 }) {
   const now = new Date().toISOString();
+  console.info("[payments/reconcile] reconcileCourseOrderPaid:start", { orderId: order.id, razorpayOrderId, razorpayPaymentId, source });
 
   const { data: existingEnrollment } = await supabase
     .from("course_enrollments")
@@ -177,6 +178,8 @@ export async function reconcileCourseOrderPaid({
     });
   }
 
+  console.info("[payments/reconcile] reconcileCourseOrderPaid:completed", { orderId: order.id, razorpayPaymentId, source });
+
   await writeAdminAuditLog({
     adminUserId: adminUserId ?? null,
     action: "PAYMENT_RECONCILED_COURSE",
@@ -275,6 +278,8 @@ export async function reconcilePsychometricOrderPaid({
     dedupeKey: `psychometric-order-paid:${order.id}`,
     metadata: { orderId: order.id, paymentId: razorpayPaymentId, source },
   }).catch(() => undefined);
+
+  console.info("[payments/reconcile] reconcileCourseOrderPaid:completed", { orderId: order.id, razorpayPaymentId, source });
 
   await writeAdminAuditLog({
     adminUserId: adminUserId ?? null,
@@ -459,6 +464,8 @@ export async function reconcileWebinarOrderPaid({
     instituteId: webinar.institute_id,
     mode: "paid",
   }).catch(() => undefined);
+
+  console.info("[payments/reconcile] reconcileCourseOrderPaid:completed", { orderId: order.id, razorpayPaymentId, source });
 
   await writeAdminAuditLog({
     adminUserId: adminUserId ?? null,

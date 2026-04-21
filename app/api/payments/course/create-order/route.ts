@@ -374,6 +374,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed order insert. Please retry." }, { status: 500 });
     }
 
+
+    console.info("[course/create-order] order draft inserted", {
+      studentId,
+      courseId: ensuredCourse.id,
+      orderRecordId: insertedOrder.id,
+      grossAmount: commission.grossAmount,
+      finalPayableAmount,
+      couponCode: appliedCouponCode,
+    });
+
     if (finalPayableAmount <= 0) {
       const freeOrderId = `free_order_${insertedOrder.id}`;
       const freePaymentId = `free_payment_${insertedOrder.id}`;
@@ -407,6 +417,8 @@ export async function POST(request: Request) {
 
       await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", ensuredCourse.id);
 
+      console.info("[course/create-order] free course reconciled", { studentId, courseId: ensuredCourse.id, orderRecordId: insertedOrder.id });
+
       return NextResponse.json({
         orderRecordId: insertedOrder.id,
         freeCourse: true,
@@ -438,6 +450,13 @@ export async function POST(request: Request) {
       .eq("id", insertedOrder.id);
 
     if (updateOrderError) return NextResponse.json({ error: updateOrderError.message }, { status: 500 });
+
+    console.info("[course/create-order] razorpay order created", {
+      studentId,
+      courseId: ensuredCourse.id,
+      orderRecordId: insertedOrder.id,
+      razorpayOrderId: order.id,
+    });
 
     return NextResponse.json({
       order,
