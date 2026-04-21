@@ -36,6 +36,21 @@ export async function reconcileCourseOrderPaid({
   gatewayResponse?: Record<string, unknown>;
 }) {
   const now = new Date().toISOString();
+  console.info("[payments/reconcile/course] start", {
+    orderId: order.id,
+    source,
+    razorpayOrderId,
+    razorpayPaymentId,
+    paymentStatus: order.payment_status,
+  });
+
+  const { data: existingTransaction } = await supabase
+    .from("razorpay_transactions")
+    .select("id,verified")
+    .eq("razorpay_payment_id", razorpayPaymentId)
+    .maybeSingle<{ id: string; verified: boolean | null }>();
+
+  const shouldSendNotifications = order.payment_status !== "paid" || !existingTransaction;
 
   const { data: existingEnrollment } = await supabase
     .from("course_enrollments")
@@ -142,7 +157,7 @@ export async function reconcileCourseOrderPaid({
     ? await supabase.from("profiles").select("email").eq("id", institute.user_id).maybeSingle()
     : { data: null };
 
-  if (course && student && institute?.user_id) {
+  if (shouldSendNotifications && course && student && institute?.user_id) {
     await notifyCoursePurchase({
       orderId: order.id,
       paymentId: razorpayPaymentId,
@@ -183,6 +198,14 @@ export async function reconcileCourseOrderPaid({
     targetTable: "course_orders",
     targetId: order.id,
     metadata: { razorpayOrderId, razorpayPaymentId, source },
+  });
+
+  console.info("[payments/reconcile/course] completed", {
+    orderId: order.id,
+    source,
+    razorpayOrderId,
+    razorpayPaymentId,
+    shouldSendNotifications,
   });
 
   return { error: null };
