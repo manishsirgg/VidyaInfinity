@@ -21,14 +21,14 @@ export async function POST(request: Request) {
   if (orderType === "course") {
     const { data: order } = await admin.data
       .from("course_orders")
-      .select("id,final_paid_amount,institute_id")
+      .select("id,gross_amount,institute_id")
       .eq("id", orderId)
-      .eq("user_id", auth.user.id)
+      .eq("student_id", auth.user.id)
       .eq("payment_status", "paid")
       .maybeSingle();
 
     if (!order) return NextResponse.json({ error: "Eligible course order not found" }, { status: 404 });
-    refundAmount = Number(order.final_paid_amount ?? 0);
+    refundAmount = Number(order.gross_amount ?? 0);
     instituteId = order.institute_id ?? null;
   } else {
     const { data: order } = await admin.data
