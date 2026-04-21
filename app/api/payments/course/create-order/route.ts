@@ -39,10 +39,10 @@ function isInstituteUsable(institute: InstituteRow | null) {
 
   const instituteStatus = normalizeStatus(institute.status);
   const instituteApprovalStatus = normalizeStatus(institute.approval_status);
+  const effectiveStatus = instituteStatus || instituteApprovalStatus;
 
-  if (instituteApprovalStatus && instituteApprovalStatus !== "approved") return false;
-  if (["rejected", "suspended", "blocked", "inactive", "archived"].includes(instituteStatus)) return false;
-  if (instituteStatus && !["approved", "active"].includes(instituteStatus)) return false;
+  if (["rejected", "suspended", "blocked", "inactive", "archived"].includes(effectiveStatus)) return false;
+  if (effectiveStatus && !["approved", "active"].includes(effectiveStatus)) return false;
 
   return true;
 }
@@ -53,12 +53,28 @@ function isCoursePurchasable(course: CourseRow | null) {
 
   const courseStatus = normalizeStatus(course.status);
   const courseApprovalStatus = normalizeStatus(course.approval_status);
+  const effectiveStatus = courseStatus || courseApprovalStatus;
 
-  if (courseApprovalStatus && courseApprovalStatus !== "approved") return false;
-  if (["pending", "rejected", "draft", "archived", "inactive", "cancelled"].includes(courseStatus)) return false;
-  if (courseStatus && !["approved", "active", "live", "published", "listed"].includes(courseStatus)) return false;
+  if (["pending", "rejected", "draft", "archived", "inactive", "cancelled"].includes(effectiveStatus)) return false;
+  if (effectiveStatus && !["approved", "active", "live", "published", "listed"].includes(effectiveStatus)) return false;
 
   return true;
+}
+
+function isAdmissionDeadlinePassed(admissionDeadline: string | null) {
+  if (!admissionDeadline) return false;
+  const normalized = admissionDeadline.trim();
+  if (!normalized) return false;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    const endOfDay = new Date(`${normalized}T23:59:59.999Z`);
+    if (Number.isNaN(endOfDay.getTime())) return false;
+    return endOfDay.getTime() < Date.now();
+  }
+
+  const deadlineAt = new Date(normalized);
+  if (Number.isNaN(deadlineAt.getTime())) return false;
+  return deadlineAt.getTime() < Date.now();
 }
 
 export async function POST(request: Request) {
@@ -100,7 +116,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Course and institute relationship is invalid." }, { status: 400 });
     }
 
-    if (ensuredCourse.admission_deadline && new Date(ensuredCourse.admission_deadline).getTime() < Date.now()) {
+    if (isAdmissionDeadlinePassed(ensuredCourse.admission_deadline)) {
       return NextResponse.json({ error: "Admission deadline has passed for this course." }, { status: 400 });
     }
 
