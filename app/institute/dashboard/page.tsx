@@ -15,6 +15,29 @@ function formatDate(value: string) {
   return parsed.toLocaleString();
 }
 
+type FeaturedPlanSummary = {
+  id: string;
+  label: string;
+  price: number;
+  currency: string;
+  durationDays: number;
+  sortOrder: number;
+};
+
+function parseFeaturedPlanRows(rows: Array<Record<string, unknown>> | null | undefined, fallbackLabel: string) {
+  return (rows ?? [])
+    .map((row) => ({
+      id: String(row.id ?? ""),
+      label: String(row.name ?? row.label ?? row.plan_code ?? row.code ?? fallbackLabel),
+      price: Number(row.price ?? row.amount ?? 0),
+      currency: String(row.currency ?? "INR"),
+      durationDays: Number(row.duration_days ?? 0),
+      sortOrder: Number(row.sort_order ?? row.tier_rank ?? 0),
+    }))
+    .filter((row) => Boolean(row.id))
+    .sort((left, right) => left.sortOrder - right.sortOrder) satisfies FeaturedPlanSummary[];
+}
+
 export default async function InstituteDashboardPage() {
   const { user, profile } = await requireUser("institute");
   const supabase = await createClient();
@@ -48,7 +71,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -103,6 +126,9 @@ export default async function InstituteDashboardPage() {
       .select("id,payment_status,payout_amount,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
+    dataClient.from("featured_listing_plans").select("id,name,label,plan_code,code,price,amount,currency,duration_days,sort_order,tier_rank").eq("is_active", true).order("sort_order", { ascending: true }),
+    dataClient.from("course_featured_plans").select("id,name,plan_code,code,price,amount,currency,duration_days,sort_order,tier_rank").eq("is_active", true).order("sort_order", { ascending: true }),
+    dataClient.from("webinar_featured_plans").select("id,name,plan_code,code,price,amount,currency,duration_days,sort_order,tier_rank").eq("is_active", true).order("sort_order", { ascending: true }),
   ]);
 
   const courses = coursesResult.data ?? [];
@@ -118,6 +144,9 @@ export default async function InstituteDashboardPage() {
     (courseFeaturedSummaryResult.data as Array<{ course_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
   const webinarFeaturedRows =
     (webinarFeaturedSummaryResult.data as Array<{ webinar_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
+  const instituteFeaturedPlans = parseFeaturedPlanRows(instituteFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Institute Featured");
+  const courseFeaturedPlans = parseFeaturedPlanRows(courseFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Course Featured");
+  const webinarFeaturedPlans = parseFeaturedPlanRows(webinarFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Webinar Featured");
 
   const now = Date.now();
   const days30 = 30 * 24 * 60 * 60 * 1000;
@@ -354,6 +383,68 @@ export default async function InstituteDashboardPage() {
           </div>
         </div>
       </div>
+
+      <section className="mt-6 rounded border bg-white p-4">
+        <h2 className="text-base font-semibold">Featured listing plans</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Plan pricing is now available on your dashboard for institute visibility, course featured slots, and webinar promotions.
+        </p>
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-slate-900">Institute feature plan</p>
+              <Link href="/institute/featured" className="text-xs text-brand-700 hover:underline">
+                Manage
+              </Link>
+            </div>
+            <div className="mt-3 space-y-2">
+              {instituteFeaturedPlans.map((plan) => (
+                <div key={plan.id} className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                  <p className="font-medium">{plan.label}</p>
+                  <p className="text-brand-700">{money(plan.price)} · {plan.durationDays} days</p>
+                </div>
+              ))}
+              {instituteFeaturedPlans.length === 0 ? <p className="text-xs text-slate-600">No active institute featured plans.</p> : null}
+            </div>
+          </div>
+
+          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-slate-900">Course featured listing plan</p>
+              <Link href="/institute/courses/featured" className="text-xs text-brand-700 hover:underline">
+                Manage
+              </Link>
+            </div>
+            <div className="mt-3 space-y-2">
+              {courseFeaturedPlans.map((plan) => (
+                <div key={plan.id} className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                  <p className="font-medium">{plan.label}</p>
+                  <p className="text-brand-700">{money(plan.price)} · {plan.durationDays} days</p>
+                </div>
+              ))}
+              {courseFeaturedPlans.length === 0 ? <p className="text-xs text-slate-600">No active course featured plans.</p> : null}
+            </div>
+          </div>
+
+          <div className="rounded border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-slate-900">Webinar featured listing plan</p>
+              <Link href="/institute/webinars/featured" className="text-xs text-brand-700 hover:underline">
+                Manage
+              </Link>
+            </div>
+            <div className="mt-3 space-y-2">
+              {webinarFeaturedPlans.map((plan) => (
+                <div key={plan.id} className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
+                  <p className="font-medium">{plan.label}</p>
+                  <p className="text-brand-700">{money(plan.price)} · {plan.durationDays} days</p>
+                </div>
+              ))}
+              {webinarFeaturedPlans.length === 0 ? <p className="text-xs text-slate-600">No active webinar featured plans.</p> : null}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <div className="rounded border bg-white p-4">
