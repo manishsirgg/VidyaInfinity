@@ -97,6 +97,20 @@ type CourseFeaturedSubscriptionRecord = {
   created_at: string;
 };
 
+function summarizeSubscriptionStates<T extends { status: string }>(items: T[] | null | undefined) {
+  return (items ?? []).reduce(
+    (summary, item) => {
+      const key = item.status?.toLowerCase();
+      if (key === "active") summary.active += 1;
+      else if (key === "scheduled") summary.scheduled += 1;
+      else if (key === "expired") summary.expired += 1;
+      else summary.other += 1;
+      return summary;
+    },
+    { active: 0, scheduled: 0, expired: 0, other: 0 },
+  );
+}
+
 export default async function AdminFeaturedListingsPage() {
   await requireUser("admin");
 
@@ -112,7 +126,7 @@ export default async function AdminFeaturedListingsPage() {
   }
   await expireWebinarFeaturedSubscriptionsSafe(admin.data);
 
-  const [{ data: plans }, { data: orders }, { data: subscriptions }, { data: institutes }, { data: coursePlans }, { data: courseOrders }, { data: courseSubscriptions }, { data: courseRows }, { data: webinarPlans }, { data: webinarOrders }, { data: webinarSubscriptions }, { data: webinarRows }, { data: activeFeaturedWebinars }] = await Promise.all([
+  const [{ data: plans, error: plansError }, { data: orders, error: ordersError }, { data: subscriptions, error: subscriptionsError }, { data: institutes, error: institutesError }, { data: coursePlans, error: coursePlansError }, { data: courseOrders, error: courseOrdersError }, { data: courseSubscriptions, error: courseSubscriptionsError }, { data: courseRows, error: courseRowsError }, { data: webinarPlans, error: webinarPlansError }, { data: webinarOrders, error: webinarOrdersError }, { data: webinarSubscriptions, error: webinarSubscriptionsError }, { data: webinarRows, error: webinarRowsError }, { data: activeFeaturedWebinars, error: activeFeaturedWebinarsError }] = await Promise.all([
     admin.data.from("featured_listing_plans").select("*").order("sort_order", { ascending: true }),
     admin.data.from("featured_listing_orders").select("id,institute_id,plan_id,amount,currency,payment_status,order_status,paid_at,created_at").order("created_at", { ascending: false }).limit(200),
     admin.data.from("institute_featured_subscriptions").select("id,institute_id,plan_code,amount,currency,status,starts_at,ends_at,queued_from_previous,order_id,created_at").order("created_at", { ascending: false }).limit(200),
@@ -138,11 +152,41 @@ export default async function AdminFeaturedListingsPage() {
   const webinarRevenue = paidWebinarOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const courseNameMap = new Map(((courseRows ?? []) as Array<{ id: string; title: string | null }>).map((item) => [item.id, item.title ?? "Course"]));
   const webinarNameMap = new Map(((webinarRows ?? []) as Array<{ id: string; title: string | null }>).map((item) => [item.id, item.title ?? "Webinar"]));
+  const instituteSubscriptionSummary = summarizeSubscriptionStates(subscriptions as FeaturedSubscriptionRecord[] | null | undefined);
+  const courseSubscriptionSummary = summarizeSubscriptionStates(courseSubscriptions as CourseFeaturedSubscriptionRecord[] | null | undefined);
+  const webinarSubscriptionSummary = summarizeSubscriptionStates(webinarSubscriptions as WebinarFeaturedSubscriptionRecord[] | null | undefined);
+  const errors = [
+    plansError,
+    ordersError,
+    subscriptionsError,
+    institutesError,
+    coursePlansError,
+    courseOrdersError,
+    courseSubscriptionsError,
+    courseRowsError,
+    webinarPlansError,
+    webinarOrdersError,
+    webinarSubscriptionsError,
+    webinarRowsError,
+    activeFeaturedWebinarsError,
+  ]
+    .filter(Boolean)
+    .map((error) => error?.message);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Featured Listing Oversight</h1>
-      <p className="mt-1 text-sm text-slate-600">Inspect featured plans, purchases, and subscription windows across institutes.</p>
+      <p className="mt-1 text-sm text-slate-600">Smart oversight dashboard for plans, revenue, and subscription health across institute, course, and webinar listings.</p>
+      {errors.length > 0 ? (
+        <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-medium">Some data blocks could not be loaded fully.</p>
+          <ul className="mt-1 list-disc pl-5">
+            {errors.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded border bg-white p-4 text-sm">
@@ -172,6 +216,18 @@ export default async function AdminFeaturedListingsPage() {
         <div className="rounded border bg-white p-4 text-sm">
           <p className="text-xs uppercase text-slate-500">Active Featured Webinars</p>
           <p className="mt-1 text-2xl font-semibold">{activeFeaturedWebinars?.length ?? 0}</p>
+        </div>
+        <div className="rounded border bg-white p-4 text-sm">
+          <p className="text-xs uppercase text-slate-500">Institute Subscriptions</p>
+          <p className="mt-1 text-sm text-slate-700">Active {instituteSubscriptionSummary.active} · Scheduled {instituteSubscriptionSummary.scheduled} · Expired {instituteSubscriptionSummary.expired}</p>
+        </div>
+        <div className="rounded border bg-white p-4 text-sm">
+          <p className="text-xs uppercase text-slate-500">Course Subscriptions</p>
+          <p className="mt-1 text-sm text-slate-700">Active {courseSubscriptionSummary.active} · Scheduled {courseSubscriptionSummary.scheduled} · Expired {courseSubscriptionSummary.expired}</p>
+        </div>
+        <div className="rounded border bg-white p-4 text-sm">
+          <p className="text-xs uppercase text-slate-500">Webinar Subscriptions</p>
+          <p className="mt-1 text-sm text-slate-700">Active {webinarSubscriptionSummary.active} · Scheduled {webinarSubscriptionSummary.scheduled} · Expired {webinarSubscriptionSummary.expired}</p>
         </div>
       </div>
 
