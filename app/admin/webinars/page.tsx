@@ -26,25 +26,44 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
 
   let query = admin.data
     .from("webinars")
-    .select("id,title,starts_at,ends_at,webinar_mode,price,currency,status,approval_status,rejection_reason,institutes(name)")
-    .order("created_at", { ascending: false });
+    .select("id,title,starts_at,ends_at,webinar_mode,price,currency,status,approval_status,rejection_reason,institutes(name)", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range((pageNumber - 1) * pageSize, pageNumber * pageSize - 1);
 
   if (approval_status && ["pending", "approved", "rejected"].includes(approval_status)) {
     query = query.eq("approval_status", approval_status);
   }
 
-  const { data: webinars } = await query;
-  const totalItems = webinars?.length ?? 0;
-  const paginatedWebinars = (webinars ?? []).slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
+  const { data: webinars, count, error } = await query;
+  if (error) throw new Error(`Unable to load webinars: ${error.message}`);
+  const totalItems = count ?? 0;
+  const paginatedWebinars = webinars ?? [];
+  const paidCount = paginatedWebinars.filter((item) => item.webinar_mode === "paid").length;
+  const freeCount = paginatedWebinars.length - paidCount;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-2xl font-semibold">Admin Webinar Moderation</h1>
+      <p className="mt-1 text-sm text-slate-600">Server-side paginated moderation view with status filters for reliable large-volume review.</p>
       <div className="mt-3 flex flex-wrap gap-2 text-sm">
         <Link href="/admin/webinars" className="rounded border px-3 py-1.5">All</Link>
         <Link href="/admin/webinars?approval_status=pending" className="rounded border px-3 py-1.5">Pending</Link>
         <Link href="/admin/webinars?approval_status=approved" className="rounded border px-3 py-1.5">Approved</Link>
         <Link href="/admin/webinars?approval_status=rejected" className="rounded border px-3 py-1.5">Rejected</Link>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded border bg-white p-3 text-sm">
+          <p className="text-xs uppercase text-slate-500">Total matching webinars</p>
+          <p className="mt-1 text-xl font-semibold">{totalItems}</p>
+        </div>
+        <div className="rounded border bg-white p-3 text-sm">
+          <p className="text-xs uppercase text-slate-500">Paid on this page</p>
+          <p className="mt-1 text-xl font-semibold">{paidCount}</p>
+        </div>
+        <div className="rounded border bg-white p-3 text-sm">
+          <p className="text-xs uppercase text-slate-500">Free on this page</p>
+          <p className="mt-1 text-xl font-semibold">{freeCount}</p>
+        </div>
       </div>
 
       <div className="mt-4 space-y-3">
