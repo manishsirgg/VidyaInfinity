@@ -40,7 +40,7 @@ const requiredColumns: Partial<Record<PaymentTable, string[]>> = {
     "razorpay_payment_id",
   ],
   course_enrollments: ["id", "course_order_id", "student_id", "course_id", "institute_id", "enrollment_status"],
-  platform_commission_settings: ["id", "key", "commission_percentage"],
+  platform_commission_settings: ["id", "key"],
   psychometric_orders: [
     "id",
     "user_id",
@@ -114,6 +114,33 @@ export async function detectPaymentSchemaMismatches(domains?: PaymentSchemaDomai
     const { error } = await admin.data.from(tableName).select("id", { count: "exact", head: true });
     if (error) {
       missing.push(tableName);
+      continue;
+    }
+
+
+    if (tableName === "platform_commission_settings") {
+      const baseColumns = requiredColumns[tableName] ?? [];
+      const commissionColumnVariants = [
+        [...baseColumns, "commission_percent"],
+        [...baseColumns, "commission_percentage"],
+      ];
+
+      let hasCompatibleCommissionColumn = false;
+      for (const columns of commissionColumnVariants) {
+        const { error: variantError } = await admin.data
+          .from(tableName)
+          .select(columns.join(","), { head: true, count: "exact" });
+
+        if (!variantError) {
+          hasCompatibleCommissionColumn = true;
+          break;
+        }
+      }
+
+      if (!hasCompatibleCommissionColumn) {
+        missingColumns.push(`${tableName}:id,key,commission_percent|commission_percentage`);
+      }
+
       continue;
     }
 

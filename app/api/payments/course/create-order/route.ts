@@ -255,15 +255,20 @@ export async function POST(request: Request) {
 
     const { data: commissionRow, error: commissionError } = await admin.data
       .from("platform_commission_settings")
-      .select("commission_percentage")
+      .select("commission_percent,commission_percentage")
       .eq("key", "default")
-      .maybeSingle<{ commission_percentage: number }>();
+      .eq("is_active", true)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ commission_percent: number | null; commission_percentage: number | null }>();
 
     if (commissionError) {
       return NextResponse.json({ error: `Unable to read commission settings: ${commissionError.message}` }, { status: 500 });
     }
 
-    const commissionPercentage = sanitizeCommissionPercentage(commissionRow?.commission_percentage);
+    const commissionPercentage = sanitizeCommissionPercentage(
+      commissionRow?.commission_percent ?? commissionRow?.commission_percentage
+    );
     if (commissionPercentage === null) {
       return NextResponse.json({ error: "Platform commission is not configured." }, { status: 500 });
     }
