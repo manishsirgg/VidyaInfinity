@@ -9,6 +9,8 @@ const PAYMENT_MIGRATION_PATHS = [
   "supabase/migrations/20260420_000016_webinar_commission_singleton.sql",
   "supabase/migrations/20260420_000017_webinar_orders_and_registrations.sql",
   "supabase/migrations/20260420_000018_razorpay_reconciliation_schema_alignment.sql",
+  "supabase/migrations/20260421_000018_notifications_platform_upgrade.sql",
+  "supabase/migrations/20260421_000020_course_payment_schema_parity_patch.sql",
 ];
 
 export async function getPaymentSchemaErrorResponse(domains?: PaymentSchemaDomain[]) {
