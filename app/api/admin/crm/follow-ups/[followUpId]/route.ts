@@ -5,11 +5,21 @@ import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return UUID_REGEX.test(value);
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ followUpId: string }> }) {
   const auth = await requireApiUser("admin");
   if ("error" in auth) return auth.error;
 
   const { followUpId } = await params;
+  if (!isUuid(followUpId)) {
+    return NextResponse.json({ error: "Invalid follow-up id" }, { status: 400 });
+  }
+
   const body = await request.json();
   const status = typeof body.status === "string" ? body.status.trim().toLowerCase() : "";
 
@@ -39,6 +49,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ fo
   const { data, error } = await admin.data.from("crm_follow_ups").update(updatePayload).eq("id", followUpId).select("*").single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const { data: nextPendingFollowUp, error: nextPendingError } = await admin.data
+    .from("crm_follow_ups")
+    .select("due_at")
+    .eq("contact_id", existing.contact_id)
+    .eq("status", "pending")
+    .order("due_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ due_at: string }>();
+
+  if (nextPendingError) return NextResponse.json({ error: nextPendingError.message }, { status: 500 });
+
+  const { error: contactUpdateError } = await admin.data
+    .from("crm_contacts")
+    .update({
+      next_follow_up_at: nextPendingFollowUp?.due_at ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", existing.contact_id);
+
+  if (contactUpdateError) return NextResponse.json({ error: contactUpdateError.message }, { status: 500 });
 
   if (existing.status !== status) {
     await createCrmActivity({

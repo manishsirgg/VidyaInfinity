@@ -95,13 +95,16 @@ export function AdminCrmDashboard() {
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [sort, setSort] = useState("newest");
   const [page, setPage] = useState(1);
+  const [editAssignedTo, setEditAssignedTo] = useState("");
+  const [editNextFollowUpAt, setEditNextFollowUpAt] = useState("");
 
   const sources = useMemo(() => Object.keys(result?.kpis.sourceCounts ?? {}), [result]);
   const serviceTypes = useMemo(() => Object.keys(result?.kpis.serviceTypeCounts ?? {}), [result]);
 
-  async function loadContacts() {
+  async function loadContacts(options?: { page?: number }) {
     setLoading(true);
-    const qs = new URLSearchParams({ page: String(page), pageSize: "20", sort });
+    const effectivePage = options?.page ?? page;
+    const qs = new URLSearchParams({ page: String(effectivePage), pageSize: "20", sort });
     if (search) qs.set("search", search);
     if (stage) qs.set("stage", stage);
     if (priority) qs.set("priority", priority);
@@ -137,7 +140,12 @@ export function AdminCrmDashboard() {
       setDetailLoading(false);
       return;
     }
-    setDetail(body as ContactDetail);
+    const detailBody = body as ContactDetail;
+    setDetail(detailBody);
+    setEditAssignedTo(detailBody.contact.assigned_to ?? "");
+    setEditNextFollowUpAt(
+      detailBody.contact.next_follow_up_at ? new Date(detailBody.contact.next_follow_up_at).toISOString().slice(0, 16) : ""
+    );
     setDetailLoading(false);
   }
 
@@ -149,7 +157,7 @@ export function AdminCrmDashboard() {
   async function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPage(1);
-    await loadContacts();
+    await loadContacts({ page: 1 });
   }
 
   async function openDetail(id: string) {
@@ -384,8 +392,20 @@ export function AdminCrmDashboard() {
                   <select defaultValue={detail.contact.priority ?? ""} onChange={(e) => void patchContact({ priority: e.target.value })} className="rounded border px-2 py-2 text-sm">
                     {priorityOptions.map((item) => <option key={item || "none"} value={item}>{item || "Set priority"}</option>)}
                   </select>
-                  <input defaultValue={detail.contact.assigned_to ?? ""} onBlur={(e) => void patchContact({ assigned_to: e.target.value })} placeholder="Assign admin id" className="rounded border px-2 py-2 text-sm" />
-                  <input type="datetime-local" onBlur={(e) => void patchContact({ next_follow_up_at: e.target.value ? new Date(e.target.value).toISOString() : null })} className="rounded border px-2 py-2 text-sm" />
+                  <input
+                    value={editAssignedTo}
+                    onChange={(e) => setEditAssignedTo(e.target.value)}
+                    onBlur={(e) => void patchContact({ assigned_to: e.target.value })}
+                    placeholder="Assign admin id"
+                    className="rounded border px-2 py-2 text-sm"
+                  />
+                  <input
+                    type="datetime-local"
+                    value={editNextFollowUpAt}
+                    onChange={(e) => setEditNextFollowUpAt(e.target.value)}
+                    onBlur={(e) => void patchContact({ next_follow_up_at: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                    className="rounded border px-2 py-2 text-sm"
+                  />
                 </div>
               </div>
 

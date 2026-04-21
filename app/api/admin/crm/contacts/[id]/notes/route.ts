@@ -5,11 +5,21 @@ import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return UUID_REGEX.test(value);
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "Invalid contact id" }, { status: 400 });
+  }
+
   const body = await request.json();
   const note = typeof body.note === "string" ? body.note.trim() : "";
   const pinned = Boolean(body.is_pinned);
@@ -20,6 +30,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+  const { data: contact, error: contactError } = await admin.data.from("crm_contacts").select("id").eq("id", id).maybeSingle();
+  if (contactError) return NextResponse.json({ error: contactError.message }, { status: 500 });
+  if (!contact) return NextResponse.json({ error: "Contact not found" }, { status: 404 });
 
   const { data, error } = await admin.data
     .from("crm_notes")
