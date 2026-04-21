@@ -27,6 +27,7 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
   let query = admin.data
     .from("webinars")
     .select("id,title,starts_at,ends_at,webinar_mode,price,currency,status,approval_status,rejection_reason,institutes(name)", { count: "exact" })
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false })
     .range((pageNumber - 1) * pageSize, pageNumber * pageSize - 1);
 

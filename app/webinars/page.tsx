@@ -53,6 +53,7 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
     .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,thumbnail_url,banner_url,faculty_name,institutes(name)")
     .eq("approval_status", "approved")
     .eq("is_public", true)
+    .eq("is_deleted", false)
     .in("status", ["scheduled", "live"])
     .or(`ends_at.is.null,ends_at.gt.${nowIso}`);
 

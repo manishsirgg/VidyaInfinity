@@ -19,8 +19,10 @@ export async function GET(request: Request) {
   let query = dataClient
     .from("webinars")
     .select("id,title,starts_at,ends_at,timezone,webinar_mode,price,currency,status,thumbnail_url,institutes(name)")
+    .eq("is_deleted", false)
     .eq("approval_status", "approved")
     .eq("is_public", true)
+    .eq("is_deleted", false)
     .in("status", ["scheduled", "live"])
     .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`);
 

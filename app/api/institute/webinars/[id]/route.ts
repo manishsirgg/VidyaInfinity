@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { normalizeWebinarMode } from "@/lib/webinars/utils";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -23,6 +24,7 @@ type WebinarUpdatePayload = {
   maxAttendees?: number;
   learningPoints?: string;
   status?: "scheduled" | "live" | "completed" | "cancelled";
+  action?: "restore";
 };
 
 function parseIso(value: string | undefined) {
@@ -77,6 +79,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     )
     .eq("id", id)
     .eq("institute_id", instituteId)
+    .eq("is_deleted", false)
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -100,12 +103,49 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: existing } = await dataClient
     .from("webinars")
-    .select("id,approval_status,starts_at,ends_at,meeting_url")
+    .select("id,title,status,is_deleted,approval_status,starts_at,ends_at,meeting_url")
     .eq("id", id)
     .eq("institute_id", instituteId)
-    .maybeSingle<{ id: string; approval_status: string | null; starts_at: string; ends_at: string | null; meeting_url: string | null }>();
+    .maybeSingle<{ id: string; title: string; status: string; is_deleted: boolean; approval_status: string | null; starts_at: string; ends_at: string | null; meeting_url: string | null }>();
 
   if (!existing) return NextResponse.json({ error: "Webinar not found" }, { status: 404 });
+
+  if (payload.action === "restore") {
+    if (!existing.is_deleted) return NextResponse.json({ ok: true, message: "Webinar already active." });
+
+    const { error: restoreError } = await dataClient
+      .from("webinars")
+      .update({
+        is_deleted: false,
+        deleted_at: null,
+        deleted_by: null,
+        delete_reason: null,
+        restored_at: new Date().toISOString(),
+        restored_by: auth.user.id,
+        status: "scheduled",
+        is_public: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("institute_id", instituteId);
+
+    if (restoreError) return NextResponse.json({ error: restoreError.message }, { status: 500 });
+
+    await writeAdminAuditLog({
+      adminUserId: null,
+      actorUserId: auth.user.id,
+      action: "WEBINAR_RESTORED_BY_INSTITUTE",
+      targetTable: "webinars",
+      targetId: id,
+      description: `Webinar ${existing.title} restored by institute.`,
+    });
+
+    return NextResponse.json({ ok: true, message: "Webinar restored." });
+  }
+
+  if (existing.is_deleted) {
+    return NextResponse.json({ error: "Archived webinar cannot be edited until restored." }, { status: 409 });
+  }
 
   const mode = normalizeWebinarMode(payload.webinarMode);
   const price = mode === "paid" ? Number(payload.price ?? 0) : 0;
@@ -161,6 +201,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .update(updateData)
     .eq("id", id)
     .eq("institute_id", instituteId)
+    .eq("is_deleted", false)
     .select("id")
     .single();
 
@@ -168,11 +209,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true, id: data.id });
 }
 
-export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
+  const reason = new URL(request.url).searchParams.get("reason")?.trim() || "Cancelled by institute";
   const instituteId = await getInstituteId(auth.user.id);
   if (!instituteId) return NextResponse.json({ error: "Institute profile not found" }, { status: 404 });
 
@@ -180,12 +222,51 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const supabase = await createClient();
   const dataClient = admin.ok ? admin.data : supabase;
 
+  const { data: existing } = await dataClient
+    .from("webinars")
+    .select("id,title,is_deleted,status")
+    .eq("id", id)
+    .eq("institute_id", instituteId)
+    .maybeSingle<{ id: string; title: string; is_deleted: boolean; status: string }>();
+
+  if (!existing) return NextResponse.json({ error: "Webinar not found" }, { status: 404 });
+  if (existing.is_deleted) return NextResponse.json({ ok: true, message: "Webinar already archived." });
+
+  const [{ count: orderCount }, { count: registrationCount }] = await Promise.all([
+    dataClient.from("webinar_orders").select("id", { count: "exact", head: true }).eq("webinar_id", id).in("payment_status", ["created", "paid", "refunded"]),
+    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("webinar_id", id),
+  ]);
+
   const { error } = await dataClient
     .from("webinars")
-    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .update({
+      status: "cancelled",
+      is_public: false,
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: auth.user.id,
+      delete_reason: reason,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
-    .eq("institute_id", instituteId);
+    .eq("institute_id", instituteId)
+    .eq("is_deleted", false);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true });
+
+  await writeAdminAuditLog({
+    adminUserId: null,
+    actorUserId: auth.user.id,
+    action: "WEBINAR_CANCELLED_BY_INSTITUTE",
+    targetTable: "webinars",
+    targetId: id,
+    description: `Webinar ${existing.title} was cancelled and archived via soft-delete policy.`,
+    oldData: existing,
+    metadata: {
+      reason,
+      dependencyChecks: { orderCount: orderCount ?? 0, registrationCount: registrationCount ?? 0 },
+    },
+  });
+
+  return NextResponse.json({ ok: true, dependencyChecks: { orderCount: orderCount ?? 0, registrationCount: registrationCount ?? 0 } });
 }

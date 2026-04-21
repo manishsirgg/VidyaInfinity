@@ -10,6 +10,7 @@ export default async function Page() {
     supabase
       .from("blogs")
       .select("id,title,slug,excerpt,content,status,published_at,created_at,updated_at,cover_image_url,featured,seo_title,seo_description,canonical_url,metadata")
+      .eq("is_deleted", false)
       .order("created_at", { ascending: false })
       .limit(250),
     supabase.from("blog_categories").select("id,name,slug,is_active").eq("is_active", true).order("name", { ascending: true }),

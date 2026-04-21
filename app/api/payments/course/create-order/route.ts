@@ -29,7 +29,8 @@ export async function POST(request: Request) {
       .from("courses")
       .select("id,institute_id,fees,status,admission_deadline,is_active")
       .eq("id", courseId)
-      .eq("status", "approved")
+       .eq("status", "approved")
+      .eq("is_deleted", false)
       .eq("is_active", true)
       .maybeSingle<{ id: string; institute_id: string; fees: number; status: string; admission_deadline: string | null; is_active: boolean }>();
 

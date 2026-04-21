@@ -26,6 +26,7 @@ export default async function InstituteWebinarsPage() {
       .from("webinars")
       .select("id,title,starts_at,ends_at,webinar_mode,price,currency,approval_status,status")
       .eq("institute_id", institute.id)
+      .eq("is_deleted", false)
       .order("starts_at", { ascending: true }),
     dataClient.from("webinar_registrations").select("id,webinar_id").eq("institute_id", institute.id),
     dataClient.from("webinar_orders").select("id,webinar_id,payment_status,amount,platform_fee_amount,payout_amount").eq("institute_id", institute.id),
