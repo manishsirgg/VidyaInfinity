@@ -90,7 +90,8 @@ const DEFAULT_SEO_TOPICS = [
 ];
 
 function parseKeywordEnv(value: string | undefined, fallback: string[]) {
-  if (!value?.trim()) return fallback;
+  if (value === undefined) return fallback;
+  if (!value.trim()) return [];
   return value
     .split(",")
     .map((part) => part.trim().toLowerCase())
@@ -103,6 +104,9 @@ function hasKeyword(comment: string, keywords: string[]) {
 }
 
 function getAutomationConfig() {
+  const rawPostInterval = Number(process.env.GBP_SEO_POST_INTERVAL_HOURS ?? "72");
+  const postIntervalHours = Number.isFinite(rawPostInterval) ? rawPostInterval : 72;
+
   return {
     negativeKeywords: parseKeywordEnv(process.env.GBP_NEGATIVE_KEYWORDS, DEFAULT_NEGATIVE_KEYWORDS),
     positiveKeywords: parseKeywordEnv(process.env.GBP_POSITIVE_KEYWORDS, DEFAULT_POSITIVE_KEYWORDS),
@@ -111,7 +115,7 @@ function getAutomationConfig() {
     replyEnabled: process.env.GBP_AUTO_REPLY_ENABLED === "true",
     hideNegativeEnabled: process.env.GBP_HIDE_NEGATIVE_ON_WEBSITE === "true",
     seoPostEnabled: process.env.GBP_SEO_POST_ENABLED === "true",
-    postIntervalHours: Number(process.env.GBP_SEO_POST_INTERVAL_HOURS ?? "72"),
+    postIntervalHours,
   };
 }
 
@@ -208,26 +212,47 @@ export async function dispatchGoogleAutomationActions(actions: GoogleAutomationA
     };
   }
 
-  const response = await fetch(webhook, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.GBP_AUTOMATION_WEBHOOK_TOKEN ?? ""}`,
-    },
-    body: JSON.stringify({ actions }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
 
-  if (!response.ok) {
-    const body = await response.text();
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    const token = process.env.GBP_AUTOMATION_WEBHOOK_TOKEN?.trim();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(webhook, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ actions }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      return {
+        ok: false as const,
+        error: body.slice(0, 300) || "Webhook responded with non-success status",
+        sent: 0,
+      };
+    }
+
+    return {
+      ok: true as const,
+      sent: actions.length,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown webhook dispatch error";
     return {
       ok: false as const,
-      error: body.slice(0, 300),
+      error: message,
       sent: 0,
     };
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return {
-    ok: true as const,
-    sent: actions.length,
-  };
 }

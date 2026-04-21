@@ -12,6 +12,41 @@ type AutomationRequest = {
   runSeoPost?: boolean;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseAutomationRequest(value: unknown): AutomationRequest {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const reviews = Array.isArray(value.reviews)
+    ? value.reviews.flatMap((review): GoogleReviewInput[] => {
+        if (!isRecord(review)) return [];
+
+        const reviewId = typeof review.reviewId === "string" ? review.reviewId.trim() : "";
+        const comment = typeof review.comment === "string" ? review.comment.trim() : "";
+        if (!reviewId || !comment) return [];
+
+        return [
+          {
+            reviewId,
+            comment,
+            reviewerName: typeof review.reviewerName === "string" ? review.reviewerName : undefined,
+            rating: typeof review.rating === "number" ? review.rating : undefined,
+            createdAt: typeof review.createdAt === "string" ? review.createdAt : undefined,
+          },
+        ];
+      })
+    : undefined;
+
+  return {
+    reviews,
+    runSeoPost: value.runSeoPost === true,
+  };
+}
+
 function isAuthorized(request: Request) {
   const secret = process.env.GBP_AUTOMATION_SECRET;
   if (!secret) return false;
@@ -25,7 +60,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = (await request.json()) as AutomationRequest;
+  let body: AutomationRequest = {};
+  try {
+    const parsedBody = (await request.json()) as unknown;
+    body = parseAutomationRequest(parsedBody);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   const reviewActions = (body.reviews ?? []).flatMap((review) => buildActionsForReview(review));
   const seoAction = body.runSeoPost ? buildScheduledSeoAction() : null;
