@@ -147,7 +147,7 @@ export async function POST(request: Request) {
       (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase();
 
     if (payloadMismatch) {
-      await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id).in("payment_status", ["created", "failed"]);
+      await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id).neq("payment_status", "paid");
       const redirectTo = buildCoursePaymentRedirect({ state: "failed", orderId, paymentId, reason: "amount_or_order_mismatch" });
       return NextResponse.json({ ok: false, state: "failed", redirectTo, error: "Payment validation failed." }, { status: 400 });
     }

@@ -56,13 +56,15 @@ export async function reconcileCourseOrderPaid({
         paid_at: now,
       })
       .eq("id", order.id)
-      .in("payment_status", ["created", "failed"]);
+      .neq("payment_status", "paid");
 
     if (updateError) return { error: updateError.message };
   }
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
+      order_type: "course",
+      order_id: order.id,
       order_kind: "course_enrollment",
       course_order_id: order.id,
       user_id: order.student_id,
@@ -74,6 +76,8 @@ export async function reconcileCourseOrderPaid({
       payment_status: "paid",
       amount: order.gross_amount,
       currency: order.currency,
+      status: "captured",
+      payload: { source, ...(gatewayResponse ?? {}) },
       verified: true,
       verified_at: now,
       gateway_response: { source, ...(gatewayResponse ?? {}) },
@@ -98,6 +102,8 @@ export async function reconcileCourseOrderPaid({
   if (!existingEnrollment) {
     const { error: enrollError } = await supabase.from("course_enrollments").upsert(
       {
+        order_id: order.id,
+        user_id: order.student_id,
         course_order_id: order.id,
         student_id: order.student_id,
         course_id: order.course_id,
@@ -232,6 +238,8 @@ export async function reconcilePsychometricOrderPaid({
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
+      order_type: "psychometric",
+      order_id: order.id,
       order_kind: "psychometric",
       psychometric_order_id: order.id,
       user_id: order.user_id,
@@ -242,6 +250,8 @@ export async function reconcilePsychometricOrderPaid({
       payment_status: "paid",
       amount: order.final_paid_amount,
       currency: order.currency,
+      status: "captured",
+      payload: { source },
       verified: true,
       verified_at: new Date().toISOString(),
       gateway_response: { source },
@@ -381,6 +391,8 @@ export async function reconcileWebinarOrderPaid({
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
+      order_type: "course",
+      order_id: order.id,
       order_kind: "webinar",
       webinar_order_id: order.id,
       user_id: order.student_id,
@@ -392,6 +404,8 @@ export async function reconcileWebinarOrderPaid({
       payment_status: "paid",
       amount: commission.grossAmount,
       currency: webinar.currency || order.currency || "INR",
+      status: "captured",
+      payload: { source, paymentEventType: paymentEventType ?? null },
       verified: true,
       verified_at: now,
       gateway_response: { source, paymentEventType: paymentEventType ?? null },

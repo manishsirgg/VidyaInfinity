@@ -7,6 +7,8 @@ import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed", "enrolled"] as const;
+
 type StatusRow = {
   id: string;
   student_id: string;
@@ -72,19 +74,55 @@ export async function GET(request: Request) {
     .from("course_enrollments")
     .select("id,enrollment_status")
     .eq("course_order_id", order.id)
-    .in("enrollment_status", ["pending", "active", "suspended", "completed"])
+    .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
     .maybeSingle<{ id: string; enrollment_status: string }>();
 
   let resolvedEnrollment = enrollment;
   let resolvedOrder = { ...order };
 
-  const shouldTryPassiveReconciliation =
-    !resolvedEnrollment && String(resolvedOrder.payment_status ?? "").toLowerCase() !== "paid" && Boolean(paymentId);
+  const normalizedOrderStatus = String(resolvedOrder.payment_status ?? "").trim().toLowerCase();
+  const hasPaidMarker = normalizedOrderStatus === "paid" || Boolean(resolvedOrder.paid_at);
+  const shouldTryPassiveReconciliation = !resolvedEnrollment && Boolean(paymentId);
 
   if (shouldTryPassiveReconciliation && paymentId) {
     const razorpay = getRazorpayClient();
 
-    if (razorpay.ok) {
+    if (hasPaidMarker) {
+      const reconciled = await reconcileCourseOrderPaid({
+        supabase: admin.data,
+        order: {
+          id: resolvedOrder.id,
+          student_id: resolvedOrder.student_id,
+          course_id: resolvedOrder.course_id,
+          institute_id: resolvedOrder.institute_id,
+          gross_amount: resolvedOrder.gross_amount,
+          institute_receivable_amount: resolvedOrder.institute_receivable_amount,
+          currency: resolvedOrder.currency,
+          payment_status: normalizedOrderStatus || "created",
+        },
+        razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? "",
+        razorpayPaymentId: paymentId,
+        source: "verify_api",
+        gatewayResponse: { source: "status_poll_paid_marker" },
+      });
+
+      if (!reconciled.error) {
+        const { data: refreshedEnrollment } = await admin.data
+          .from("course_enrollments")
+          .select("id,enrollment_status")
+          .eq("course_order_id", resolvedOrder.id)
+          .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
+          .maybeSingle<{ id: string; enrollment_status: string }>();
+
+        resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;
+        resolvedOrder = {
+          ...resolvedOrder,
+          payment_status: "paid",
+          razorpay_payment_id: paymentId,
+          paid_at: resolvedOrder.paid_at ?? new Date().toISOString(),
+        };
+      }
+    } else if (razorpay.ok) {
       try {
         const payment = (await razorpay.data.payments.fetch(paymentId)) as {
           id?: string;
@@ -127,7 +165,7 @@ export async function GET(request: Request) {
               .from("course_enrollments")
               .select("id,enrollment_status")
               .eq("course_order_id", resolvedOrder.id)
-              .in("enrollment_status", ["pending", "active", "suspended", "completed"])
+              .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
               .maybeSingle<{ id: string; enrollment_status: string }>();
 
             resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;

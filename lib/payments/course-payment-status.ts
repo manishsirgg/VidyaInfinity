@@ -3,7 +3,7 @@ export type CoursePollingState = "pending" | "paid" | "failed" | "enrolled";
 
 export function normalizePaymentStatus(status: string | null | undefined): "created" | "paid" | "failed" {
   const normalized = String(status ?? "").trim().toLowerCase();
-  if (normalized === "paid") return "paid";
+  if (["paid", "captured", "success", "confirmed"].includes(normalized)) return "paid";
   if (normalized === "failed") return "failed";
   return "created";
 }
