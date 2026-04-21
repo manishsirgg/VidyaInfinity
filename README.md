@@ -57,6 +57,22 @@ npm install
 npm run dev
 ```
 
+### Supabase database connection (direct)
+
+If you need a direct Postgres connection string for SQL tools/migrations, use:
+
+```bash
+postgresql://postgres:[YOUR-PASSWORD]@db.mxanxkpjtgmllfobygjb.supabase.co:5432/postgres
+```
+
+> Note: this host is not IPv4 compatible in some networks. If your environment is IPv4-only, use Supabase Session Pooler (or purchase the IPv4 add-on in Supabase).
+
+### Optional: install Supabase Agent Skills
+
+```bash
+npx skills add supabase/agent-skills
+```
+
 ## Security Notes
 
 - Payment verification is server-side using Razorpay signature HMAC verification.
