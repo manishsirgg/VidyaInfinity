@@ -7,9 +7,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 type PollState = "pending" | "paid" | "failed" | "enrolled";
 
 type StatusResponse = {
-  ok: boolean;
-  state: PollState;
+  ok?: boolean;
+  state?: PollState;
   redirectTo?: string;
+  error?: string;
   order?: {
     courseTitle?: string | null;
   };
@@ -44,6 +45,8 @@ export function PendingPaymentClient({
     return `/api/payments/course/status?${params.toString()}`;
   }, [orderId, razorpayOrderId, paymentId]);
 
+  const hasAnyIdentifier = Boolean(orderId || razorpayOrderId || paymentId);
+
   const clearPollTimer = useCallback(() => {
     if (pollingRef.current !== null) {
       window.clearTimeout(pollingRef.current);
@@ -74,19 +77,36 @@ export function PendingPaymentClient({
       return;
     }
 
+    if (!hasAnyIdentifier) {
+      setStatus("error");
+      setMessage("Missing order/payment reference. Please retry checkout from the course page.");
+      clearPollTimer();
+      return;
+    }
+
     try {
       const response = await fetch(statusUrl, { method: "GET", cache: "no-store" });
       const body = (await response.json().catch(() => null)) as StatusResponse | null;
 
       if (!response.ok || !body?.ok) {
+        if (response.status === 400 || response.status === 404) {
+          setStatus("error");
+          setMessage(body?.error ?? "Order reference was not found. Please retry checkout.");
+          clearPollTimer();
+          return;
+        }
+
         setStatus("waiting");
         setMessage("Unable to confirm status right now. Retrying automatically…");
       } else if (body.state === "pending") {
         setStatus("waiting");
         setMessage("Checking payment status… please keep this page open for UPI/QR settlement confirmation.");
-      } else {
+      } else if (body.state === "paid" || body.state === "enrolled" || body.state === "failed") {
         handleResolved(body.state, body.redirectTo);
         return;
+      } else {
+        setStatus("waiting");
+        setMessage("Payment confirmation is still in progress. Retrying automatically…");
       }
     } catch {
       setStatus("waiting");
@@ -97,7 +117,7 @@ export function PendingPaymentClient({
     pollingRef.current = window.setTimeout(() => {
       pollOnce().catch(() => undefined);
     }, POLL_INTERVAL_MS);
-  }, [clearPollTimer, handleResolved, statusUrl]);
+  }, [clearPollTimer, handleResolved, hasAnyIdentifier, statusUrl]);
 
   useEffect(() => {
     pollOnce().catch(() => undefined);

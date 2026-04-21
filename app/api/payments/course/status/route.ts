@@ -3,13 +3,17 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { buildCoursePaymentRedirect, resolveCoursePollingState } from "@/lib/payments/course-payment-status";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
+import { getRazorpayClient } from "@/lib/payments/razorpay";
+import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type StatusRow = {
   id: string;
   student_id: string;
   course_id: string;
+  institute_id: string;
   gross_amount: number;
+  institute_receivable_amount: number;
   currency: string;
   payment_status: string | null;
   razorpay_order_id: string | null;
@@ -42,11 +46,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "order_id or payment_id is required" }, { status: 400 });
   }
 
-  console.info("[course/status] status poll", { studentId: auth.user.id, orderId, paymentId });
-
   let query = admin.data
     .from("course_orders")
-    .select("id,student_id,course_id,gross_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id,paid_at,courses(title)")
+    .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id,paid_at,courses(title)")
     .eq("student_id", auth.user.id)
     .limit(1);
 
@@ -59,12 +61,6 @@ export async function GET(request: Request) {
   const { data: order, error: orderError } = await query.maybeSingle<StatusRow>();
 
   if (orderError) {
-    console.error("[course/status] order lookup failed", {
-      studentId: auth.user.id,
-      orderId,
-      paymentId,
-      error: orderError.message,
-    });
     return NextResponse.json({ error: "Unable to fetch payment status." }, { status: 500 });
   }
 
@@ -79,38 +75,105 @@ export async function GET(request: Request) {
     .in("enrollment_status", ["pending", "active", "suspended", "completed"])
     .maybeSingle<{ id: string; enrollment_status: string }>();
 
-  const normalized = resolveCoursePollingState({ paymentStatus: order.payment_status, enrolled: Boolean(enrollment) });
-  const redirectState = normalized === "pending" ? "pending" : normalized === "failed" ? "failed" : "success";
+  let resolvedEnrollment = enrollment;
+  let resolvedOrder = { ...order };
 
-  console.info("[course/status] status resolved", {
-    orderId: order.razorpay_order_id,
-    paymentId: order.razorpay_payment_id,
-    state: normalized,
+  const shouldTryPassiveReconciliation =
+    !resolvedEnrollment && String(resolvedOrder.payment_status ?? "").toLowerCase() !== "paid" && Boolean(paymentId);
+
+  if (shouldTryPassiveReconciliation && paymentId) {
+    const razorpay = getRazorpayClient();
+
+    if (razorpay.ok) {
+      try {
+        const payment = (await razorpay.data.payments.fetch(paymentId)) as {
+          id?: string;
+          order_id?: string;
+          status?: string;
+          amount?: number;
+          currency?: string;
+          method?: string;
+        };
+
+        const expectedAmountInPaise = Math.round(Number(resolvedOrder.gross_amount ?? 0) * 100);
+        const paymentCaptured = String(payment.status ?? "").toLowerCase() === "captured";
+        const paymentMatchesOrder =
+          payment.id === paymentId &&
+          payment.order_id === (resolvedOrder.razorpay_order_id ?? orderId) &&
+          Number(payment.amount ?? 0) === expectedAmountInPaise &&
+          String(payment.currency ?? "").toUpperCase() === String(resolvedOrder.currency ?? "").toUpperCase();
+
+        if (paymentCaptured && paymentMatchesOrder) {
+          const reconciled = await reconcileCourseOrderPaid({
+            supabase: admin.data,
+            order: {
+              id: resolvedOrder.id,
+              student_id: resolvedOrder.student_id,
+              course_id: resolvedOrder.course_id,
+              institute_id: resolvedOrder.institute_id,
+              gross_amount: resolvedOrder.gross_amount,
+              institute_receivable_amount: resolvedOrder.institute_receivable_amount,
+              currency: resolvedOrder.currency,
+              payment_status: resolvedOrder.payment_status ?? "created",
+            },
+            razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? payment.order_id ?? "",
+            razorpayPaymentId: paymentId,
+            source: "verify_api",
+            gatewayResponse: { source: "status_poll", method: payment.method ?? null },
+          });
+
+          if (!reconciled.error) {
+            const { data: refreshedEnrollment } = await admin.data
+              .from("course_enrollments")
+              .select("id,enrollment_status")
+              .eq("course_order_id", resolvedOrder.id)
+              .in("enrollment_status", ["pending", "active", "suspended", "completed"])
+              .maybeSingle<{ id: string; enrollment_status: string }>();
+
+            resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;
+            resolvedOrder = {
+              ...resolvedOrder,
+              payment_status: "paid",
+              razorpay_payment_id: paymentId,
+              paid_at: new Date().toISOString(),
+            };
+          }
+        }
+      } catch {
+        // Keep pending state and let polling continue.
+      }
+    }
+  }
+
+  const normalized = resolveCoursePollingState({
+    paymentStatus: resolvedOrder.payment_status,
+    enrolled: Boolean(resolvedEnrollment),
   });
+  const redirectState = normalized === "pending" ? "pending" : normalized === "failed" ? "failed" : "success";
 
   return NextResponse.json({
     ok: true,
     state: normalized,
     redirectTo: buildCoursePaymentRedirect({
       state: redirectState,
-      orderId: order.razorpay_order_id ?? orderId,
-      paymentId: order.razorpay_payment_id,
+      orderId: resolvedOrder.razorpay_order_id ?? orderId,
+      paymentId: resolvedOrder.razorpay_payment_id,
     }),
     order: {
-      id: order.id,
-      courseId: order.course_id,
-      courseTitle: extractCourseTitle(order),
-      amount: order.gross_amount,
-      currency: order.currency,
-      paymentStatus: order.payment_status,
-      razorpayOrderId: order.razorpay_order_id,
-      razorpayPaymentId: order.razorpay_payment_id,
-      paidAt: order.paid_at,
+      id: resolvedOrder.id,
+      courseId: resolvedOrder.course_id,
+      courseTitle: extractCourseTitle(resolvedOrder),
+      amount: resolvedOrder.gross_amount,
+      currency: resolvedOrder.currency,
+      paymentStatus: resolvedOrder.payment_status,
+      razorpayOrderId: resolvedOrder.razorpay_order_id,
+      razorpayPaymentId: resolvedOrder.razorpay_payment_id,
+      paidAt: resolvedOrder.paid_at,
     },
-    enrollment: enrollment
+    enrollment: resolvedEnrollment
       ? {
-          id: enrollment.id,
-          status: enrollment.enrollment_status,
+          id: resolvedEnrollment.id,
+          status: resolvedEnrollment.enrollment_status,
         }
       : null,
   });
