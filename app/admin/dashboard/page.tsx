@@ -102,81 +102,81 @@ export default async function AdminDashboardPage() {
     .slice(0, 5);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
-      <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <Link href="/admin/users" className="rounded border bg-white p-4 transition hover:border-brand-300">Profiles: {users ?? 0}</Link>
-        <Link href="/admin/institutes" className="rounded border bg-white p-4 transition hover:border-brand-300">Institutes: {institutes ?? 0}</Link>
-        <Link href="/admin/users" className="rounded border bg-white p-4">
+    <div className="vi-page">
+      <h1 className="vi-page-title">Admin Dashboard</h1>
+      <div className="mt-6 grid gap-4 md:grid-cols-3 xl:grid-cols-4">
+        <Link href="/admin/users" className="vi-card vi-card-hover p-4">Profiles: {users ?? 0}</Link>
+        <Link href="/admin/institutes" className="vi-card vi-card-hover p-4">Institutes: {institutes ?? 0}</Link>
+        <Link href="/admin/users" className="vi-card p-4">
           Pending user approvals: {pendingUsers ?? 0}
         </Link>
-        <Link href="/admin/institutes" className="rounded border bg-white p-4">
+        <Link href="/admin/institutes" className="vi-card p-4">
           Pending institute approvals: {pendingInstitutes ?? 0}
         </Link>
-        <Link href="/admin/courses" className="rounded border bg-white p-4">
+        <Link href="/admin/courses" className="vi-card p-4">
           Pending course approvals: {pendingCourses ?? 0}
         </Link>
-        <Link href="/admin/transactions" className="rounded border bg-white p-4 transition hover:border-brand-300">Course orders: {orders ?? 0}</Link>
-        <Link href="/admin/refunds" className="rounded border bg-white p-4">
+        <Link href="/admin/transactions" className="vi-card vi-card-hover p-4">Course orders: {orders ?? 0}</Link>
+        <Link href="/admin/refunds" className="vi-card p-4">
           Pending refunds: {refunds ?? 0}
         </Link>
-        <Link href="/admin/blogs" className="rounded border bg-white p-4">
+        <Link href="/admin/blogs" className="vi-card p-4">
           Blogs: {blogs ?? 0}
         </Link>
-        <Link href="/admin/coupons" className="rounded border bg-white p-4">
+        <Link href="/admin/coupons" className="vi-card p-4">
           Active coupons: {coupons ?? 0}
         </Link>
-        <Link href="/admin/crm" className="rounded border bg-white p-4">
+        <Link href="/admin/crm" className="vi-card p-4">
           CRM leads: {leads ?? 0}
         </Link>
-        <Link href="/admin/psychometric-tests" className="rounded border bg-white p-4">
+        <Link href="/admin/psychometric-tests" className="vi-card p-4">
           Active tests: {tests ?? 0}
         </Link>
-        <Link href="/admin/notifications" className="rounded border bg-white p-4">
+        <Link href="/admin/notifications" className="vi-card p-4">
           Unread notifications: {(unreadNotifications ?? 0) + (pendingCourses ?? 0)}
         </Link>
-        <Link href="/admin/webinars" className="rounded border bg-white p-4">
+        <Link href="/admin/webinars" className="vi-card p-4">
           Webinar events: {webinarCount ?? 0}
         </Link>
-        <Link href="/admin/webinars" className="rounded border bg-white p-4">
+        <Link href="/admin/webinars" className="vi-card p-4">
           Pending webinar approvals: {webinarPendingCount ?? 0}
         </Link>
-        <Link href="/admin/webinars" className="rounded border bg-white p-4">
+        <Link href="/admin/webinars" className="vi-card p-4">
           Webinar registrations: {webinarRegistrationCount ?? 0}
         </Link>
-        <Link href="/admin/webinars" className="rounded border bg-white p-4">
+        <Link href="/admin/webinars" className="vi-card p-4">
           Webinar orders: {webinarOrderCount ?? 0}
         </Link>
-        <Link href="/admin/featured-listings" className="rounded border bg-white p-4">
+        <Link href="/admin/featured-listings" className="vi-card p-4">
           Institute featured listings: {instituteFeaturedSubscriptionsCount ?? 0}
         </Link>
-        <Link href="/admin/featured-listings" className="rounded border bg-white p-4">
+        <Link href="/admin/featured-listings" className="vi-card p-4">
           Course featured listings: {courseFeaturedSubscriptionsCount ?? 0}
         </Link>
-        <Link href="/admin/featured-listings" className="rounded border bg-white p-4">
+        <Link href="/admin/featured-listings" className="vi-card p-4">
           Webinar featured promotions: {webinarFeaturedSubscriptionsCount ?? 0}
         </Link>
       </div>
 
       <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {adminModules.map((module) => (
-          <Link key={module.href} href={module.href} className="rounded border bg-white px-4 py-3 text-sm font-medium text-slate-700">
+          <Link key={module.href} href={module.href} className="vi-card vi-card-hover px-4 py-3 text-sm font-medium text-slate-700">
             Open {module.label}
           </Link>
         ))}
       </div>
 
-      <section className="mt-8 rounded border bg-white p-4">
+      <section className="mt-8 vi-card p-4 sm:p-5">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-base font-semibold">Recent Notifications</h2>
           <Link href="/admin/notifications" className="text-sm text-brand-700">
             View all notifications
           </Link>
         </div>
-        <div className="mt-3 space-y-2 text-sm">
+        <div className="mt-3 space-y-2.5 text-sm">
           {recentNotificationFeed.length === 0 ? <p className="text-slate-600">No notifications yet.</p> : null}
           {recentNotificationFeed.map((item) => (
-            <div key={item.id} className="rounded border px-3 py-2">
+            <div key={item.id} className="rounded-lg border border-slate-200 px-3 py-2.5">
               <p className="font-medium">{item.title}</p>
               <p className="text-slate-700">{item.message}</p>
               <p className="text-xs text-slate-500">

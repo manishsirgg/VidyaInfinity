@@ -42,7 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {`window.OneSignalDeferred = window.OneSignalDeferred || []; OneSignalDeferred.push(async function(OneSignal) { await OneSignal.init({ appId: "${siteConfig.onesignal.appId}", safari_web_id: "${siteConfig.onesignal.safariWebId}", notifyButton: { enable: true, position: "bottom-left" } }); });`}
         </Script>
         <SiteHeader />
-        <main className="min-h-[calc(100vh-200px)]">{children}</main>
+        <main className="min-h-[calc(100vh-200px)] pb-8">{children}</main>
         <SiteFooter />
         <WhatsAppFloat />
       </body>

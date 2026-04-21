@@ -165,8 +165,8 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-3 px-4 py-2">
+    <header className="sticky top-0 z-40 border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur">
+      <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
         <Link href="/" className="flex items-center" onClick={() => setMenuOpen(false)}>
           <Image
             src="/logo.svg"
@@ -180,7 +180,7 @@ export function SiteHeader() {
 
         <nav className="hidden items-center gap-6 text-sm md:flex">
           {links.map((link) => (
-            <Link key={link.href} href={link.href} className="text-slate-600 transition hover:text-brand-600">
+            <Link key={link.href} href={link.href} className="rounded-md px-1 py-1 text-slate-600 transition hover:text-brand-600">
               {link.label}
             </Link>
           ))}
@@ -209,12 +209,12 @@ export function SiteHeader() {
                 onChange={(event) => setQuery(event.target.value)}
                 onFocus={() => setSearchOpen(searchResults.length > 0)}
                 placeholder="Search courses, institutes, tests, blogs"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+                className="vi-input py-2 text-sm"
                 aria-label="Global search"
               />
             </form>
             {searchOpen && (
-              <div className="absolute left-0 right-0 top-11 z-50 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+              <div className="absolute left-0 right-0 top-11 z-50 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
                 {searchLoading ? (
                   <p className="px-2 py-2 text-xs text-slate-500">Searching...</p>
                 ) : searchResults.length > 0 ? (
@@ -223,7 +223,7 @@ export function SiteHeader() {
                       <li key={`${item.kind}-${item.id}`}>
                         <Link
                           href={item.href as Route}
-                          className="block rounded-md px-2 py-2 text-sm hover:bg-slate-100"
+                          className="block rounded-md px-2 py-2 text-sm transition hover:bg-slate-100"
                           onClick={() => {
                             setSearchOpen(false);
                             setQuery("");
@@ -249,7 +249,7 @@ export function SiteHeader() {
               <button
                 type="button"
                 onClick={() => setAccountOpen((open) => !open)}
-                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-300 bg-slate-100"
+                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-300 bg-slate-100 shadow-sm transition hover:border-brand-200"
                 aria-haspopup="menu"
                 aria-expanded={accountOpen}
                 aria-label="Open account menu"
@@ -263,7 +263,7 @@ export function SiteHeader() {
               </button>
 
               {accountOpen ? (
-                <div className="absolute right-0 top-12 z-50 w-56 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                <div className="absolute right-0 top-12 z-50 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
                   <p className="px-2 pb-2 text-xs text-slate-500">{authUser.fullName}</p>
                   <Link
                     href={profilePath}
@@ -321,10 +321,10 @@ export function SiteHeader() {
             </div>
           ) : (
             <>
-              <Link href="/auth/login" className="text-slate-700 hover:text-brand-700">
+              <Link href="/auth/login" className="text-slate-700 transition hover:text-brand-700">
                 Login
               </Link>
-              <Link href="/auth/register" className="rounded-md bg-brand-600 px-3 py-2 text-white">
+              <Link href="/auth/register" className="vi-btn-primary px-3 py-2">
                 Apply Now
               </Link>
             </>
@@ -334,7 +334,7 @@ export function SiteHeader() {
         <button
           type="button"
           onClick={() => setMenuOpen((value) => !value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 md:hidden"
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm md:hidden"
           aria-expanded={menuOpen}
           aria-label="Toggle navigation"
         >
@@ -349,7 +349,7 @@ export function SiteHeader() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search everything"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className="vi-input py-2 text-sm"
               aria-label="Global search"
             />
           </form>
@@ -438,18 +438,18 @@ export function SiteHeader() {
               </button>
             </div>
           ) : (
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+            <div className="mt-3 grid grid-cols-2 gap-2.5 text-sm">
               <Link
                 href="/auth/login"
                 onClick={() => setMenuOpen(false)}
-                className="rounded-md border border-slate-300 px-3 py-2 text-center text-slate-700"
+                className="vi-btn-secondary px-3 py-2 text-center"
               >
                 Login
               </Link>
               <Link
                 href="/auth/register"
                 onClick={() => setMenuOpen(false)}
-                className="rounded-md bg-brand-600 px-3 py-2 text-center text-white"
+                className="vi-btn-primary px-3 py-2 text-center"
               >
                 Apply Now
               </Link>
