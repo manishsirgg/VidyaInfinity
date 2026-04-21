@@ -20,10 +20,16 @@ export function PsychometricPurchaseCard({ testId, testTitle, price }: { testId:
     setMessage("");
     setIsError(false);
 
+    const normalizedCouponCode = couponCode.trim().toUpperCase();
+    const requestBody: { testId: string; couponCode?: string } = { testId };
+    if (normalizedCouponCode) {
+      requestBody.couponCode = normalizedCouponCode;
+    }
+
     const createRes = await fetch("/api/payments/test/create-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ testId, couponCode: couponCode.trim() || null }),
+      body: JSON.stringify(requestBody),
     });
     const createBody = await createRes.json().catch(() => null);
 
@@ -91,7 +97,8 @@ export function PsychometricPurchaseCard({ testId, testTitle, price }: { testId:
         <input
           value={couponCode}
           onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
-          placeholder="PSYCH20"
+          placeholder="Enter coupon code"
+          autoComplete="off"
           className="mt-1 w-full rounded border px-3 py-2 text-sm"
         />
       </div>

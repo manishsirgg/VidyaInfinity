@@ -59,10 +59,16 @@ export function CoursePurchaseCard({
     setMessage("");
 
     try {
+      const normalizedCouponCode = couponCode.trim().toUpperCase();
+      const requestBody: { courseId: string; couponCode?: string } = { courseId };
+      if (normalizedCouponCode) {
+        requestBody.couponCode = normalizedCouponCode;
+      }
+
       const createOrderResponse = await fetch("/api/payments/course/create-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseId, couponCode: couponCode.trim() || null }),
+        body: JSON.stringify(requestBody),
       });
 
       const createOrderBody = await createOrderResponse.json().catch(() => null);
@@ -202,7 +208,8 @@ export function CoursePurchaseCard({
         <input
           value={couponCode}
           onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
-          placeholder="COURSE20"
+          placeholder="Enter coupon code"
+          autoComplete="off"
           className="mt-1 w-full rounded border px-3 py-2 text-sm"
         />
       </div>
