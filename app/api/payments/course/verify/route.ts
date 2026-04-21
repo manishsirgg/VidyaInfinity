@@ -33,6 +33,8 @@ export async function POST(request: Request) {
       signature?: string;
     };
 
+    console.info("[course/verify] entry", { order_id: orderId ?? null, razorpay_order_id: orderId ?? null, payment_id: paymentId ?? null });
+
     if (!orderId || !paymentId || !signature) {
       return NextResponse.json({ error: "orderId, paymentId, signature are required" }, { status: 400 });
     }
@@ -143,6 +145,13 @@ export async function POST(request: Request) {
         paymentId: order.razorpay_payment_id ?? paymentId,
       });
 
+      console.info("[course/verify] exit", {
+        order_id: orderId,
+        razorpay_order_id: orderId,
+        payment_id: order.razorpay_payment_id ?? paymentId,
+        course_order_id: order.id,
+        final_decision: state,
+      });
       return NextResponse.json({ ok: true, idempotent: true, state, redirectTo, orderId, paymentId: order.razorpay_payment_id ?? paymentId });
     }
 
@@ -217,7 +226,14 @@ export async function POST(request: Request) {
     await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", order.course_id);
 
     const redirectTo = buildCoursePaymentRedirect({ state: "success", orderId, paymentId });
-    console.info("[course/verify] payment verified", { orderId, paymentId, orderRecordId: order.id, studentId });
+    console.info("[course/verify] exit", {
+      order_id: orderId,
+      razorpay_order_id: orderId,
+      payment_id: paymentId,
+      course_order_id: order.id,
+      final_decision: "success",
+      studentId,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -229,6 +245,7 @@ export async function POST(request: Request) {
       message: "Payment verified and enrollment confirmed.",
     });
   } catch (error) {
+    console.error("[course/verify] unhandled exception", { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to verify course payment." },
       { status: 500 }

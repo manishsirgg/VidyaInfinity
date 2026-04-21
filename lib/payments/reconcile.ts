@@ -85,7 +85,25 @@ export async function reconcileCourseOrderPaid({
     { onConflict: "razorpay_payment_id" }
   );
 
-  if (txnError) return { error: txnError.message };
+  if (txnError) {
+    console.error("[payments/reconcile] transaction upsert failed", {
+      orderId: order.id,
+      course_order_id: order.id,
+      razorpayOrderId,
+      razorpayPaymentId,
+      error: txnError.message,
+      source,
+    });
+    return { error: txnError.message };
+  }
+
+  console.info("[payments/reconcile] transaction upsert success", {
+    orderId: order.id,
+    course_order_id: order.id,
+    razorpayOrderId,
+    razorpayPaymentId,
+    source,
+  });
 
   if (existingEnrollment) {
     const { error: updateEnrollmentError } = await supabase
@@ -96,7 +114,27 @@ export async function reconcileCourseOrderPaid({
         metadata: { source, reconciled: true },
       })
       .eq("id", existingEnrollment.id);
-    if (updateEnrollmentError) return { error: updateEnrollmentError.message };
+    if (updateEnrollmentError) {
+      console.error("[payments/reconcile] enrollment update failed", {
+        orderId: order.id,
+        course_order_id: order.id,
+        razorpayOrderId,
+        razorpayPaymentId,
+        enrollmentId: existingEnrollment.id,
+        error: updateEnrollmentError.message,
+        source,
+      });
+      return { error: updateEnrollmentError.message };
+    }
+
+    console.info("[payments/reconcile] enrollment update success", {
+      orderId: order.id,
+      course_order_id: order.id,
+      razorpayOrderId,
+      razorpayPaymentId,
+      enrollmentId: existingEnrollment.id,
+      source,
+    });
   }
 
   if (!existingEnrollment) {
@@ -116,7 +154,25 @@ export async function reconcileCourseOrderPaid({
       { onConflict: "course_order_id" }
     );
 
-    if (enrollError) return { error: enrollError.message };
+    if (enrollError) {
+      console.error("[payments/reconcile] enrollment upsert failed", {
+        orderId: order.id,
+        course_order_id: order.id,
+        razorpayOrderId,
+        razorpayPaymentId,
+        error: enrollError.message,
+        source,
+      });
+      return { error: enrollError.message };
+    }
+
+    console.info("[payments/reconcile] enrollment upsert success", {
+      orderId: order.id,
+      course_order_id: order.id,
+      razorpayOrderId,
+      razorpayPaymentId,
+      source,
+    });
   }
 
   const { data: existingPayout } = await supabase
@@ -184,7 +240,15 @@ export async function reconcileCourseOrderPaid({
     });
   }
 
-  console.info("[payments/reconcile] reconcileCourseOrderPaid:completed", { orderId: order.id, razorpayPaymentId, source });
+  console.info("[payments/reconcile] reconcileCourseOrderPaid:completed", {
+    orderId: order.id,
+    course_order_id: order.id,
+    razorpayOrderId,
+    razorpayPaymentId,
+    payment_id: razorpayPaymentId,
+    final_decision: "paid_reconciled",
+    source,
+  });
 
   await writeAdminAuditLog({
     adminUserId: adminUserId ?? null,
@@ -289,7 +353,14 @@ export async function reconcilePsychometricOrderPaid({
     metadata: { orderId: order.id, paymentId: razorpayPaymentId, source },
   }).catch(() => undefined);
 
-  console.info("[payments/reconcile] reconcileCourseOrderPaid:completed", { orderId: order.id, razorpayPaymentId, source });
+  console.info("[payments/reconcile] reconcilePsychometricOrderPaid:completed", {
+    orderId: order.id,
+    razorpayOrderId,
+    razorpayPaymentId,
+    payment_id: razorpayPaymentId,
+    final_decision: "paid_reconciled",
+    source,
+  });
 
   await writeAdminAuditLog({
     adminUserId: adminUserId ?? null,
@@ -479,7 +550,14 @@ export async function reconcileWebinarOrderPaid({
     mode: "paid",
   }).catch(() => undefined);
 
-  console.info("[payments/reconcile] reconcileCourseOrderPaid:completed", { orderId: order.id, razorpayPaymentId, source });
+  console.info("[payments/reconcile] reconcileWebinarOrderPaid:completed", {
+    orderId: order.id,
+    razorpayOrderId,
+    razorpayPaymentId,
+    payment_id: razorpayPaymentId,
+    final_decision: "paid_reconciled",
+    source,
+  });
 
   await writeAdminAuditLog({
     adminUserId: adminUserId ?? null,

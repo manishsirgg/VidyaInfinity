@@ -69,6 +69,16 @@ export default async function Page() {
       .order("paid_at", { ascending: false, nullsFirst: false }),
   ]);
 
+
+  if (courseResult.error || testResult.error || webinarResult.error) {
+    console.error("[student/purchases] order fetch failed", {
+      user_id: user.id,
+      courseError: courseResult.error?.message ?? null,
+      psychometricError: testResult.error?.message ?? null,
+      webinarError: webinarResult.error?.message ?? null,
+    });
+  }
+
   const courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
   const webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
@@ -80,6 +90,10 @@ export default async function Page() {
       .in("enrollment_status", ["pending", "active", "suspended", "completed", "enrolled"]),
   ]);
 
+  if (enrollmentResult.error) {
+    console.error("[student/purchases] enrollment fetch failed", { user_id: user.id, error: enrollmentResult.error.message });
+  }
+
   const enrolledOrderIds = new Set(
     ((enrollmentResult.data ?? []) as EnrollmentRow[])
       .map((row) => row.course_order_id)
@@ -90,11 +104,20 @@ export default async function Page() {
     return isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id && order.razorpay_signature);
   });
 
+  console.info("[student/purchases] normalized course decisions", {
+    user_id: user.id,
+    totalCourseOrders: courseOrders.length,
+    confirmedCourseOrders: confirmedCourseOrders.length,
+  });
+
   const courseIds = Array.from(new Set(confirmedCourseOrders.map((order) => order.course_id).filter(Boolean)));
   const courseTitles = new Map<string, string>();
 
   if (courseIds.length > 0) {
-    const { data: courses } = await supabase.from("courses").select("id,title").in("id", courseIds);
+    const { data: courses, error: coursesError } = await supabase.from("courses").select("id,title").in("id", courseIds);
+    if (coursesError) {
+      console.error("[student/purchases] course title fetch failed", { user_id: user.id, error: coursesError.message });
+    }
     for (const course of courses ?? []) {
       courseTitles.set(course.id, course.title ?? course.id);
     }
@@ -104,10 +127,14 @@ export default async function Page() {
   const webinarTitles = new Map<string, string>();
 
   if (webinarIds.length > 0) {
-    const { data: webinars } = await supabase
+    const { data: webinars, error: webinarsError } = await supabase
       .from("webinars")
       .select("id,title")
       .in("id", webinarIds);
+
+    if (webinarsError) {
+      console.error("[student/purchases] webinar title fetch failed", { user_id: user.id, error: webinarsError.message });
+    }
 
     for (const webinar of webinars ?? []) {
       webinarTitles.set(webinar.id, webinar.title ?? webinar.id);
