@@ -36,19 +36,23 @@ export function WebinarActionCard({
 }: WebinarActionCardProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [isError, setIsError] = useState(false);
   const [couponCode, setCouponCode] = useState("");
 
   async function registerFree() {
     setLoading(true);
     setMessage("");
+    setIsError(false);
     const response = await fetch(`/api/webinars/${webinarId}/register`, { method: "POST" });
     const body = await response.json().catch(() => null);
     setLoading(false);
 
     if (!response.ok) {
+      setIsError(true);
       setMessage(body?.error ?? "Unable to enroll in webinar");
       return;
     }
+    setIsError(false);
     setMessage("Enrollment successful.");
     window.location.reload();
   }
@@ -56,6 +60,7 @@ export function WebinarActionCard({
   async function payNow() {
     setLoading(true);
     setMessage("");
+    setIsError(false);
     const createRes = await fetch("/api/payments/webinar/create-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -65,12 +70,14 @@ export function WebinarActionCard({
 
     if (!createRes.ok || !createBody?.order?.id) {
       setLoading(false);
+      setIsError(true);
       setMessage(createBody?.error ?? "Unable to create order");
       return;
     }
 
     if (!window.Razorpay) {
       setLoading(false);
+      setIsError(true);
       setMessage("Razorpay SDK not loaded");
       return;
     }
@@ -93,9 +100,11 @@ export function WebinarActionCard({
         const verifyBody = await verifyRes.json().catch(() => null);
         setLoading(false);
         if (!verifyRes.ok) {
+          setIsError(true);
           setMessage(verifyBody?.error ?? "Payment verification failed");
           return;
         }
+        setIsError(false);
         setMessage("Payment successful. Enrollment confirmed.");
         window.location.reload();
       },
@@ -142,7 +151,7 @@ export function WebinarActionCard({
       )}
 
       {!enrollmentOpen ? <p className="mt-2 text-xs text-slate-600">Enrollment is closed for this webinar.</p> : null}
-      {message ? <p className="mt-2 text-xs text-slate-600">{message}</p> : null}
+      {message ? <p className={`mt-2 text-xs ${isError ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
     </div>
   );
 }

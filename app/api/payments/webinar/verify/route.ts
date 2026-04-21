@@ -7,7 +7,7 @@ import { reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
-  const schemaErrorResponse = await getPaymentSchemaErrorResponse();
+  const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "webinar"]);
   if (schemaErrorResponse) return schemaErrorResponse;
 
   const auth = await requireApiUser("student", { requireApproved: false });
@@ -25,6 +25,16 @@ export async function POST(request: Request) {
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  const { data: duplicateTransaction } = await admin.data
+    .from("razorpay_transactions")
+    .select("id")
+    .eq("razorpay_payment_id", paymentId)
+    .maybeSingle();
+
+  if (duplicateTransaction) {
+    return NextResponse.json({ ok: true, idempotent: true, duplicate: true });
+  }
 
   const { data: order } = await admin.data
     .from("webinar_orders")

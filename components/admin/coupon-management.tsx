@@ -141,7 +141,7 @@ export function CouponManagement({ initialCoupons }: { initialCoupons: CouponIte
           .map((coupon) => (
           <div key={coupon.id} className="rounded border bg-white p-3 text-sm">
             <p className="font-medium">
-              {coupon.code} · {coupon.applies_to ?? "psychometric (legacy)"} · {coupon.discount_percent}% · {coupon.active ? "Active" : "Inactive"}
+              {coupon.code} · {coupon.applies_to ?? "unscoped"} · {coupon.discount_percent}% · {coupon.active ? "Active" : "Inactive"}
             </p>
             <p className="text-xs text-slate-500">
               Created: {coupon.created_at ? new Date(coupon.created_at).toLocaleString() : "-"} · Expires: {coupon.expiry_date ? new Date(coupon.expiry_date).toLocaleDateString() : "Never"}
