@@ -511,27 +511,6 @@ export default async function HomePage() {
       </section>
 
       <section className="mt-14 rounded-xl border bg-white p-5 sm:p-8">
-        <h2 className="text-xl font-semibold">For institutes: webinars + featured visibility</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Institutes can run free or paid live webinars, and subscribe to featured placement plans for stronger visibility and more leads.
-        </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-sm">
-          {[
-            { plan: "Weekly", price: "₹99" },
-            { plan: "Monthly", price: "₹299" },
-            { plan: "3 Months", price: "₹999" },
-            { plan: "6 Months", price: "₹1,999" },
-            { plan: "Yearly", price: "₹3,999" },
-          ].map((item) => (
-            <article key={item.plan} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <p className="font-medium">{item.plan}</p>
-              <p className="text-brand-700">{item.price}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-14 rounded-xl border bg-white p-5 sm:p-8">
         <h2 className="text-xl font-semibold">Subscribe to updates</h2>
         <p className="mt-2 text-sm text-slate-600">Newsletter is Mailchimp-ready via server route integration.</p>
         <div className="mt-5 max-w-md">
