@@ -1,19 +1,30 @@
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-const paymentTables = [
-  "entity_commissions",
-  "webinar_commission_settings",
-  "course_orders",
-  "webinar_orders",
-  "webinar_registrations",
-  "psychometric_orders",
-  "razorpay_transactions",
-  "course_enrollments",
-  "institute_payouts",
-  "razorpay_webhook_logs",
-] as const;
+type PaymentTable =
+  | "coupons"
+  | "entity_commissions"
+  | "webinar_commission_settings"
+  | "course_orders"
+  | "webinar_orders"
+  | "webinar_registrations"
+  | "psychometric_orders"
+  | "razorpay_transactions"
+  | "course_enrollments"
+  | "institute_payouts"
+  | "razorpay_webhook_logs";
 
-const requiredColumns: Partial<Record<(typeof paymentTables)[number], string[]>> = {
+export type PaymentSchemaDomain = "common" | "course" | "webinar" | "psychometric" | "webhook";
+
+const domainTables: Record<PaymentSchemaDomain, PaymentTable[]> = {
+  common: ["coupons", "razorpay_transactions"],
+  course: ["course_orders", "course_enrollments", "institute_payouts", "entity_commissions"],
+  webinar: ["webinar_orders", "webinar_registrations", "webinar_commission_settings", "institute_payouts"],
+  psychometric: ["psychometric_orders"],
+  webhook: ["razorpay_webhook_logs"],
+};
+
+const requiredColumns: Partial<Record<PaymentTable, string[]>> = {
+  coupons: ["id", "code", "discount_percent", "active", "expiry_date", "applies_to"],
   webinar_orders: [
     "id",
     "webinar_id",
@@ -54,12 +65,15 @@ const requiredColumns: Partial<Record<(typeof paymentTables)[number], string[]>>
   institute_payouts: ["id", "webinar_order_id", "gross_amount", "platform_fee_amount", "payout_amount", "payout_source"],
 };
 
-export async function detectPaymentSchemaMismatches() {
+export async function detectPaymentSchemaMismatches(domains?: PaymentSchemaDomain[]) {
   const admin = getSupabaseAdmin();
+  const activeDomains = domains?.length ? domains : (["common", "course", "webinar", "psychometric", "webhook"] as PaymentSchemaDomain[]);
+  const tablesToCheck = [...new Set(activeDomains.flatMap((domain) => domainTables[domain]))];
+
   if (!admin.ok) {
     return {
       envError: admin.error,
-      missing: paymentTables.map((table) => table as string),
+      missing: tablesToCheck.map((table) => table as string),
       missingColumns: [] as string[],
     };
   }
@@ -67,7 +81,7 @@ export async function detectPaymentSchemaMismatches() {
   const missing: string[] = [];
   const missingColumns: string[] = [];
 
-  for (const tableName of paymentTables) {
+  for (const tableName of tablesToCheck) {
     const { error } = await admin.data.from(tableName).select("id", { count: "exact", head: true });
     if (error) {
       missing.push(tableName);

@@ -24,7 +24,7 @@ export function isCouponExpired(expiryDate: string | null | undefined) {
 }
 
 export function isCouponApplicable(couponAppliesTo: string | null | undefined, checkoutScope: CouponScope) {
-  if (!couponAppliesTo) return checkoutScope === "psychometric";
+  if (!couponAppliesTo) return false;
   return couponAppliesTo === checkoutScope;
 }
 
@@ -35,4 +35,22 @@ export function validateCouponForScope(coupon: CouponRow | null, scope: CouponSc
   if (isCouponExpired(coupon.expiry_date)) return { ok: false as const, reason: "Coupon has expired" };
   if (!coupon.discount_percent || coupon.discount_percent <= 0) return { ok: false as const, reason: "Coupon discount is invalid" };
   return { ok: true as const };
+}
+
+export function getCouponErrorMessage(reason: string) {
+  switch (reason) {
+    case "Coupon not found":
+      return "Invalid coupon code for this purchase.";
+    case "Coupon has expired":
+      return "This coupon has expired.";
+    case "Coupon is inactive":
+      return "This coupon is currently inactive.";
+    case "Coupon discount is invalid":
+      return "This coupon is not configured correctly. Please contact support.";
+    default:
+      if (reason.startsWith("Coupon is not valid for")) {
+        return "This coupon is not valid for this item.";
+      }
+      return reason;
+  }
 }

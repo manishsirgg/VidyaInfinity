@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { normalizeCouponCode, validateCouponForScope } from "@/lib/coupons";
+import { getCouponErrorMessage, normalizeCouponCode, validateCouponForScope } from "@/lib/coupons";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   try {
-    const schemaErrorResponse = await getPaymentSchemaErrorResponse();
+    const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "psychometric"]);
     if (schemaErrorResponse) return schemaErrorResponse;
 
     const auth = await requireApiUser("student");
@@ -37,14 +37,17 @@ export async function POST(request: Request) {
         .from("coupons")
         .select("code,discount_percent,active,expiry_date,applies_to")
         .eq("code", normalizedCouponCode)
-        .or("applies_to.eq.psychometric,applies_to.is.null")
+        .eq("applies_to", "psychometric")
         .maybeSingle();
 
       const couponCheck = validateCouponForScope(coupon, "psychometric");
-      if (!couponCheck.ok || !coupon) return NextResponse.json({ error: couponCheck.reason }, { status: 400 });
+      if (!couponCheck.ok || !coupon) {
+        const reason = couponCheck.ok ? "Coupon not found" : couponCheck.reason;
+        return NextResponse.json({ error: getCouponErrorMessage(reason) }, { status: 400 });
+      }
 
-      discountAmount = (finalAmount * Number(coupon.discount_percent)) / 100;
-      finalAmount = Math.max(0, finalAmount - discountAmount);
+      discountAmount = Number(((finalAmount * Number(coupon.discount_percent)) / 100).toFixed(2));
+      finalAmount = Math.max(0, Number((finalAmount - discountAmount).toFixed(2)));
     }
 
     const razorpay = getRazorpayClient();

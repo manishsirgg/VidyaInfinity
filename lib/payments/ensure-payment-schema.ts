@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { detectPaymentSchemaMismatches } from "@/lib/supabase/schema-guard";
+import { detectPaymentSchemaMismatches, type PaymentSchemaDomain } from "@/lib/supabase/schema-guard";
 
 const PAYMENT_MIGRATION_PATHS = [
   "supabase/migrations/20260417_000002_schema_alignment_for_orders_and_transactions.sql",
@@ -11,8 +11,8 @@ const PAYMENT_MIGRATION_PATHS = [
   "supabase/migrations/20260420_000018_razorpay_reconciliation_schema_alignment.sql",
 ];
 
-export async function getPaymentSchemaErrorResponse() {
-  const result = await detectPaymentSchemaMismatches();
+export async function getPaymentSchemaErrorResponse(domains?: PaymentSchemaDomain[]) {
+  const result = await detectPaymentSchemaMismatches(domains);
 
   if (result.envError) {
     return NextResponse.json({ error: result.envError }, { status: 500 });

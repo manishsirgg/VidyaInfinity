@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
-import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
+import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   try {
-    const schemaErrorResponse = await getPaymentSchemaErrorResponse();
+    const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "course"]);
     if (schemaErrorResponse) return schemaErrorResponse;
 
     const auth = await requireApiUser("student", { requireApproved: false });
@@ -54,6 +54,36 @@ export async function POST(request: Request) {
     if (!signatureResult.valid) {
       await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id);
       return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+    }
+
+    const razorpay = getRazorpayClient();
+    if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
+
+    type RazorpayPayment = {
+      id?: string;
+      order_id?: string;
+      status?: string;
+      amount?: number;
+      currency?: string;
+    };
+
+    let payment: RazorpayPayment;
+    try {
+      payment = (await razorpay.data.payments.fetch(paymentId)) as RazorpayPayment;
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to validate payment" }, { status: 502 });
+    }
+
+    const expectedAmountInPaise = Math.round(Number(order.gross_amount) * 100);
+    if (
+      payment.id !== paymentId ||
+      payment.order_id !== orderId ||
+      payment.status !== "captured" ||
+      Number(payment.amount ?? 0) !== expectedAmountInPaise ||
+      (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase()
+    ) {
+      await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id).in("payment_status", ["created", "failed"]);
+      return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
     }
 
     const reconciled = await reconcileCourseOrderPaid({

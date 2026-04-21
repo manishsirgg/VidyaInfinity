@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { normalizeOrganizationType } from "@/lib/constants/organization-types";
-import { normalizeCouponCode, validateCouponForScope } from "@/lib/coupons";
+import { getCouponErrorMessage, normalizeCouponCode, validateCouponForScope } from "@/lib/coupons";
 import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
@@ -10,7 +10,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   try {
-    const schemaErrorResponse = await getPaymentSchemaErrorResponse();
+    const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "course"]);
     if (schemaErrorResponse) return schemaErrorResponse;
 
     const auth = await requireApiUser("student", { requireApproved: false });
@@ -94,10 +94,11 @@ export async function POST(request: Request) {
 
       const couponCheck = validateCouponForScope(coupon, "course");
       if (!couponCheck.ok || !coupon) {
-        return NextResponse.json({ error: couponCheck.reason }, { status: 400 });
+        const reason = couponCheck.ok ? "Coupon not found" : couponCheck.reason;
+        return NextResponse.json({ error: getCouponErrorMessage(reason) }, { status: 400 });
       }
 
-      discountAmount = Math.max(0, (grossAmount * Number(coupon.discount_percent)) / 100);
+      discountAmount = Math.max(0, Number(((grossAmount * Number(coupon.discount_percent)) / 100).toFixed(2)));
       appliedCouponCode = coupon.code;
     }
 
