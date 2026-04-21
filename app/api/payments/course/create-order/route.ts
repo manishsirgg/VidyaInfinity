@@ -13,8 +13,8 @@ type CourseRow = {
   title: string | null;
   institute_id: string;
   fees: number | null;
+  batch_size: number | null;
   status: string | null;
-  approval_status: string | null;
   admission_deadline: string | null;
   is_active: boolean | null;
   is_deleted: boolean | null;
@@ -28,10 +28,11 @@ type StudentProfileRow = {
 type InstituteRow = {
   id: string;
   status: string | null;
-  approval_status: string | null;
   is_active: boolean | null;
   is_deleted: boolean | null;
 };
+
+const ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE = ["pending", "active", "suspended", "completed"] as const;
 
 function normalizeStatus(value: string | null | undefined) {
   return String(value ?? "")
@@ -44,8 +45,7 @@ function isInstituteUsable(institute: InstituteRow | null) {
   if (institute.is_active === false) return false;
 
   const instituteStatus = normalizeStatus(institute.status);
-  const instituteApprovalStatus = normalizeStatus(institute.approval_status);
-  const effectiveStatus = instituteStatus || instituteApprovalStatus;
+  const effectiveStatus = instituteStatus;
 
   if (["rejected", "suspended", "blocked", "inactive", "archived"].includes(effectiveStatus)) return false;
   if (effectiveStatus && !["approved", "active"].includes(effectiveStatus)) return false;
@@ -122,11 +122,20 @@ export async function POST(request: Request) {
 
     const studentId = studentProfile.id;
 
-    const { data: course } = await admin.data
+    const { data: course, error: courseError } = await admin.data
       .from("courses")
-      .select("id,title,institute_id,fees,status,approval_status,admission_deadline,is_active,is_deleted")
+      .select("id,title,institute_id,fees,batch_size,status,admission_deadline,is_active,is_deleted")
       .eq("id", courseId)
       .maybeSingle<CourseRow>();
+
+    if (courseError) {
+      console.error("[course/create-order] course lookup failed", {
+        courseId,
+        studentId,
+        error: courseError.message,
+      });
+      return NextResponse.json({ error: "Unable to validate course eligibility right now." }, { status: 500 });
+    }
 
     if (!course) {
       console.warn("[course/create-order] course not found", { courseId, studentId });
@@ -142,14 +151,12 @@ export async function POST(request: Request) {
     }
 
     const courseStatus = normalizeStatus(course.status);
-    const courseApprovalStatus = normalizeStatus(course.approval_status);
-    const effectiveCourseStatus = courseStatus || courseApprovalStatus;
+    const effectiveCourseStatus = courseStatus;
     if (["pending", "rejected", "draft", "archived", "inactive", "cancelled"].includes(effectiveCourseStatus)) {
       console.warn("[course/create-order] course not approved", {
         courseId: course.id,
         studentId,
         status: course.status,
-        approvalStatus: course.approval_status,
       });
       return NextResponse.json({ error: "This course is not approved for enrollment yet." }, { status: 400 });
     }
@@ -158,7 +165,6 @@ export async function POST(request: Request) {
         courseId: course.id,
         studentId,
         status: course.status,
-        approvalStatus: course.approval_status,
       });
       return NextResponse.json({ error: "This course is not approved for enrollment yet." }, { status: 400 });
     }
@@ -167,7 +173,7 @@ export async function POST(request: Request) {
 
     const { data: institute } = await admin.data
       .from("institutes")
-      .select("id,status,approval_status,is_active,is_deleted")
+      .select("id,status,is_active,is_deleted")
       .eq("id", ensuredCourse.institute_id)
       .maybeSingle<InstituteRow>();
 
@@ -185,7 +191,6 @@ export async function POST(request: Request) {
         instituteId: institute.id,
         studentId,
         status: institute.status,
-        approvalStatus: institute.approval_status,
         isActive: institute.is_active,
         isDeleted: institute.is_deleted,
       });
@@ -206,13 +211,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Admission deadline has passed for this course." }, { status: 400 });
     }
 
-    const { data: existingEnrollment } = await admin.data
+    const { count: activeEnrollmentCount, error: activeEnrollmentCountError } = await admin.data
+      .from("course_enrollments")
+      .select("id", { count: "exact", head: true })
+      .eq("course_id", ensuredCourse.id)
+      .in("enrollment_status", [...ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE]);
+
+    if (activeEnrollmentCountError) {
+      console.error("[course/create-order] enrollment seat count failed", {
+        courseId: ensuredCourse.id,
+        studentId,
+        error: activeEnrollmentCountError.message,
+      });
+      return NextResponse.json({ error: "Unable to validate seat availability right now." }, { status: 500 });
+    }
+
+    const capacity = ensuredCourse.batch_size ?? null;
+    if (capacity !== null && capacity >= 0 && (activeEnrollmentCount ?? 0) >= capacity) {
+      console.warn("[course/create-order] course batch is full", {
+        courseId: ensuredCourse.id,
+        studentId,
+        batchSize: capacity,
+        filledSeats: activeEnrollmentCount ?? 0,
+      });
+      return NextResponse.json({ error: "This course batch is full and not accepting new enrollments." }, { status: 400 });
+    }
+
+    const { data: existingEnrollment, error: existingEnrollmentError } = await admin.data
       .from("course_enrollments")
       .select("id")
       .eq("student_id", studentId)
       .eq("course_id", ensuredCourse.id)
-      .eq("enrollment_status", "enrolled")
+      .in("enrollment_status", [...ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE])
       .maybeSingle();
+
+    if (existingEnrollmentError) {
+      console.error("[course/create-order] existing enrollment lookup failed", {
+        courseId: ensuredCourse.id,
+        studentId,
+        error: existingEnrollmentError.message,
+      });
+      return NextResponse.json({ error: "Unable to validate enrollment status right now." }, { status: 500 });
+    }
 
     if (existingEnrollment) {
       console.warn("[course/create-order] already enrolled", {

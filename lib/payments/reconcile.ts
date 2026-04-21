@@ -5,6 +5,8 @@ import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
+
 export async function reconcileCourseOrderPaid({
   supabase,
   order,
@@ -40,7 +42,7 @@ export async function reconcileCourseOrderPaid({
     .select("id")
     .eq("student_id", order.student_id)
     .eq("course_id", order.course_id)
-    .eq("enrollment_status", "enrolled")
+    .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
     .maybeSingle();
 
   if (order.payment_status !== "paid") {
@@ -99,7 +101,7 @@ export async function reconcileCourseOrderPaid({
         student_id: order.student_id,
         course_id: order.course_id,
         institute_id: order.institute_id,
-        enrollment_status: "enrolled",
+        enrollment_status: "active",
         enrolled_at: now,
         access_start_at: now,
         metadata: { source },

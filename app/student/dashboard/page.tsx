@@ -51,6 +51,8 @@ type WebinarRegistrationItem = {
   webinars: { title: string; starts_at: string; status: string } | { title: string; starts_at: string; status: string }[] | null;
 };
 
+const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
+
 function formatDate(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
@@ -105,7 +107,7 @@ export default async function StudentDashboardPage() {
       .from("course_enrollments")
       .select("id", { count: "exact", head: true })
       .eq("student_id", user.id)
-      .eq("enrollment_status", "enrolled"),
+      .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES]),
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("email", profile.email),
     supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
     supabase
