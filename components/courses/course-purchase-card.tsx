@@ -14,10 +14,14 @@ export function CoursePurchaseCard({
   courseId,
   courseTitle,
   feeAmount,
+  enrollmentOpen = true,
+  enrollmentBlockedMessage = "This institute is not currently accepting enrollments.",
 }: {
   courseId: string;
   courseTitle: string;
   feeAmount: number;
+  enrollmentOpen?: boolean;
+  enrollmentBlockedMessage?: string;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -55,6 +59,12 @@ export function CoursePurchaseCard({
   }, [courseId]);
 
   async function enrollNow() {
+    if (!enrollmentOpen) {
+      setState("error");
+      setMessage(enrollmentBlockedMessage);
+      return;
+    }
+
     setState("loading");
     setMessage("");
 
@@ -151,6 +161,12 @@ export function CoursePurchaseCard({
   }
 
   async function toggleCart() {
+    if (!enrollmentOpen) {
+      setState("error");
+      setMessage(enrollmentBlockedMessage);
+      return;
+    }
+
     setCartBusy(true);
     setMessage("");
 
@@ -216,7 +232,7 @@ export function CoursePurchaseCard({
       <button
         type="button"
         onClick={enrollNow}
-        disabled={state === "loading"}
+        disabled={state === "loading" || !enrollmentOpen}
         className="mt-3 w-full rounded bg-brand-600 px-3 py-2 text-sm text-white disabled:opacity-60"
       >
         {state === "loading" ? "Processing..." : "Pay & Enroll"}
@@ -226,7 +242,7 @@ export function CoursePurchaseCard({
         <button
           type="button"
           onClick={toggleCart}
-          disabled={cartBusy}
+          disabled={cartBusy || !enrollmentOpen}
           className="rounded border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 disabled:opacity-60"
         >
           {cartBusy ? "Updating..." : inCart ? "Remove from Cart" : "Add to Cart"}
@@ -248,6 +264,7 @@ export function CoursePurchaseCard({
       </div>
 
       {message ? <p className={`mt-2 text-xs ${state === "error" ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
+      {!enrollmentOpen && !message ? <p className="mt-2 text-xs text-rose-700">{enrollmentBlockedMessage}</p> : null}
     </div>
   );
 }
