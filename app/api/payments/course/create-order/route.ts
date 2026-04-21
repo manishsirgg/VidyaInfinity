@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getCouponErrorMessage, normalizeCouponCode, validateCouponForScope } from "@/lib/coupons";
 import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
+import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -69,6 +70,9 @@ function isAdmissionDeadlinePassed(admissionDeadline: string | null) {
 }
 
 export async function POST(request: Request) {
+  const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "course"]);
+  if (schemaErrorResponse) return schemaErrorResponse;
+
   try {
     const auth = await requireApiUser("student", { requireApproved: false });
     if ("error" in auth) return auth.error;
