@@ -8,7 +8,9 @@ type CoursePurchase = {
   payment_status: string | null;
   paid_at: string | null;
   course_id: string;
-  courses: { title: string | null } | { title: string | null }[] | null;
+  created_at: string | null;
+  razorpay_payment_id: string | null;
+  razorpay_signature: string | null;
 };
 
 type PsychometricPurchase = {
@@ -29,12 +31,13 @@ type WebinarPurchase = {
   order_status: string | null;
 };
 
-const SUCCESS_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"];
+const SUCCESS_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"] as const;
+const SUCCESS_PAYMENT_STATUSES_SET = new Set<string>(SUCCESS_PAYMENT_STATUSES);
 
-function extractCourseTitle(order: CoursePurchase) {
-  if (!order.courses) return order.course_id;
-  if (Array.isArray(order.courses)) return order.courses[0]?.title ?? order.course_id;
-  return order.courses.title ?? order.course_id;
+function isConfirmedPayment(status: string | null | undefined, paidAt?: string | null) {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (SUCCESS_PAYMENT_STATUSES_SET.has(normalized)) return true;
+  return Boolean(paidAt);
 }
 
 export default async function Page() {
@@ -44,23 +47,22 @@ export default async function Page() {
   const [courseResult, testResult, webinarResult] = await Promise.all([
     supabase
       .from("course_orders")
-      .select("id,gross_amount,payment_status,paid_at,course_id,courses(title)")
+      .select("id,gross_amount,payment_status,paid_at,created_at,course_id,razorpay_payment_id,razorpay_signature")
       .eq("student_id", user.id)
-      .in("payment_status", SUCCESS_PAYMENT_STATUSES)
       .order("paid_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false }),
     supabase
       .from("psychometric_orders")
       .select("id,final_paid_amount,payment_status,paid_at,test_id")
       .eq("user_id", user.id)
-      .in("payment_status", SUCCESS_PAYMENT_STATUSES)
+      .in("payment_status", [...SUCCESS_PAYMENT_STATUSES])
       .order("paid_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false }),
     supabase
       .from("webinar_orders")
       .select("id,webinar_id,amount,currency,payment_status,paid_at,order_status")
       .eq("student_id", user.id)
-      .in("payment_status", SUCCESS_PAYMENT_STATUSES)
+      .in("payment_status", [...SUCCESS_PAYMENT_STATUSES])
       .in("order_status", ["confirmed", "paid", "success"])
       .order("paid_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false }),
@@ -69,6 +71,19 @@ export default async function Page() {
   const courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
   const webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
+  const confirmedCourseOrders = courseOrders.filter((order) =>
+    isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id && order.razorpay_signature)
+  );
+
+  const courseIds = Array.from(new Set(confirmedCourseOrders.map((order) => order.course_id).filter(Boolean)));
+  const courseTitles = new Map<string, string>();
+
+  if (courseIds.length > 0) {
+    const { data: courses } = await supabase.from("courses").select("id,title").in("id", courseIds);
+    for (const course of courses ?? []) {
+      courseTitles.set(course.id, course.title ?? course.id);
+    }
+  }
 
   const webinarIds = Array.from(new Set(webinarOrders.map((order) => order.webinar_id).filter(Boolean)));
   const webinarTitles = new Map<string, string>();
@@ -99,12 +114,12 @@ export default async function Page() {
 
       <h2 className="mt-6 font-medium">Course Orders</h2>
       <div className="mt-2 space-y-2">
-        {courseOrders.length === 0 ? (
+        {confirmedCourseOrders.length === 0 ? (
           <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No confirmed course purchases found yet.</p>
         ) : (
-          courseOrders.map((order) => (
+          confirmedCourseOrders.map((order) => (
             <div key={order.id} className="rounded border bg-white p-3 text-sm">
-              {extractCourseTitle(order)} · ₹{order.gross_amount} · {order.payment_status}
+              {courseTitles.get(order.course_id) ?? order.course_id} · ₹{order.gross_amount} · {order.payment_status ?? "paid"}
               <RefundRequestButton orderType="course" orderId={order.id} />
             </div>
           ))

@@ -106,6 +106,8 @@ export async function POST(request: Request) {
         if (razorpayPaymentId) {
           await admin.data.from("razorpay_transactions").upsert(
             {
+              order_type: "course",
+              order_id: courseOrder.id,
               order_kind: "course_enrollment",
               course_order_id: courseOrder.id,
               user_id: courseOrder.student_id,
@@ -116,6 +118,8 @@ export async function POST(request: Request) {
               payment_status: "failed",
               amount: courseOrder.gross_amount,
               currency: courseOrder.currency,
+              status: "failed",
+              payload: { source: "webhook", payment_status: paymentStatus },
               verified: false,
               gateway_response: { source: "webhook", payment_status: paymentStatus },
             },
