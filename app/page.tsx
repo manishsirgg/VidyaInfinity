@@ -254,8 +254,8 @@ export default async function HomePage() {
     <div className="mx-auto max-w-7xl px-4 py-10 sm:py-14 lg:py-16">
       <section className="rounded-2xl bg-gradient-to-r from-brand-700 to-brand-500 p-6 text-white sm:p-8 lg:p-10">
         <Image src="/logo.svg" alt="Vidya Infinity logo" width={360} height={120} className="h-16 w-auto" priority />
-        <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">Global Education Architects</h1>
-        <p className="mt-4 max-w-2xl text-brand-50">
+        <h1 className="mt-3 text-3xl font-semibold leading-tight text-white sm:text-4xl">Global Education Architects</h1>
+        <p className="mt-4 max-w-2xl text-white/80">
           Discover verified institutes, apply to approved courses, purchase psychometric tests, and get expert guidance.
         </p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">

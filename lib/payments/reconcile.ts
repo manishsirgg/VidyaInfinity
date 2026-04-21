@@ -13,6 +13,7 @@ export async function reconcileCourseOrderPaid({
   razorpaySignature,
   source,
   adminUserId,
+  gatewayResponse,
 }: {
   supabase: SupabaseClient;
   order: {
@@ -30,7 +31,18 @@ export async function reconcileCourseOrderPaid({
   razorpaySignature?: string;
   source: "verify_api" | "webhook";
   adminUserId?: string;
+  gatewayResponse?: Record<string, unknown>;
 }) {
+  const now = new Date().toISOString();
+
+  const { data: existingEnrollment } = await supabase
+    .from("course_enrollments")
+    .select("id")
+    .eq("student_id", order.student_id)
+    .eq("course_id", order.course_id)
+    .eq("enrollment_status", "enrolled")
+    .maybeSingle();
+
   if (order.payment_status !== "paid") {
     const { error: updateError } = await supabase
       .from("course_orders")
@@ -38,7 +50,7 @@ export async function reconcileCourseOrderPaid({
         payment_status: "paid",
         razorpay_payment_id: razorpayPaymentId,
         razorpay_signature: razorpaySignature ?? null,
-        paid_at: new Date().toISOString(),
+        paid_at: now,
       })
       .eq("id", order.id)
       .in("payment_status", ["created", "failed"]);
@@ -60,29 +72,43 @@ export async function reconcileCourseOrderPaid({
       amount: order.gross_amount,
       currency: order.currency,
       verified: true,
-      verified_at: new Date().toISOString(),
-      gateway_response: { source },
+      verified_at: now,
+      gateway_response: { source, ...(gatewayResponse ?? {}) },
     },
     { onConflict: "razorpay_payment_id" }
   );
 
   if (txnError) return { error: txnError.message };
 
-  const { error: enrollError } = await supabase.from("course_enrollments").upsert(
-    {
-      course_order_id: order.id,
-      student_id: order.student_id,
-      course_id: order.course_id,
-      institute_id: order.institute_id,
-      enrollment_status: "enrolled",
-      enrolled_at: new Date().toISOString(),
-      access_start_at: new Date().toISOString(),
-      metadata: { source },
-    },
-    { onConflict: "course_order_id" }
-  );
+  if (existingEnrollment) {
+    const { error: updateEnrollmentError } = await supabase
+      .from("course_enrollments")
+      .update({
+        course_order_id: order.id,
+        access_start_at: now,
+        metadata: { source, reconciled: true },
+      })
+      .eq("id", existingEnrollment.id);
+    if (updateEnrollmentError) return { error: updateEnrollmentError.message };
+  }
 
-  if (enrollError) return { error: enrollError.message };
+  if (!existingEnrollment) {
+    const { error: enrollError } = await supabase.from("course_enrollments").upsert(
+      {
+        course_order_id: order.id,
+        student_id: order.student_id,
+        course_id: order.course_id,
+        institute_id: order.institute_id,
+        enrollment_status: "enrolled",
+        enrolled_at: now,
+        access_start_at: now,
+        metadata: { source },
+      },
+      { onConflict: "course_order_id" }
+    );
+
+    if (enrollError) return { error: enrollError.message };
+  }
 
   const { data: existingPayout } = await supabase
     .from("institute_payouts")
@@ -98,7 +124,7 @@ export async function reconcileCourseOrderPaid({
       platform_fee_amount: order.gross_amount - order.institute_receivable_amount,
       payout_amount: order.institute_receivable_amount,
       payout_status: "pending",
-      scheduled_at: new Date().toISOString(),
+      scheduled_at: now,
     });
     if (payoutError) return { error: payoutError.message };
   }

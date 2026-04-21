@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type PaymentTable =
   | "coupons"
-  | "entity_commissions"
+  | "platform_commission_settings"
   | "webinar_commission_settings"
   | "course_orders"
   | "webinar_orders"
@@ -17,7 +17,7 @@ export type PaymentSchemaDomain = "common" | "course" | "webinar" | "psychometri
 
 const domainTables: Record<PaymentSchemaDomain, PaymentTable[]> = {
   common: ["coupons", "razorpay_transactions"],
-  course: ["course_orders", "course_enrollments", "institute_payouts", "entity_commissions"],
+  course: ["course_orders", "course_enrollments", "institute_payouts", "platform_commission_settings"],
   webinar: ["webinar_orders", "webinar_registrations", "webinar_commission_settings", "institute_payouts"],
   psychometric: ["psychometric_orders"],
   webhook: ["razorpay_webhook_logs"],
@@ -40,7 +40,7 @@ const requiredColumns: Partial<Record<PaymentTable, string[]>> = {
     "razorpay_payment_id",
   ],
   course_enrollments: ["id", "course_order_id", "student_id", "course_id", "institute_id", "enrollment_status"],
-  entity_commissions: ["id", "entity_type", "commission_percent", "is_active", "updated_at"],
+  platform_commission_settings: ["id", "key", "commission_percentage"],
   psychometric_orders: [
     "id",
     "user_id",
@@ -91,7 +91,7 @@ const requiredColumns: Partial<Record<PaymentTable, string[]>> = {
     "gateway_response",
   ],
   razorpay_webhook_logs: ["id", "event_id", "event_type", "signature", "signature_valid", "headers", "processed", "processed_at", "notes", "payload"],
-  institute_payouts: ["id", "webinar_order_id", "gross_amount", "platform_fee_amount", "payout_amount", "payout_source"],
+  institute_payouts: ["id", "institute_id", "course_order_id", "gross_amount", "platform_fee_amount", "payout_amount", "payout_status"],
 };
 
 export async function detectPaymentSchemaMismatches(domains?: PaymentSchemaDomain[]) {

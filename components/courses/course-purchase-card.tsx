@@ -66,9 +66,16 @@ export function CoursePurchaseCard({
       });
 
       const createOrderBody = await createOrderResponse.json().catch(() => null);
+      if (createOrderBody?.freeCourse && createOrderBody?.enrolled) {
+        setState("success");
+        setMessage(createOrderBody?.message ?? "Enrollment confirmed for this free course.");
+        setInCart(false);
+        return;
+      }
+
       if (!createOrderResponse.ok || !createOrderBody?.order?.id) {
         setState("error");
-        setMessage(createOrderBody?.error ?? "Unable to start payment");
+        setMessage(createOrderBody?.error ?? "Unable to start checkout.");
         return;
       }
 
@@ -102,7 +109,7 @@ export function CoursePurchaseCard({
 
           if (!verifyResponse.ok) {
             setState("error");
-            setMessage(verifyBody?.error ?? "Payment verification failed");
+            setMessage(verifyBody?.error ?? "Payment verification failed.");
             return;
           }
 
