@@ -25,11 +25,13 @@ export async function notifyWebinarEnrollment(payload: EnrollmentNotificationPay
   const adminIds = (adminProfiles ?? []).map((admin) => admin.id);
 
   const enrollmentToken = `Enrollment:${payload.webinarId}:${payload.studentId}`;
-  const recipients: Array<{ userId: string; title: string; message: string }> = [
+  const recipients: Array<{ userId: string; title: string; message: string; targetUrl: string; dedupeSuffix: string }> = [
     {
       userId: payload.studentId,
       title: "Webinar enrollment confirmed",
       message: `You are successfully enrolled in ${payload.webinarTitle} (${modeLabel}). ${enrollmentToken}`,
+      targetUrl: "/student/purchases",
+      dedupeSuffix: "student",
     },
     ...(instituteUserId
       ? [
@@ -37,6 +39,8 @@ export async function notifyWebinarEnrollment(payload: EnrollmentNotificationPay
             userId: instituteUserId,
             title: "New webinar enrollment",
             message: `${studentName} enrolled in your webinar ${payload.webinarTitle}. ${enrollmentToken}`,
+            targetUrl: "/institute/webinars",
+            dedupeSuffix: "institute",
           },
         ]
       : []),
@@ -44,6 +48,8 @@ export async function notifyWebinarEnrollment(payload: EnrollmentNotificationPay
       userId: adminId,
       title: "Webinar enrollment confirmed",
       message: `New webinar enrollment in ${payload.webinarTitle}. Institute: ${instituteName}. Student: ${studentName}. ${enrollmentToken}`,
+      targetUrl: "/admin/transactions",
+      dedupeSuffix: `admin:${adminId}`,
     })),
   ];
 
@@ -64,9 +70,16 @@ export async function notifyWebinarEnrollment(payload: EnrollmentNotificationPay
     pendingCreates.map((item) =>
       createAccountNotification({
         userId: item.userId,
-        type: "approval",
+        type: "payment",
+        category: "webinar_order",
+        priority: "high",
         title: item.title,
         message: item.message,
+        targetUrl: item.targetUrl,
+        actionLabel: "Open",
+        entityType: "webinar",
+        entityId: payload.webinarId,
+        dedupeKey: `webinar-enrollment:${payload.webinarId}:${payload.studentId}:${item.dedupeSuffix}`,
       }),
     ),
   );

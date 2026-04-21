@@ -120,6 +120,8 @@ export default async function StudentDashboardPage() {
       .from("notifications")
       .select("id,title,message,type,is_read,created_at")
       .eq("user_id", user.id)
+      .is("dismissed_at", null)
+      .is("archived_at", null)
       .order("created_at", { ascending: false })
       .limit(5)
       .returns<NotificationItem[]>(),
@@ -141,6 +143,8 @@ export default async function StudentDashboardPage() {
       .from("test_attempts")
       .select("id,test_id,status,score,created_at")
       .eq("user_id", user.id)
+      .is("dismissed_at", null)
+      .is("archived_at", null)
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<TestAttemptItem[]>(),

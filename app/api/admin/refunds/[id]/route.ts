@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const ALLOWED_NEXT_STATUS: Record<string, string[]> = {
@@ -27,7 +28,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: currentRefund, error: fetchError } = await admin.data
     .from("refunds")
-    .select("id,refund_status,course_order_id,psychometric_order_id")
+    .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
     .eq("id", id)
     .single();
 
@@ -54,7 +55,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       processed_at: status === "processed" ? new Date().toISOString() : null,
     })
     .eq("id", id)
-    .select("id,refund_status,course_order_id,psychometric_order_id")
+    .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
     .single();
 
   if (error || !refund) return NextResponse.json({ error: error?.message ?? "Refund not found" }, { status: 500 });
@@ -76,6 +77,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       if (orderError) return NextResponse.json({ error: orderError.message }, { status: 500 });
     }
   }
+
+  await createAccountNotification({
+    userId: refund.user_id,
+    type: "refund",
+    category: "refund",
+    priority: status === "processed" ? "high" : "normal",
+    title: "Refund update",
+    message: `Your refund request is now ${status}.`,
+    targetUrl: "/student/purchases",
+    actionLabel: "View purchases",
+    entityType: "refund",
+    entityId: refund.id,
+    dedupeKey: `refund:${refund.id}:${status}`,
+    metadata: { refundStatus: status, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
+  }).catch(() => undefined);
 
   await writeAdminAuditLog({
     adminUserId: auth.user.id,

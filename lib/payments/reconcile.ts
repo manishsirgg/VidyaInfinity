@@ -2,6 +2,7 @@ import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
 import { notifyCoursePurchase } from "@/lib/marketplace/course-notifications";
 import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function reconcileCourseOrderPaid({
@@ -230,6 +231,22 @@ export async function reconcilePsychometricOrderPaid({
   );
 
   if (attemptError) return { error: attemptError.message };
+
+
+  await createAccountNotification({
+    userId: order.user_id,
+    type: "payment",
+    category: "psychometric_order",
+    priority: "high",
+    title: "Psychometric purchase confirmed",
+    message: `Your psychometric test purchase is successful. Order ID: ${order.id}.`,
+    targetUrl: "/student/purchases",
+    actionLabel: "View purchase",
+    entityType: "psychometric_order",
+    entityId: order.id,
+    dedupeKey: `psychometric-order-paid:${order.id}`,
+    metadata: { orderId: order.id, paymentId: razorpayPaymentId, source },
+  }).catch(() => undefined);
 
   await writeAdminAuditLog({
     adminUserId: adminUserId ?? null,

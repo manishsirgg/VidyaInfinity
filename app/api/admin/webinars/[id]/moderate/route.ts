@@ -54,6 +54,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await createAccountNotification({
       userId: institute.user_id,
       type: body.status === "approved" ? "approval" : "rejection",
+      category: "moderation",
+      priority: body.status === "rejected" ? "high" : "normal",
       title: body.status === "approved" ? "Webinar approved" : "Webinar rejected",
       message:
         body.status === "approved"

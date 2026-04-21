@@ -81,6 +81,8 @@ export default async function AdminDashboardPage() {
       .from("notifications")
       .select("id,title,message,type,is_read,created_at")
       .eq("user_id", user.id)
+      .is("dismissed_at", null)
+      .is("archived_at", null)
       .order("created_at", { ascending: false })
       .limit(5),
     supabase.from("courses").select("id,title,created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(5),

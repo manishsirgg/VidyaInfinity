@@ -142,6 +142,8 @@ export async function POST(request: Request) {
       createAccountNotification({
         userId: adminProfile.id,
         type: "resubmission",
+        category: "moderation",
+        priority: "high",
         title: "Course moderation pending",
         message: `A new course "${title}" has been submitted and is waiting for moderation.`,
       })

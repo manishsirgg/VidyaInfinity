@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { normalizeWebinarMode } from "@/lib/webinars/utils";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -173,6 +174,25 @@ export async function POST(request: Request) {
     .single<{ id: string }>();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const { data: admins } = await dataClient.from("profiles").select("id").eq("role", "admin");
+  await Promise.allSettled(
+    (admins ?? []).map((adminProfile) =>
+      createAccountNotification({
+        userId: adminProfile.id,
+        type: "resubmission",
+        category: "moderation",
+        priority: "high",
+        title: "Webinar moderation pending",
+        message: `A webinar "${(body.title ?? "Untitled webinar").trim()}" is waiting for admin review.`,
+        targetUrl: "/admin/webinars?approval_status=pending",
+        actionLabel: "Review webinars",
+        entityType: "webinar",
+        entityId: data.id,
+        dedupeKey: `webinar-pending:${data.id}:admin:${adminProfile.id}`,
+      }),
+    ),
+  );
 
   return NextResponse.json({ id: data.id }, { status: 201 });
 }
