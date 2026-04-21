@@ -61,10 +61,16 @@ export function WebinarActionCard({
     setLoading(true);
     setMessage("");
     setIsError(false);
+    const normalizedCouponCode = couponCode.trim().toUpperCase();
+    const requestBody: { webinarId: string; couponCode?: string } = { webinarId };
+    if (normalizedCouponCode) {
+      requestBody.couponCode = normalizedCouponCode;
+    }
+
     const createRes = await fetch("/api/payments/webinar/create-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ webinarId, couponCode: couponCode.trim() || null }),
+      body: JSON.stringify(requestBody),
     });
     const createBody = await createRes.json().catch(() => null);
 
@@ -140,7 +146,8 @@ export function WebinarActionCard({
             <input
               value={couponCode}
               onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
-              placeholder="WEBINAR20"
+              placeholder="Enter coupon code"
+              autoComplete="off"
               className="mt-1 w-full rounded border px-3 py-2 text-sm"
             />
           </div>
