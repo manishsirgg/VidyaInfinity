@@ -232,6 +232,8 @@ export async function PATCH(request: Request, { params }: Params) {
       createAccountNotification({
         userId: adminProfile.id,
         type: "resubmission",
+        category: "moderation",
+        priority: "high",
         title: "Course moderation pending",
         message: `Course "${course.title}" was updated by the institute and is waiting for moderation.`,
       })

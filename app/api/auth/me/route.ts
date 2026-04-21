@@ -79,7 +79,9 @@ export async function GET() {
         .from("notifications")
         .select("id", { count: "exact", head: true })
         .eq("user_id", profile.id)
-        .eq("is_read", false);
+        .eq("is_read", false)
+        .is("dismissed_at", null)
+        .is("archived_at", null);
       unreadNotifications = count ?? 0;
     }
 

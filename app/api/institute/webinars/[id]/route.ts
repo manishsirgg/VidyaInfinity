@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { normalizeWebinarMode } from "@/lib/webinars/utils";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -206,6 +207,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (updateData.approval_status === "pending") {
+    const { data: admins } = await dataClient.from("profiles").select("id").eq("role", "admin");
+    await Promise.allSettled(
+      (admins ?? []).map((adminProfile) =>
+        createAccountNotification({
+          userId: adminProfile.id,
+          type: "resubmission",
+          category: "moderation",
+          priority: "high",
+          title: "Webinar resubmission pending",
+          message: `Webinar "${existing.title}" was updated and needs moderation.`,
+          targetUrl: "/admin/webinars?approval_status=pending",
+          actionLabel: "Review webinars",
+          entityType: "webinar",
+          entityId: id,
+          dedupeKey: `webinar-resubmitted:${id}:admin:${adminProfile.id}`,
+        }),
+      ),
+    );
+  }
+
   return NextResponse.json({ ok: true, id: data.id });
 }
 

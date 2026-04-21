@@ -1,41 +1,39 @@
-import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { createInAppNotification } from "@/lib/notifications/service";
 
-type NotificationType = "approval" | "rejection" | "resubmission";
+type NotificationType = "approval" | "rejection" | "resubmission" | "payment" | "lead" | "refund" | "payout" | "system";
 
 type NotificationPayload = {
   userId: string;
   type: NotificationType;
   title: string;
   message: string;
+  category?: string;
+  priority?: "low" | "normal" | "high" | "critical";
+  targetUrl?: string | null;
+  actionLabel?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  metadata?: Record<string, unknown>;
+  dedupeKey?: string | null;
+  expiresAt?: string | null;
+  createdBy?: string | null;
 };
 
-function isMissingNotificationsTableError(error: { code?: string; message?: string } | null) {
-  if (!error) return false;
-  const message = String(error.message ?? "").toLowerCase();
-  return error.code === "42P01" || (message.includes("notifications") && message.includes("does not exist"));
-}
-
 export async function createAccountNotification(payload: NotificationPayload) {
-  const admin = getSupabaseAdmin();
-  if (!admin.ok) {
-    return { ok: false, error: admin.error } as const;
-  }
-
-  const { error } = await admin.data.from("notifications").insert({
-    user_id: payload.userId,
-    type: payload.type,
+  return createInAppNotification({
+    userId: payload.userId,
     title: payload.title,
     message: payload.message,
-    is_read: false,
+    type: payload.type,
+    category: payload.category ?? payload.type,
+    priority: payload.priority ?? "normal",
+    targetUrl: payload.targetUrl,
+    actionLabel: payload.actionLabel,
+    entityType: payload.entityType,
+    entityId: payload.entityId,
+    metadata: payload.metadata,
+    dedupeKey: payload.dedupeKey,
+    expiresAt: payload.expiresAt,
+    createdBy: payload.createdBy,
   });
-
-  if (error) {
-    if (isMissingNotificationsTableError(error)) {
-      return { ok: true, skipped: true } as const;
-    }
-
-    return { ok: false, error: error.message } as const;
-  }
-
-  return { ok: true } as const;
 }

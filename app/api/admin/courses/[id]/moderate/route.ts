@@ -53,6 +53,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     await createAccountNotification({
       userId: institute.user_id,
       type: status === "approved" ? "approval" : "rejection",
+      category: "moderation",
+      priority: status === "rejected" ? "high" : "normal",
       title: status === "approved" ? "Course approved" : "Course rejected",
       message:
         status === "approved"
