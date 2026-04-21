@@ -13,7 +13,7 @@ export function SiteFooter() {
   ] as const;
 
   return (
-    <footer className="mt-16 border-t border-slate-200 bg-white">
+    <footer className="mt-16 border-t border-slate-200 bg-white/95">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <Image src="/logo.svg" alt={`${siteConfig.name} logo`} width={240} height={60} className="h-10 w-auto sm:h-12" />
@@ -26,7 +26,7 @@ export function SiteFooter() {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={label}
-                className="rounded-md border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50 hover:text-brand-700"
+                className="rounded-lg border border-slate-200 p-2 text-slate-600 transition hover:-translate-y-0.5 hover:bg-slate-50 hover:text-brand-700"
               >
                 <Icon className="h-4 w-4" />
               </Link>
@@ -41,22 +41,22 @@ export function SiteFooter() {
         </div>
 
         <div className="flex flex-wrap gap-4 text-sm">
-          <Link href="/privacy-policy" className="hover:text-brand-700">
+          <Link href="/privacy-policy" className="transition hover:text-brand-700">
             Privacy
           </Link>
-          <Link href="/terms-of-service" className="hover:text-brand-700">
+          <Link href="/terms-of-service" className="transition hover:text-brand-700">
             Terms
           </Link>
-          <Link href="/refund-cancellation-policy" className="hover:text-brand-700">
+          <Link href="/refund-cancellation-policy" className="transition hover:text-brand-700">
             Refund & Cancellation
           </Link>
-          <Link href="/shipping-delivery-policy" className="hover:text-brand-700">
+          <Link href="/shipping-delivery-policy" className="transition hover:text-brand-700">
             Shipping & Delivery
           </Link>
-          <Link href="/cookie-policy" className="hover:text-brand-700">
+          <Link href="/cookie-policy" className="transition hover:text-brand-700">
             Cookie Policy
           </Link>
-          <Link href="/disclaimer" className="hover:text-brand-700">
+          <Link href="/disclaimer" className="transition hover:text-brand-700">
             Disclaimer
           </Link>
         </div>

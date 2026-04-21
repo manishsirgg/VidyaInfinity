@@ -30,23 +30,23 @@ export function ModerationPagination({ page, pageSize, totalItems, pathname, que
   const endItem = Math.min(safePage * pageSize, totalItems);
 
   return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded border bg-white p-3 text-sm">
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3.5 text-sm shadow-sm">
       <p className="text-slate-600">
-        Showing {startItem}-{endItem} of {totalItems}
+        Showing <span className="font-medium text-slate-800">{startItem}-{endItem}</span> of <span className="font-medium text-slate-800">{totalItems}</span>
       </p>
       <div className="flex items-center gap-2">
         <Link
           href={buildHref(pathname, query, safePage - 1)}
-          className={`rounded border px-3 py-1.5 ${safePage <= 1 ? "pointer-events-none opacity-50" : ""}`}
+          className={`vi-btn-secondary px-3 py-1.5 ${safePage <= 1 ? "pointer-events-none opacity-50" : ""}`}
         >
           Previous
         </Link>
-        <span className="text-slate-700">
+        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700">
           Page {safePage} of {totalPages}
         </span>
         <Link
           href={buildHref(pathname, query, safePage + 1)}
-          className={`rounded border px-3 py-1.5 ${safePage >= totalPages ? "pointer-events-none opacity-50" : ""}`}
+          className={`vi-btn-secondary px-3 py-1.5 ${safePage >= totalPages ? "pointer-events-none opacity-50" : ""}`}
         >
           Next
         </Link>

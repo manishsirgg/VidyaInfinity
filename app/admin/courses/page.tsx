@@ -82,13 +82,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const paginatedReviewedCourses = paginatedCourses.filter((course) => course.status !== "pending");
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">Admin Courses Moderation</h1>
-      <p className="mt-2 text-sm text-slate-600">Review every submitted field and all uploaded media before approving or rejecting.</p>
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        <div className="rounded border bg-white p-3 text-sm">Pending courses: {pendingCourses.length}</div>
-        <div className="rounded border bg-white p-3 text-sm">Reviewed courses: {reviewedCourses.length}</div>
-        <div className="rounded border bg-white p-3 text-sm">Total courses: {totalCourses}</div>
+    <div className="vi-page">
+      <h1 className="vi-page-title">Admin Courses Moderation</h1>
+      <p className="vi-page-subtitle">Review every submitted field and all uploaded media before approving or rejecting.</p>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="vi-card p-3 text-sm">Pending courses: {pendingCourses.length}</div>
+        <div className="vi-card p-3 text-sm">Reviewed courses: {reviewedCourses.length}</div>
+        <div className="vi-card p-3 text-sm">Total courses: {totalCourses}</div>
       </div>
       {error ? (
         <p className="mt-4 rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -96,9 +96,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         </p>
       ) : null}
       <h2 className="mt-6 text-lg font-semibold">Pending queue</h2>
-      <div className="mt-4 space-y-4">
+      <div className="mt-4 space-y-5">
         {paginatedPendingCourses.map((course) => (
-          <div key={course.id} className="rounded border bg-white p-4 text-sm">
+          <div key={course.id} className="vi-card p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-base font-semibold">{course.title} · {course.status}</p>
               <p className="text-xs text-slate-500">Created: {formatDate(course.created_at)} · Updated: {formatDate(course.updated_at)}</p>
@@ -150,12 +150,12 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           </div>
         ))}
       </div>
-      {paginatedPendingCourses.length === 0 ? <p className="mt-4 rounded border bg-white p-4 text-sm text-slate-600">No pending courses on this page.</p> : null}
+      {paginatedPendingCourses.length === 0 ? <p className="mt-4 vi-empty p-4 text-sm text-slate-600">No pending courses on this page.</p> : null}
 
       {paginatedReviewedCourses.length > 0 ? <h2 className="mt-8 text-lg font-semibold">Reviewed courses</h2> : null}
-      <div className="mt-4 space-y-4">
+      <div className="mt-4 space-y-5">
         {paginatedReviewedCourses.map((course) => (
-          <div key={course.id} className="rounded border bg-white p-4 text-sm">
+          <div key={course.id} className="vi-card p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-base font-semibold">{course.title} · {course.status}</p>
               <p className="text-xs text-slate-500">Created: {formatDate(course.created_at)} · Updated: {formatDate(course.updated_at)}</p>
@@ -206,7 +206,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             <ModerationActions targetType="courses" targetId={course.id} currentStatus={course.status} />
           </div>
         ))}
-        {!error && totalCourses === 0 ? <p className="rounded border bg-white p-4 text-sm text-slate-600">No courses found for moderation.</p> : null}
+        {!error && totalCourses === 0 ? <p className="vi-empty p-4 text-sm text-slate-600">No courses found for moderation.</p> : null}
       </div>
       <ModerationPagination page={currentPage} pageSize={PAGE_SIZE} totalItems={totalCourses} pathname="/admin/courses" query={{}} />
     </div>

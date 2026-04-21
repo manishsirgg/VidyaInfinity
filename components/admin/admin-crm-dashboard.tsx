@@ -269,9 +269,9 @@ export function AdminCrmDashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-4 px-4 py-8">
-      <h1 className="text-2xl font-semibold">Admin CRM</h1>
-      {message ? <p className="rounded border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">{message}</p> : null}
+    <div className="mx-auto max-w-[1400px] space-y-5 px-4 py-8">
+      <h1 className="vi-page-title">Admin CRM</h1>
+      {message ? <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">{message}</p> : null}
 
       <section className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
         {[
@@ -284,41 +284,41 @@ export function AdminCrmDashboard() {
           ["Due today", result?.kpis.followUpsDueToday ?? 0],
           ["Sources", Object.keys(result?.kpis.sourceCounts ?? {}).length],
         ].map(([label, value]) => (
-          <article key={String(label)} className="rounded border bg-white p-3">
+          <article key={String(label)} className="vi-card p-3">
             <p className="text-xs text-slate-500">{label}</p>
             <p className="text-xl font-semibold">{value}</p>
           </article>
         ))}
       </section>
 
-      <form onSubmit={applyFilters} className="grid gap-3 rounded border bg-white p-4 md:grid-cols-4 xl:grid-cols-8">
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name/email/phone" className="rounded border px-3 py-2 text-sm" />
-        <select value={stage} onChange={(e) => setStage(e.target.value)} className="rounded border px-3 py-2 text-sm">
+      <form onSubmit={applyFilters} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-4 xl:grid-cols-8">
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name/email/phone" className="vi-input py-2 text-sm" />
+        <select value={stage} onChange={(e) => setStage(e.target.value)} className="vi-input py-2 text-sm">
           <option value="">All stages</option>
           {stageOptions.filter(Boolean).map((item) => (
             <option key={item} value={item}>{item}</option>
           ))}
         </select>
-        <select value={priority} onChange={(e) => setPriority(e.target.value)} className="rounded border px-3 py-2 text-sm">
+        <select value={priority} onChange={(e) => setPriority(e.target.value)} className="vi-input py-2 text-sm">
           <option value="">All priorities</option>
           {priorityOptions.filter(Boolean).map((item) => (
             <option key={item} value={item}>{item}</option>
           ))}
         </select>
-        <select value={source} onChange={(e) => setSource(e.target.value)} className="rounded border px-3 py-2 text-sm">
+        <select value={source} onChange={(e) => setSource(e.target.value)} className="vi-input py-2 text-sm">
           <option value="">All sources</option>
           {sources.map((item) => (
             <option key={item} value={item}>{item}</option>
           ))}
         </select>
-        <select value={serviceType} onChange={(e) => setServiceType(e.target.value)} className="rounded border px-3 py-2 text-sm">
+        <select value={serviceType} onChange={(e) => setServiceType(e.target.value)} className="vi-input py-2 text-sm">
           <option value="">All services</option>
           {serviceTypes.map((item) => (
             <option key={item} value={item}>{item}</option>
           ))}
         </select>
-        <input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Assigned admin id" className="rounded border px-3 py-2 text-sm" />
-        <select value={sort} onChange={(e) => setSort(e.target.value)} className="rounded border px-3 py-2 text-sm">
+        <input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Assigned admin id" className="vi-input py-2 text-sm" />
+        <select value={sort} onChange={(e) => setSort(e.target.value)} className="vi-input py-2 text-sm">
           <option value="newest">Newest</option>
           <option value="last_activity">Last activity</option>
           <option value="next_follow_up">Next follow-up</option>
