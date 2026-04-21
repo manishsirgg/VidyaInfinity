@@ -13,6 +13,10 @@ type CoursePurchase = {
   razorpay_signature: string | null;
 };
 
+type EnrollmentRow = {
+  course_order_id: string | null;
+};
+
 type PsychometricPurchase = {
   id: string;
   final_paid_amount: number | null;
@@ -49,31 +53,42 @@ export default async function Page() {
       .from("course_orders")
       .select("id,gross_amount,payment_status,paid_at,created_at,course_id,razorpay_payment_id,razorpay_signature")
       .eq("student_id", user.id)
-      .order("paid_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false }),
+      .order("paid_at", { ascending: false, nullsFirst: false }),
     supabase
       .from("psychometric_orders")
       .select("id,final_paid_amount,payment_status,paid_at,test_id")
       .eq("user_id", user.id)
       .in("payment_status", [...SUCCESS_PAYMENT_STATUSES])
-      .order("paid_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false }),
+      .order("paid_at", { ascending: false, nullsFirst: false }),
     supabase
       .from("webinar_orders")
       .select("id,webinar_id,amount,currency,payment_status,paid_at,order_status")
       .eq("student_id", user.id)
       .in("payment_status", [...SUCCESS_PAYMENT_STATUSES])
       .in("order_status", ["confirmed", "paid", "success"])
-      .order("paid_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false }),
+      .order("paid_at", { ascending: false, nullsFirst: false }),
   ]);
 
   const courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
   const webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
-  const confirmedCourseOrders = courseOrders.filter((order) =>
-    isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id && order.razorpay_signature)
+  const [enrollmentResult] = await Promise.all([
+    supabase
+      .from("course_enrollments")
+      .select("course_order_id")
+      .eq("student_id", user.id)
+      .in("enrollment_status", ["pending", "active", "suspended", "completed", "enrolled"]),
+  ]);
+
+  const enrolledOrderIds = new Set(
+    ((enrollmentResult.data ?? []) as EnrollmentRow[])
+      .map((row) => row.course_order_id)
+      .filter((id): id is string => Boolean(id))
   );
+  const confirmedCourseOrders = courseOrders.filter((order) => {
+    if (enrolledOrderIds.has(order.id)) return true;
+    return isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id && order.razorpay_signature);
+  });
 
   const courseIds = Array.from(new Set(confirmedCourseOrders.map((order) => order.course_id).filter(Boolean)));
   const courseTitles = new Map<string, string>();
@@ -99,7 +114,7 @@ export default async function Page() {
     }
   }
 
-  const loadErrors = [courseResult.error, testResult.error, webinarResult.error].filter(Boolean);
+  const loadErrors = [courseResult.error, testResult.error, webinarResult.error, enrollmentResult.error].filter(Boolean);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">

@@ -77,14 +77,23 @@ export async function GET(request: Request) {
     .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
     .maybeSingle<{ id: string; enrollment_status: string }>();
 
+  const { data: transaction } = await admin.data
+    .from("razorpay_transactions")
+    .select("id")
+    .eq("course_order_id", order.id)
+    .eq("payment_status", "paid")
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
   let resolvedEnrollment = enrollment;
   let resolvedOrder = { ...order };
 
   const normalizedOrderStatus = String(resolvedOrder.payment_status ?? "").trim().toLowerCase();
   const hasPaidMarker = normalizedOrderStatus === "paid" || Boolean(resolvedOrder.paid_at);
-  const shouldTryPassiveReconciliation = !resolvedEnrollment && Boolean(paymentId);
+  const effectivePaymentId = paymentId ?? resolvedOrder.razorpay_payment_id ?? null;
+  const shouldTryPassiveReconciliation = (!resolvedEnrollment || !transaction) && Boolean(effectivePaymentId);
 
-  if (shouldTryPassiveReconciliation && paymentId) {
+  if (shouldTryPassiveReconciliation && effectivePaymentId) {
     const razorpay = getRazorpayClient();
 
     if (hasPaidMarker) {
@@ -101,7 +110,7 @@ export async function GET(request: Request) {
           payment_status: normalizedOrderStatus || "created",
         },
         razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? "",
-        razorpayPaymentId: paymentId,
+        razorpayPaymentId: effectivePaymentId,
         source: "verify_api",
         gatewayResponse: { source: "status_poll_paid_marker" },
       });
@@ -112,19 +121,19 @@ export async function GET(request: Request) {
           .select("id,enrollment_status")
           .eq("course_order_id", resolvedOrder.id)
           .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
-          .maybeSingle<{ id: string; enrollment_status: string }>();
+            .maybeSingle<{ id: string; enrollment_status: string }>();
 
         resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;
         resolvedOrder = {
           ...resolvedOrder,
           payment_status: "paid",
-          razorpay_payment_id: paymentId,
+          razorpay_payment_id: effectivePaymentId,
           paid_at: resolvedOrder.paid_at ?? new Date().toISOString(),
         };
       }
     } else if (razorpay.ok) {
       try {
-        const payment = (await razorpay.data.payments.fetch(paymentId)) as {
+        const payment = (await razorpay.data.payments.fetch(effectivePaymentId)) as {
           id?: string;
           order_id?: string;
           status?: string;
@@ -136,7 +145,7 @@ export async function GET(request: Request) {
         const expectedAmountInPaise = Math.round(Number(resolvedOrder.gross_amount ?? 0) * 100);
         const paymentCaptured = String(payment.status ?? "").toLowerCase() === "captured";
         const paymentMatchesOrder =
-          payment.id === paymentId &&
+          payment.id === effectivePaymentId &&
           payment.order_id === (resolvedOrder.razorpay_order_id ?? orderId) &&
           Number(payment.amount ?? 0) === expectedAmountInPaise &&
           String(payment.currency ?? "").toUpperCase() === String(resolvedOrder.currency ?? "").toUpperCase();
@@ -155,7 +164,7 @@ export async function GET(request: Request) {
               payment_status: resolvedOrder.payment_status ?? "created",
             },
             razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? payment.order_id ?? "",
-            razorpayPaymentId: paymentId,
+            razorpayPaymentId: effectivePaymentId,
             source: "verify_api",
             gatewayResponse: { source: "status_poll", method: payment.method ?? null },
           });
@@ -172,7 +181,7 @@ export async function GET(request: Request) {
             resolvedOrder = {
               ...resolvedOrder,
               payment_status: "paid",
-              razorpay_payment_id: paymentId,
+              razorpay_payment_id: effectivePaymentId,
               paid_at: new Date().toISOString(),
             };
           }

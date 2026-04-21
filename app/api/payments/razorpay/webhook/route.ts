@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
-import { verifyRazorpayWebhookSignature } from "@/lib/payments/razorpay";
+import { getRazorpayClient, verifyRazorpayWebhookSignature } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     }
 
     const razorpayOrderId = paymentEntity?.order_id ?? orderEntity?.id ?? null;
-    const razorpayPaymentId = paymentEntity?.id ?? null;
+    let razorpayPaymentId = paymentEntity?.id ?? null;
     const paymentStatus = typeof paymentEntity?.status === "string" ? paymentEntity.status.toLowerCase() : null;
 
     if (!razorpayOrderId) {
@@ -155,6 +155,26 @@ export async function POST(request: Request) {
               .eq("id", insertedLog.id);
           }
           return NextResponse.json({ error: "Webhook payment amount/currency mismatch for course order." }, { status: 400 });
+        }
+
+        if (!razorpayPaymentId) {
+          const razorpay = getRazorpayClient();
+          if (razorpay.ok) {
+            try {
+              const paymentList = (await razorpay.data.orders.fetchPayments(razorpayOrderId)) as {
+                items?: Array<{ id?: string; status?: string }>;
+              };
+              const capturedPayment = (paymentList.items ?? []).find(
+                (item) => String(item.status ?? "").toLowerCase() === "captured" && item.id
+              );
+              razorpayPaymentId = capturedPayment?.id ?? null;
+            } catch (error) {
+              console.warn("[razorpay/webhook] unable to fetch payment id for paid order event", {
+                razorpayOrderId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
         }
 
         if (!razorpayPaymentId) {

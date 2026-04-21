@@ -96,8 +96,47 @@ export async function POST(request: Request) {
       .eq("course_order_id", order.id)
       .maybeSingle();
 
+    const { data: existingTransaction } = await admin.data
+      .from("razorpay_transactions")
+      .select("id")
+      .eq("course_order_id", order.id)
+      .eq("payment_status", "paid")
+      .limit(1)
+      .maybeSingle();
+
     if (order.payment_status === "paid") {
-      const state = resolveCourseVerifyState({ paymentStatus: order.payment_status, enrolled: Boolean(existingEnrollment) });
+      let resolvedEnrollment = existingEnrollment;
+      if (!existingEnrollment || !existingTransaction) {
+        const reconcilePaymentId = order.razorpay_payment_id ?? paymentId;
+        if (reconcilePaymentId) {
+          const reconciled = await reconcileCourseOrderPaid({
+            supabase: admin.data,
+            order,
+            razorpayOrderId: orderId,
+            razorpayPaymentId: reconcilePaymentId,
+            razorpaySignature: signature,
+            source: "verify_api",
+            gatewayResponse: { source: "verify_paid_marker_self_heal" },
+          });
+
+          if (reconciled.error) {
+            console.error("[course/verify] paid marker self-heal failed", {
+              orderId,
+              paymentId: reconcilePaymentId,
+              error: reconciled.error,
+            });
+          } else {
+            const { data: refreshedEnrollment } = await admin.data
+              .from("course_enrollments")
+              .select("id")
+              .eq("course_order_id", order.id)
+              .maybeSingle();
+            resolvedEnrollment = refreshedEnrollment;
+          }
+        }
+      }
+
+      const state = resolveCourseVerifyState({ paymentStatus: order.payment_status, enrolled: Boolean(resolvedEnrollment) });
       const redirectTo = buildCoursePaymentRedirect({
         state,
         orderId,
