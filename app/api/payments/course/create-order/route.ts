@@ -27,11 +27,23 @@ type InstituteRow = {
   is_deleted: boolean | null;
 };
 
+function normalizeStatus(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
 function isInstituteUsable(institute: InstituteRow | null) {
   if (!institute || institute.is_deleted) return false;
   if (institute.is_active === false) return false;
-  if (institute.status && institute.status !== "approved") return false;
-  if (institute.approval_status && institute.approval_status !== "approved") return false;
+
+  const instituteStatus = normalizeStatus(institute.status);
+  const instituteApprovalStatus = normalizeStatus(institute.approval_status);
+
+  if (instituteApprovalStatus && instituteApprovalStatus !== "approved") return false;
+  if (["rejected", "suspended", "blocked", "inactive", "archived"].includes(instituteStatus)) return false;
+  if (instituteStatus && !["approved", "active"].includes(instituteStatus)) return false;
+
   return true;
 }
 
@@ -39,8 +51,13 @@ function isCoursePurchasable(course: CourseRow | null) {
   if (!course || course.is_deleted) return false;
   if (course.is_active === false) return false;
 
-  const status = course.status ?? course.approval_status;
-  if (status && status !== "approved") return false;
+  const courseStatus = normalizeStatus(course.status);
+  const courseApprovalStatus = normalizeStatus(course.approval_status);
+
+  if (courseApprovalStatus && courseApprovalStatus !== "approved") return false;
+  if (["pending", "rejected", "draft", "archived", "inactive", "cancelled"].includes(courseStatus)) return false;
+  if (courseStatus && !["approved", "active", "live", "published", "listed"].includes(courseStatus)) return false;
+
   return true;
 }
 
