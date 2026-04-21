@@ -79,12 +79,9 @@ export function PendingPaymentClient({
       const body = (await response.json().catch(() => null)) as StatusResponse | null;
 
       if (!response.ok || !body?.ok) {
-        setStatus("error");
-        setMessage("Unable to check payment status right now. Please retry.");
-        return;
-      }
-
-      if (body.state === "pending") {
+        setStatus("waiting");
+        setMessage("Unable to confirm status right now. Retrying automatically…");
+      } else if (body.state === "pending") {
         setStatus("waiting");
         setMessage("Checking payment status… please keep this page open for UPI/QR settlement confirmation.");
       } else {
@@ -92,9 +89,8 @@ export function PendingPaymentClient({
         return;
       }
     } catch {
-      setStatus("error");
-      setMessage("Network issue while checking payment status. Retry in a moment.");
-      return;
+      setStatus("waiting");
+      setMessage("Network issue while checking payment status. Retrying automatically…");
     }
 
     clearPollTimer();
