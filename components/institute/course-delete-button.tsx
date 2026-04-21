@@ -8,8 +8,8 @@ export function CourseDeleteButton({ courseId, title }: { courseId: string; titl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function onDelete() {
-    if (!window.confirm(`Delete \"${title}\"? This cannot be undone.`)) return;
+  async function onArchive() {
+    if (!window.confirm(`Archive \"${title}\"? This will hide it from students and disable new purchases.`)) return;
     setBusy(true);
     setError("");
 
@@ -18,7 +18,7 @@ export function CourseDeleteButton({ courseId, title }: { courseId: string; titl
 
     setBusy(false);
     if (!response.ok) {
-      setError(body?.error ?? "Unable to delete course.");
+      setError(body?.error ?? "Unable to archive course.");
       return;
     }
 
@@ -30,10 +30,10 @@ export function CourseDeleteButton({ courseId, title }: { courseId: string; titl
       <button
         type="button"
         disabled={busy}
-        onClick={onDelete}
+        onClick={onArchive}
         className="rounded border border-rose-300 px-3 py-1.5 text-rose-700 hover:bg-rose-50 disabled:opacity-60"
       >
-        {busy ? "Deleting..." : "Delete"}
+        {busy ? "Archiving..." : "Archive"}
       </button>
       {error ? <p className="mt-2 text-xs text-rose-700">{error}</p> : null}
     </div>

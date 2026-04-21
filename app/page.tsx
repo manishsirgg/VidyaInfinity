@@ -21,6 +21,7 @@ export default async function HomePage() {
     .from("courses")
     .select("id,title,summary,fees,category,subject,level,language,duration,mode,status,course_media(file_url,type)")
     .eq("status", "approved")
+    .eq("is_deleted", false)
     .or("is_active.is.null,is_active.eq.true")
     .order("created_at", { ascending: false })
     .limit(18);

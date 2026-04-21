@@ -42,7 +42,7 @@ export default async function InstituteCoursesLandingPage() {
         </Link>
         <Link href="/institute/courses/manage" className="rounded border bg-white p-4 hover:bg-slate-50">
           <h2 className="font-semibold">Manage Courses</h2>
-          <p className="mt-1 text-sm text-slate-600">View details, edit, and delete your existing courses.</p>
+          <p className="mt-1 text-sm text-slate-600">View details, edit, and archive your existing courses safely.</p>
         </Link>
         <Link href="/institute/courses/rejected" className="rounded border bg-white p-4 hover:bg-slate-50">
           <h2 className="font-semibold">Rejected Courses</h2>

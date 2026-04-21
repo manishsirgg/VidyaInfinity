@@ -90,6 +90,7 @@ export async function GET(_: Request, { params }: Params) {
     .select("id,institute_id,title,summary,description,category,subject,level,language,fees,duration,duration_value,duration_unit,mode,location,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,rejection_reason,created_at,updated_at")
     .eq("id", id)
     .eq("institute_id", instituteData.instituteId)
+    .eq("is_deleted", false)
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -112,7 +113,47 @@ export async function PATCH(request: Request, { params }: Params) {
   const { data: institute } = await admin.data.from("institutes").select("id").eq("user_id", user.id).maybeSingle<{ id: string }>();
   if (!institute) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
 
-  const payload = (await request.json()) as CourseUpdatePayload;
+  const payload = (await request.json()) as CourseUpdatePayload & { action?: string; reason?: string };
+
+  if (payload.action === "restore") {
+    const { data: existing } = await admin.data
+      .from("courses")
+      .select("id,title,is_deleted")
+      .eq("id", id)
+      .eq("institute_id", institute.id)
+      .maybeSingle<{ id: string; title: string; is_deleted: boolean }>();
+
+    if (!existing) return NextResponse.json({ error: "Course not found" }, { status: 404 });
+    if (!existing.is_deleted) return NextResponse.json({ ok: true, message: "Course already active." });
+
+    const { error: restoreError } = await admin.data
+      .from("courses")
+      .update({
+        is_deleted: false,
+        deleted_at: null,
+        deleted_by: null,
+        delete_reason: null,
+        restored_at: new Date().toISOString(),
+        restored_by: user.id,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .eq("institute_id", institute.id);
+
+    if (restoreError) return NextResponse.json({ error: restoreError.message }, { status: 500 });
+
+    await writeAdminAuditLog({
+      adminUserId: null,
+      actorUserId: user.id,
+      action: "COURSE_RESTORED_BY_INSTITUTE",
+      targetTable: "courses",
+      targetId: id,
+      description: `Course ${existing.title} was restored by institute user.`,
+    });
+
+    return NextResponse.json({ ok: true, message: "Course restored." });
+  }
 
   const fees = numericOrNull(payload.fees);
   if (payload.fees !== undefined && (fees === null || fees < 0)) {
@@ -177,6 +218,7 @@ export async function PATCH(request: Request, { params }: Params) {
     .update(updates)
     .eq("id", id)
     .eq("institute_id", institute.id)
+    .eq("is_deleted", false)
     .select("id,title")
     .maybeSingle<{ id: string; title: string }>();
 
@@ -198,6 +240,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
   await writeAdminAuditLog({
     adminUserId: null,
+    actorUserId: user.id,
     action: "COURSE_RESUBMITTED_BY_INSTITUTE",
     targetTable: "courses",
     targetId: id,
@@ -207,7 +250,7 @@ export async function PATCH(request: Request, { params }: Params) {
   return NextResponse.json({ ok: true, message: "Course updated and submitted for approval." });
 }
 
-export async function DELETE(_: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
   const auth = await requireApiUser("institute", { requireApproved: false });
   if ("error" in auth) return auth.error;
 
@@ -216,33 +259,59 @@ export async function DELETE(_: Request, { params }: Params) {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
+  const reason = new URL(request.url).searchParams.get("reason")?.trim() || "Archived by institute";
+
   const { data: institute } = await admin.data.from("institutes").select("id").eq("user_id", user.id).maybeSingle<{ id: string }>();
   if (!institute) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
 
   const { data: existing } = await admin.data
     .from("courses")
-    .select("id")
+    .select("id,title,is_deleted,status,is_active")
     .eq("id", id)
     .eq("institute_id", institute.id)
-    .maybeSingle<{ id: string }>();
+    .maybeSingle<{ id: string; title: string; is_deleted: boolean; status: string | null; is_active: boolean | null }>();
 
   if (!existing) return NextResponse.json({ error: "Course not found" }, { status: 404 });
+  if (existing.is_deleted) return NextResponse.json({ ok: true, message: "Course already archived." });
 
-  const { count: orderCount } = await admin.data
-    .from("course_orders")
-    .select("id", { count: "exact", head: true })
-    .eq("course_id", id)
-    .in("payment_status", ["created", "paid", "refunded"]);
+  const [{ count: orderCount }, { count: enrollmentCount }] = await Promise.all([
+    admin.data.from("course_orders").select("id", { count: "exact", head: true }).eq("course_id", id).in("payment_status", ["created", "paid", "refunded"]),
+    admin.data.from("course_enrollments").select("id", { count: "exact", head: true }).eq("course_id", id),
+  ]);
 
-  if ((orderCount ?? 0) > 0) {
-    return NextResponse.json(
-      { error: "This course has payment records. It cannot be deleted and should be marked inactive instead." },
-      { status: 409 }
-    );
-  }
+  const hasCommercialDependency = (orderCount ?? 0) > 0 || (enrollmentCount ?? 0) > 0;
 
-  const { error } = await admin.data.from("courses").delete().eq("id", id).eq("institute_id", institute.id);
+  const { error } = await admin.data
+    .from("courses")
+    .update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: user.id,
+      delete_reason: reason,
+      is_active: false,
+      status: hasCommercialDependency ? existing.status : "archived",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("institute_id", institute.id)
+    .eq("is_deleted", false);
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true });
+  await writeAdminAuditLog({
+    adminUserId: null,
+    actorUserId: user.id,
+    action: "COURSE_ARCHIVED_BY_INSTITUTE",
+    targetTable: "courses",
+    targetId: id,
+    description: `Course ${existing.title} archived via soft-delete safeguards.`,
+    oldData: existing,
+    metadata: {
+      instituteId: institute.id,
+      reason,
+      dependencyChecks: { orderCount: orderCount ?? 0, enrollmentCount: enrollmentCount ?? 0 },
+    },
+  });
+
+  return NextResponse.json({ ok: true, dependencyChecks: { orderCount: orderCount ?? 0, enrollmentCount: enrollmentCount ?? 0 } });
 }

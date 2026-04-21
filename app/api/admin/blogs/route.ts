@@ -65,6 +65,7 @@ export async function GET() {
   const { data, error } = await admin.data
     .from("blogs")
     .select("id,title,slug,excerpt,content,status,published_at,created_at,updated_at,cover_image_url,featured,seo_title,seo_description,canonical_url,metadata")
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false })
     .limit(200);
 

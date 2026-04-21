@@ -112,8 +112,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data, error } = await admin.data
     .from("blogs")
-    .update(updates)
+     .update(updates)
     .eq("id", id)
+    .eq("is_deleted", false)
     .select("id,title,slug,excerpt,content,status,published_at,created_at,updated_at,cover_image_url,featured,seo_title,seo_description,canonical_url,metadata")
     .single();
 
@@ -173,27 +174,87 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true, blog: data });
 }
 
-export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
+  const reason = new URL(request.url).searchParams.get("reason")?.trim() || "Archived by admin";
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  await admin.data.from("blog_post_categories").delete().eq("blog_id", id);
-  await admin.data.from("blog_post_tags").delete().eq("blog_id", id);
-  await admin.data.from("blog_media").delete().eq("blog_id", id);
+  const { data: existing } = await admin.data.from("blogs").select("id,title,status,is_deleted").eq("id", id).maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Blog not found" }, { status: 404 });
+  if (existing.is_deleted) return NextResponse.json({ ok: true, message: "Blog already archived." });
 
-  const { error } = await admin.data.from("blogs").delete().eq("id", id);
+  const { error } = await admin.data
+    .from("blogs")
+    .update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: auth.user.id,
+      delete_reason: reason,
+      status: "archived",
+      featured: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("is_deleted", false);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await writeAdminAuditLog({
     adminUserId: auth.user.id,
-    action: "BLOG_DELETED",
+    actorUserId: auth.user.id,
+    action: "BLOG_ARCHIVED",
     targetTable: "blogs",
     targetId: id,
+    description: `Blog ${existing.title ?? id} archived by admin.`,
+    oldData: existing,
+    metadata: { reason },
+  });
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser("admin");
+  if ("error" in auth) return auth.error;
+
+  const { id } = await params;
+  const body = await request.json().catch(() => ({}));
+  if (body?.action !== "restore") {
+    return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
+  }
+
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  const { data: existing } = await admin.data.from("blogs").select("id,title,is_deleted").eq("id", id).maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Blog not found" }, { status: 404 });
+  if (!existing.is_deleted) return NextResponse.json({ ok: true, message: "Blog already active." });
+
+  const { error } = await admin.data
+    .from("blogs")
+    .update({
+      is_deleted: false,
+      deleted_at: null,
+      deleted_by: null,
+      delete_reason: null,
+      restored_at: new Date().toISOString(),
+      restored_by: auth.user.id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await writeAdminAuditLog({
+    adminUserId: auth.user.id,
+    actorUserId: auth.user.id,
+    action: "BLOG_RESTORED",
+    targetTable: "blogs",
+    targetId: id,
+    description: `Blog ${existing.title ?? id} restored by admin.`,
   });
 
   return NextResponse.json({ ok: true });

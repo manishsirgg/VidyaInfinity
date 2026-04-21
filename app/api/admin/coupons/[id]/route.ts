@@ -89,15 +89,40 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const { error } = await admin.data.from("coupons").delete().eq("id", id);
+  const { data: existing } = await admin.data.from("coupons").select("id,code,active").eq("id", id).maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Coupon not found" }, { status: 404 });
+
+  const [{ count: usedInCourseOrders }, { count: usedInPsychometricOrders }, { count: usedInWebinarOrders }] = await Promise.all([
+    admin.data.from("course_orders").select("id", { count: "exact", head: true }).eq("coupon_code", existing.code),
+    admin.data.from("psychometric_orders").select("id", { count: "exact", head: true }).eq("coupon_code", existing.code),
+    admin.data.from("webinar_orders").select("id", { count: "exact", head: true }).eq("coupon_code", existing.code),
+  ]);
+
+  const { data, error } = await admin.data
+    .from("coupons")
+    .update({ active: false })
+    .eq("id", id)
+    .select("id,code,discount_percent,expiry_date,active,applies_to,created_at")
+    .single();
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   await writeAdminAuditLog({
     adminUserId: auth.user.id,
-    action: "COUPON_DELETED",
+    actorUserId: auth.user.id,
+    action: "COUPON_DEACTIVATED",
     targetTable: "coupons",
     targetId: id,
+    description: `Coupon ${existing.code} deactivated instead of deletion.`,
+    oldData: existing,
+    metadata: {
+      dependencyChecks: {
+        usedInCourseOrders: usedInCourseOrders ?? 0,
+        usedInPsychometricOrders: usedInPsychometricOrders ?? 0,
+        usedInWebinarOrders: usedInWebinarOrders ?? 0,
+      },
+    },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, coupon: data, message: "Coupon deactivated" });
 }

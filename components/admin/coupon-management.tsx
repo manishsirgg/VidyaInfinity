@@ -66,8 +66,8 @@ export function CouponManagement({ initialCoupons }: { initialCoupons: CouponIte
     setMessage(`Coupon ${coupon.code} ${coupon.active ? "disabled" : "enabled"}`);
   }
 
-  async function deleteCoupon(id: string, code: string) {
-    if (!window.confirm(`Delete coupon ${code}?`)) return;
+  async function deactivateCoupon(id: string, code: string) {
+    if (!window.confirm(`Deactivate coupon ${code}?`)) return;
 
     setLoadingId(id);
     const response = await fetch(`/api/admin/coupons/${id}`, { method: "DELETE" });
@@ -75,12 +75,12 @@ export function CouponManagement({ initialCoupons }: { initialCoupons: CouponIte
     setLoadingId(null);
 
     if (!response.ok) {
-      setMessage(body.error ?? "Unable to delete coupon");
+      setMessage(body.error ?? "Unable to deactivate coupon");
       return;
     }
 
-    setCoupons((prev) => prev.filter((coupon) => coupon.id !== id));
-    setMessage("Coupon deleted");
+    setCoupons((prev) => prev.map((coupon) => (coupon.id === id ? { ...coupon, ...body.coupon } : coupon)));
+    setMessage("Coupon deactivated");
   }
 
   return (
@@ -156,10 +156,10 @@ export function CouponManagement({ initialCoupons }: { initialCoupons: CouponIte
               </button>
               <button
                 disabled={loadingId === coupon.id}
-                onClick={() => deleteCoupon(coupon.id, coupon.code)}
+                onClick={() => deactivateCoupon(coupon.id, coupon.code)}
                 className="rounded bg-rose-700 px-2 py-1 text-xs text-white"
               >
-                Delete
+                Deactivate
               </button>
             </div>
           </div>

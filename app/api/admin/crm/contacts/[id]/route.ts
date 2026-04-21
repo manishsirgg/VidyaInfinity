@@ -24,10 +24,10 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
   const [contactResp, notesResp, activityResp, followUpsResp, tagsResp] = await Promise.all([
-    admin.data.from("crm_contacts").select("*").eq("id", id).maybeSingle(),
-    admin.data.from("crm_notes").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
+    admin.data.from("crm_contacts").select("*").eq("id", id).eq("is_deleted", false).maybeSingle(),
+    admin.data.from("crm_notes").select("*").eq("contact_id", id).eq("is_deleted", false).order("created_at", { ascending: false }),
     admin.data.from("crm_activities").select("*").eq("contact_id", id).order("created_at", { ascending: false }),
-    admin.data.from("crm_follow_ups").select("*").eq("contact_id", id).order("due_at", { ascending: true }),
+    admin.data.from("crm_follow_ups").select("*").eq("contact_id", id).eq("is_deleted", false).order("due_at", { ascending: true }),
     admin.data
       .from("crm_contact_tags")
       .select("id,tag_id,crm_tags(id,name,color)")
@@ -130,6 +130,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .from("crm_contacts")
     .select("id,lifecycle_stage,priority,assigned_to,next_follow_up_at")
     .eq("id", id)
+    .eq("is_deleted", false)
     .maybeSingle();
 
   if (lookupError || !existing) {
@@ -189,6 +190,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   await writeAdminAuditLog({
     adminUserId: auth.user.id,
+    actorUserId: auth.user.id,
     action: "CRM_CONTACT_UPDATED",
     targetTable: "crm_contacts",
     targetId: id,
@@ -196,4 +198,52 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   });
 
   return NextResponse.json({ contact: updated });
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiUser("admin");
+  if ("error" in auth) return auth.error;
+
+  const { id } = await params;
+  if (!isUuid(id)) return NextResponse.json({ error: "Invalid contact id" }, { status: 400 });
+
+  const reason = new URL(request.url).searchParams.get("reason")?.trim() || "Archived by admin";
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+
+  const { data: existing } = await admin.data.from("crm_contacts").select("id,full_name,is_deleted").eq("id", id).maybeSingle();
+  if (!existing) return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+  if (existing.is_deleted) return NextResponse.json({ ok: true, message: "Contact already archived." });
+
+  const { error: contactError } = await admin.data
+    .from("crm_contacts")
+    .update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: auth.user.id,
+      delete_reason: reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("is_deleted", false);
+
+  if (contactError) return NextResponse.json({ error: contactError.message }, { status: 500 });
+
+  await Promise.allSettled([
+    admin.data.from("crm_notes").update({ is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: auth.user.id, delete_reason: reason }).eq("contact_id", id).eq("is_deleted", false),
+    admin.data.from("crm_follow_ups").update({ is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: auth.user.id, delete_reason: reason }).eq("contact_id", id).eq("is_deleted", false),
+  ]);
+
+  await writeAdminAuditLog({
+    adminUserId: auth.user.id,
+    actorUserId: auth.user.id,
+    action: "CRM_CONTACT_ARCHIVED",
+    targetTable: "crm_contacts",
+    targetId: id,
+    description: `CRM contact ${existing.full_name ?? id} archived.`,
+    oldData: existing,
+    metadata: { reason },
+  });
+
+  return NextResponse.json({ ok: true });
 }

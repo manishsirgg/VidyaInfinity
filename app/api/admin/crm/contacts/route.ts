@@ -42,7 +42,7 @@ export async function GET(request: Request) {
   const rangeFrom = (page - 1) * pageSize;
   const rangeTo = rangeFrom + pageSize - 1;
 
-  let query = admin.data.from("crm_contacts").select("*", { count: "exact" });
+  let query = admin.data.from("crm_contacts").select("*", { count: "exact" }).eq("is_deleted", false);
 
   if (search) {
     const escaped = search.replaceAll(",", " ");
@@ -68,9 +68,9 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const [kpiResp, sourceBreakdownResp, serviceBreakdownResp] = await Promise.all([
-    admin.data.from("crm_contacts").select("lifecycle_stage,next_follow_up_at"),
-    admin.data.from("crm_contacts").select("source"),
-    admin.data.from("crm_contacts").select("service_type"),
+    admin.data.from("crm_contacts").select("lifecycle_stage,next_follow_up_at").eq("is_deleted", false),
+    admin.data.from("crm_contacts").select("source").eq("is_deleted", false),
+    admin.data.from("crm_contacts").select("service_type").eq("is_deleted", false),
   ]);
 
   const rows = kpiResp.data ?? [];

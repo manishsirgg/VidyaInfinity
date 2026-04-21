@@ -17,6 +17,7 @@ export default async function CoursesPage() {
     .from("courses")
     .select("id,institute_id,title,summary,fees,category,subject,level,language,mode,duration,location,course_media(file_url,type),status")
     .eq("status", "approved")
+    .eq("is_deleted", false)
     .or("is_active.is.null,is_active.eq.true")
     .order("created_at", { ascending: false });
   const courseIds = [...new Set((courses ?? []).map((course) => course.id).filter(Boolean))];

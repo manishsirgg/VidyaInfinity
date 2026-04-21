@@ -69,6 +69,7 @@ export async function listInstituteCourses(userId: string) {
     .from("courses")
     .select(COURSE_SELECT)
     .eq("institute_id", instituteId)
+    .eq("is_deleted", false)
     .order("created_at", { ascending: false });
 
   return (data ?? []) as InstituteCourseRecord[];
@@ -84,6 +85,7 @@ export async function getInstituteCourseById(userId: string, courseId: string) {
     .select(COURSE_SELECT)
     .eq("id", courseId)
     .eq("institute_id", instituteId)
+    .eq("is_deleted", false)
     .maybeSingle();
 
   if (!course) return null;

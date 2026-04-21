@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
-  const { data: contact, error: contactError } = await admin.data.from("crm_contacts").select("id").eq("id", id).maybeSingle();
+  const { data: contact, error: contactError } = await admin.data.from("crm_contacts").select("id").eq("id", id).eq("is_deleted", false).maybeSingle();
   if (contactError) return NextResponse.json({ error: contactError.message }, { status: 500 });
   if (!contact) return NextResponse.json({ error: "Contact not found" }, { status: 404 });
 

@@ -25,6 +25,7 @@ export default async function BlogsPage({
       .from("blogs")
       .select("id,title,slug,excerpt,content,published_at,status,cover_image_url,featured")
       .eq("status", "published")
+      .eq("is_deleted", false)
       .order("published_at", { ascending: false }),
     supabase.from("blog_categories").select("id,name,slug").eq("is_active", true),
     supabase.from("blog_tags").select("id,name,slug").eq("is_active", true),

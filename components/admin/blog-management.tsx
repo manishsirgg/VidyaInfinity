@@ -303,8 +303,8 @@ export function BlogManagement({
     setStatusMessage(`Blog status updated to ${status}.`);
   }
 
-  async function deleteBlog(blogId: string) {
-    if (!window.confirm("Delete this blog and related category/tag/media links? This cannot be undone.")) return;
+  async function archiveBlog(blogId: string) {
+    if (!window.confirm("Archive this blog? It will be hidden from public listings.")) return;
 
     setLoadingId(blogId);
     const response = await fetch(`/api/admin/blogs/${blogId}`, { method: "DELETE" });
@@ -312,13 +312,13 @@ export function BlogManagement({
     setLoadingId(null);
 
     if (!response.ok) {
-      setStatusMessage(body.error ?? "Unable to delete blog");
+      setStatusMessage(body.error ?? "Unable to archive blog");
       return;
     }
 
     setBlogs((prev) => prev.filter((blog) => blog.id !== blogId));
     if (form.id === blogId) resetForm();
-    setStatusMessage("Blog deleted.");
+    setStatusMessage("Blog archived.");
   }
 
   return (
@@ -376,8 +376,8 @@ export function BlogManagement({
                   <button disabled={loadingId === blog.id} onClick={() => quickStatusUpdate(blog.id, "archived")} className="rounded bg-amber-700 px-2 py-1 text-xs text-white disabled:opacity-60">
                     Archive
                   </button>
-                  <button disabled={loadingId === blog.id} onClick={() => deleteBlog(blog.id)} className="rounded bg-rose-700 px-2 py-1 text-xs text-white disabled:opacity-60">
-                    Delete
+                  <button disabled={loadingId === blog.id} onClick={() => archiveBlog(blog.id)} className="rounded bg-rose-700 px-2 py-1 text-xs text-white disabled:opacity-60">
+                    Archive
                   </button>
                   <Link href={`/blogs/${blog.slug}` as Route} className="rounded border px-2 py-1 text-xs hover:bg-slate-50" target="_blank">
                     Preview

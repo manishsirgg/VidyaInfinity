@@ -29,7 +29,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
   const [{ data: contact }, { data: tag }, { data: existingTag }] = await Promise.all([
-    admin.data.from("crm_contacts").select("id").eq("id", id).maybeSingle(),
+    admin.data.from("crm_contacts").select("id").eq("id", id).eq("is_deleted", false).maybeSingle(),
     admin.data.from("crm_tags").select("id").eq("id", tagId).maybeSingle(),
     admin.data.from("crm_contact_tags").select("id").eq("contact_id", id).eq("tag_id", tagId).maybeSingle(),
   ]);

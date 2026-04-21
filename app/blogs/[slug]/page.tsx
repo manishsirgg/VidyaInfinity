@@ -17,6 +17,7 @@ async function fetchBlog(slug: string) {
     .select("id,title,slug,excerpt,content,published_at,status,cover_image_url,seo_title,seo_description,canonical_url")
     .eq("slug", slug)
     .eq("status", "published")
+    .eq("is_deleted", false)
     .single();
 
   return blog;
@@ -64,6 +65,7 @@ export default async function BlogDetailsPage({ params }: { params: Promise<{ sl
       .from("blogs")
       .select("id,title,slug,excerpt,published_at,status")
       .eq("status", "published")
+    .eq("is_deleted", false)
       .neq("id", blog.id)
       .order("published_at", { ascending: false })
       .limit(4),

@@ -277,7 +277,7 @@ export default async function InstituteDashboardPage() {
               Add new course
             </Link>
             <Link href="/institute/courses/manage" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
-              Manage courses (edit/delete)
+              Manage courses (edit/archive)
             </Link>
             <Link href="/institute/courses/rejected" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Rejected courses &amp; resubmission
