@@ -19,6 +19,11 @@ type CourseRow = {
   is_deleted: boolean | null;
 };
 
+type StudentProfileRow = {
+  id: string;
+  role: string | null;
+};
+
 type InstituteRow = {
   id: string;
   status: string | null;
@@ -43,20 +48,6 @@ function isInstituteUsable(institute: InstituteRow | null) {
 
   if (["rejected", "suspended", "blocked", "inactive", "archived"].includes(effectiveStatus)) return false;
   if (effectiveStatus && !["approved", "active"].includes(effectiveStatus)) return false;
-
-  return true;
-}
-
-function isCoursePurchasable(course: CourseRow | null) {
-  if (!course || course.is_deleted) return false;
-  if (course.is_active === false) return false;
-
-  const courseStatus = normalizeStatus(course.status);
-  const courseApprovalStatus = normalizeStatus(course.approval_status);
-  const effectiveStatus = courseStatus || courseApprovalStatus;
-
-  if (["pending", "rejected", "draft", "archived", "inactive", "cancelled"].includes(effectiveStatus)) return false;
-  if (effectiveStatus && !["approved", "active", "live", "published", "listed"].includes(effectiveStatus)) return false;
 
   return true;
 }
@@ -90,15 +81,84 @@ export async function POST(request: Request) {
     const admin = getSupabaseAdmin();
     if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
+    const { data: studentProfile, error: studentProfileError } = await admin.data
+      .from("profiles")
+      .select("id,role")
+      .eq("id", auth.user.id)
+      .maybeSingle<StudentProfileRow>();
+
+    if (studentProfileError) {
+      console.error("[course/create-order] student profile lookup failed", {
+        userId: auth.user.id,
+        error: studentProfileError.message,
+      });
+      return NextResponse.json({ error: "Unable to validate student profile." }, { status: 500 });
+    }
+
+    if (!studentProfile) {
+      console.warn("[course/create-order] student profile missing", { userId: auth.user.id });
+      return NextResponse.json({ error: "Student profile missing. Please complete your account setup." }, { status: 400 });
+    }
+
+    if (studentProfile.id !== auth.user.id) {
+      console.error("[course/create-order] student profile lookup mismatch", {
+        userId: auth.user.id,
+        profileId: studentProfile.id,
+      });
+      return NextResponse.json({ error: "Profile lookup mismatch. Please sign in again and retry." }, { status: 400 });
+    }
+
+    if (normalizeStatus(studentProfile.role) !== "student") {
+      console.warn("[course/create-order] non-student profile attempted course purchase", {
+        userId: auth.user.id,
+        profileRole: studentProfile.role,
+      });
+      return NextResponse.json({ error: "Only student accounts can purchase courses." }, { status: 403 });
+    }
+
+    const studentId = studentProfile.id;
+
     const { data: course } = await admin.data
       .from("courses")
       .select("id,title,institute_id,fees,status,approval_status,admission_deadline,is_active,is_deleted")
       .eq("id", courseId)
       .maybeSingle<CourseRow>();
 
-    if (!course || !isCoursePurchasable(course)) {
+    if (!course) {
+      console.warn("[course/create-order] course not found", { courseId, studentId });
       return NextResponse.json({ error: "This course is not available for enrollment." }, { status: 404 });
     }
+    if (course.is_deleted) {
+      console.warn("[course/create-order] course deleted", { courseId: course.id, studentId });
+      return NextResponse.json({ error: "This course has been deleted and cannot be enrolled." }, { status: 400 });
+    }
+    if (course.is_active === false) {
+      console.warn("[course/create-order] course inactive", { courseId: course.id, studentId });
+      return NextResponse.json({ error: "This course is inactive and not open for enrollment." }, { status: 400 });
+    }
+
+    const courseStatus = normalizeStatus(course.status);
+    const courseApprovalStatus = normalizeStatus(course.approval_status);
+    const effectiveCourseStatus = courseStatus || courseApprovalStatus;
+    if (["pending", "rejected", "draft", "archived", "inactive", "cancelled"].includes(effectiveCourseStatus)) {
+      console.warn("[course/create-order] course not approved", {
+        courseId: course.id,
+        studentId,
+        status: course.status,
+        approvalStatus: course.approval_status,
+      });
+      return NextResponse.json({ error: "This course is not approved for enrollment yet." }, { status: 400 });
+    }
+    if (effectiveCourseStatus && !["approved", "active", "live", "published", "listed"].includes(effectiveCourseStatus)) {
+      console.warn("[course/create-order] course status unsupported for purchase", {
+        courseId: course.id,
+        studentId,
+        status: course.status,
+        approvalStatus: course.approval_status,
+      });
+      return NextResponse.json({ error: "This course is not approved for enrollment yet." }, { status: 400 });
+    }
+
     const ensuredCourse: CourseRow = course;
 
     const { data: institute } = await admin.data
@@ -107,8 +167,25 @@ export async function POST(request: Request) {
       .eq("id", ensuredCourse.institute_id)
       .maybeSingle<InstituteRow>();
 
-    if (!institute || !isInstituteUsable(institute)) {
+    if (!institute) {
+      console.warn("[course/create-order] institute missing for course", {
+        courseId: ensuredCourse.id,
+        instituteId: ensuredCourse.institute_id,
+        studentId,
+      });
       return NextResponse.json({ error: "This institute is not currently accepting enrollments." }, { status: 400 });
+    }
+    if (!isInstituteUsable(institute)) {
+      console.warn("[course/create-order] institute invalid for enrollment", {
+        courseId: ensuredCourse.id,
+        instituteId: institute.id,
+        studentId,
+        status: institute.status,
+        approvalStatus: institute.approval_status,
+        isActive: institute.is_active,
+        isDeleted: institute.is_deleted,
+      });
+      return NextResponse.json({ error: "Institute invalid: enrollment is currently unavailable for this course." }, { status: 400 });
     }
     const ensuredInstitute: InstituteRow = institute;
 
@@ -117,18 +194,28 @@ export async function POST(request: Request) {
     }
 
     if (isAdmissionDeadlinePassed(ensuredCourse.admission_deadline)) {
+      console.warn("[course/create-order] admission deadline passed", {
+        courseId: ensuredCourse.id,
+        studentId,
+        admissionDeadline: ensuredCourse.admission_deadline,
+      });
       return NextResponse.json({ error: "Admission deadline has passed for this course." }, { status: 400 });
     }
 
     const { data: existingEnrollment } = await admin.data
       .from("course_enrollments")
       .select("id")
-      .eq("student_id", auth.user.id)
+      .eq("student_id", studentId)
       .eq("course_id", ensuredCourse.id)
       .eq("enrollment_status", "enrolled")
       .maybeSingle();
 
     if (existingEnrollment) {
+      console.warn("[course/create-order] already enrolled", {
+        courseId: ensuredCourse.id,
+        studentId,
+        enrollmentId: existingEnrollment.id,
+      });
       return NextResponse.json({ error: "You are already enrolled in this course." }, { status: 409 });
     }
 
@@ -170,12 +257,23 @@ export async function POST(request: Request) {
 
       if (couponError) return NextResponse.json({ error: couponError.message }, { status: 500 });
       if (coupon?.is_deleted) {
+        console.warn("[course/create-order] invalid coupon (deleted)", {
+          courseId: ensuredCourse.id,
+          studentId,
+          couponCode: normalizedCouponCode,
+        });
         return NextResponse.json({ error: "This coupon is no longer available." }, { status: 400 });
       }
 
       const couponCheck = validateCouponForScope(coupon ?? null, "course");
       if (!couponCheck.ok || !coupon) {
         const reason = couponCheck.ok ? "Coupon not found" : couponCheck.reason;
+        console.warn("[course/create-order] invalid coupon", {
+          courseId: ensuredCourse.id,
+          studentId,
+          couponCode: normalizedCouponCode,
+          reason,
+        });
         return NextResponse.json({ error: getCouponErrorMessage(reason) }, { status: 400 });
       }
 
@@ -189,7 +287,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
 
     const createOrderPayload = {
-      student_id: auth.user.id,
+      student_id: studentId,
       course_id: ensuredCourse.id,
       institute_id: ensuredCourse.institute_id,
       order_kind: "course_enrollment",
@@ -228,7 +326,14 @@ export async function POST(request: Request) {
         payment_status: string;
       }>();
 
-    if (orderError) return NextResponse.json({ error: orderError.message }, { status: 500 });
+    if (orderError) {
+      console.error("[course/create-order] failed order insert", {
+        courseId: ensuredCourse.id,
+        studentId,
+        error: orderError.message,
+      });
+      return NextResponse.json({ error: "Failed order insert. Please retry." }, { status: 500 });
+    }
 
     if (finalPayableAmount <= 0) {
       const freeOrderId = `free_order_${insertedOrder.id}`;
@@ -261,7 +366,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: reconciled.error }, { status: 500 });
       }
 
-      await admin.data.from("student_cart_items").delete().eq("student_id", auth.user.id).eq("course_id", ensuredCourse.id);
+      await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", ensuredCourse.id);
 
       return NextResponse.json({
         orderRecordId: insertedOrder.id,
@@ -279,7 +384,7 @@ export async function POST(request: Request) {
       currency: "INR",
       receipt: `course_${ensuredCourse.id.slice(0, 8)}_${Date.now()}`,
       notes: {
-        studentId: auth.user.id,
+        studentId,
         courseId: ensuredCourse.id,
         instituteId: ensuredCourse.institute_id,
       },
