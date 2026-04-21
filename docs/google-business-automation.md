@@ -14,6 +14,7 @@ This project supports a policy-driven Google Business automation flow with safe 
 Configure these variables:
 
 - `GOOGLE_MAPS_API_KEY`
+- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (optional; only needed for browser-side Maps widgets)
 - `GOOGLE_BUSINESS_PLACE_ID`
 - `GBP_AUTOMATION_SECRET`
 - `GBP_AUTOMATION_WEBHOOK_URL`
@@ -26,6 +27,8 @@ Configure these variables:
 - `GBP_POSITIVE_KEYWORDS=great,excellent,helpful,...`
 - `GBP_REPLY_KEYWORDS=visa,admission,career,...`
 - `GBP_SEO_TOPICS=study abroad guidance,career counselling after 12th,...`
+
+`GOOGLE_MAPS_API_KEY` is used server-side for fetching Place reviews. Keep this key private. Only set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` if you intentionally load Google Maps in client-side UI.
 
 ## Automation endpoint
 
