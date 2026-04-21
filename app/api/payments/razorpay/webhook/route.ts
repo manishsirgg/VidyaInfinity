@@ -1,11 +1,15 @@
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { verifyRazorpayWebhookSignature } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
+  const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "course", "webinar", "psychometric", "webhook"]);
+  if (schemaErrorResponse) return schemaErrorResponse;
+
   try {
     const headerMap = await headers();
     const signature = headerMap.get("x-razorpay-signature") ?? "";
@@ -100,6 +104,25 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (courseOrder) {
+      const eventAmount = Number(paymentEntity?.amount ?? 0);
+      const expectedAmount = Math.round(Number(courseOrder.gross_amount ?? 0) * 100);
+      const eventCurrency = String(paymentEntity?.currency ?? "").toUpperCase();
+      const expectedCurrency = String(courseOrder.currency ?? "").toUpperCase();
+
+      if (eventAmount !== expectedAmount || !eventCurrency || eventCurrency !== expectedCurrency) {
+        if (insertedLog?.id) {
+          await admin.data
+            .from("razorpay_webhook_logs")
+            .update({
+              processed: true,
+              processed_at: new Date().toISOString(),
+              notes: `course_amount_currency_mismatch:${eventAmount}:${eventCurrency}`,
+            })
+            .eq("id", insertedLog.id);
+        }
+        return NextResponse.json({ error: "Webhook payment amount/currency mismatch for course order." }, { status: 400 });
+      }
+
       const reconciled = await reconcileCourseOrderPaid({
         supabase: admin.data,
         order: courseOrder,

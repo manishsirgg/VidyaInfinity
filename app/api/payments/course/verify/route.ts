@@ -1,11 +1,26 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+type StudentProfileRow = {
+  id: string;
+  role: string | null;
+};
+
+function normalizeStatus(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
 export async function POST(request: Request) {
+  const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "course"]);
+  if (schemaErrorResponse) return schemaErrorResponse;
+
   try {
     const auth = await requireApiUser("student", { requireApproved: false });
     if ("error" in auth) return auth.error;
@@ -24,11 +39,40 @@ export async function POST(request: Request) {
     const admin = getSupabaseAdmin();
     if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
+    const { data: studentProfile, error: studentProfileError } = await admin.data
+      .from("profiles")
+      .select("id,role")
+      .eq("id", user.id)
+      .maybeSingle<StudentProfileRow>();
+
+    if (studentProfileError) {
+      console.error("[course/verify] student profile lookup failed", {
+        userId: user.id,
+        error: studentProfileError.message,
+      });
+      return NextResponse.json({ error: "Unable to validate student profile." }, { status: 500 });
+    }
+
+    if (!studentProfile) {
+      console.warn("[course/verify] student profile missing", { userId: user.id });
+      return NextResponse.json({ error: "Student profile missing. Please complete your account setup." }, { status: 400 });
+    }
+
+    if (normalizeStatus(studentProfile.role) !== "student") {
+      console.warn("[course/verify] non-student profile attempted course verification", {
+        userId: user.id,
+        profileRole: studentProfile.role,
+      });
+      return NextResponse.json({ error: "Only student accounts can verify course payments." }, { status: 403 });
+    }
+
+    const studentId = studentProfile.id;
+
     const { data: order, error: orderFetchError } = await admin.data
       .from("course_orders")
       .select("id,student_id,course_id,institute_id,payment_status,gross_amount,institute_receivable_amount,currency,razorpay_payment_id")
       .eq("razorpay_order_id", orderId)
-      .eq("student_id", user.id)
+      .eq("student_id", studentId)
       .maybeSingle<{
         id: string;
         student_id: string;
@@ -104,7 +148,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: reconciled.error }, { status: 500 });
     }
 
-    await admin.data.from("student_cart_items").delete().eq("student_id", user.id).eq("course_id", order.course_id);
+    await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", order.course_id);
 
     return NextResponse.json({ ok: true, idempotent: false, message: "Payment verified and enrollment confirmed." });
   } catch (error) {
