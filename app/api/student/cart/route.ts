@@ -3,6 +3,24 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
+
+function isAdmissionDeadlinePassed(admissionDeadline: string | null | undefined) {
+  if (!admissionDeadline) return false;
+  const normalized = admissionDeadline.trim();
+  if (!normalized) return false;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    const endOfDay = new Date(`${normalized}T23:59:59.999Z`);
+    if (Number.isNaN(endOfDay.getTime())) return false;
+    return endOfDay.getTime() < Date.now();
+  }
+
+  const deadlineAt = new Date(normalized);
+  if (Number.isNaN(deadlineAt.getTime())) return false;
+  return deadlineAt.getTime() < Date.now();
+}
+
 export async function GET() {
   const auth = await requireApiUser("student", { requireApproved: false });
   if ("error" in auth) return auth.error;
@@ -30,15 +48,35 @@ export async function POST(request: Request) {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const { data: course } = await admin.data
+  const { data: course, error: courseError } = await admin.data
     .from("courses")
-    .select("id,status,is_active")
+    .select("id,status,is_active,admission_deadline,batch_size")
     .eq("id", courseId)
     .eq("status", "approved")
     .eq("is_active", true)
     .maybeSingle();
 
+  if (courseError) return NextResponse.json({ error: "Unable to validate course availability." }, { status: 500 });
   if (!course) return NextResponse.json({ error: "Course is not available" }, { status: 400 });
+  if (isAdmissionDeadlinePassed(course.admission_deadline)) {
+    return NextResponse.json({ error: "Admission deadline has passed for this course." }, { status: 400 });
+  }
+
+  if (course.batch_size !== null && course.batch_size >= 0) {
+    const { count: activeEnrollmentCount, error: activeEnrollmentCountError } = await admin.data
+      .from("course_enrollments")
+      .select("id", { count: "exact", head: true })
+      .eq("course_id", courseId)
+      .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES]);
+
+    if (activeEnrollmentCountError) {
+      return NextResponse.json({ error: "Unable to validate course seat availability." }, { status: 500 });
+    }
+
+    if ((activeEnrollmentCount ?? 0) >= course.batch_size) {
+      return NextResponse.json({ error: "This course batch is full and cannot be added to cart." }, { status: 400 });
+    }
+  }
 
   const { error } = await admin.data.from("student_cart_items").upsert(
     {
