@@ -6,6 +6,7 @@ import { LeadForm } from "@/components/forms/lead-form";
 import { ShareActions } from "@/components/shared/share-actions";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { siteConfig } from "@/lib/constants/site";
+import { isInstituteEligibleForEnrollment } from "@/lib/institutes/enrollment-eligibility";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -14,7 +15,8 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
 
-  const baseSelect = "id,title,summary,description,fees,category,subject,level,language,mode,duration,duration_value,duration_unit,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,course_media(file_url,type)";
+  const baseSelect =
+    "id,title,summary,description,fees,category,subject,level,language,mode,duration,duration_value,duration_unit,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,course_media(file_url,type),institute:institutes(id,status,verified,rejection_reason,is_deleted)";
 
   const byId = await dataClient.from("courses").select(baseSelect).eq("id", slug).eq("status", "approved").eq("is_deleted", false).maybeSingle();
   const byLegacySlug = byId.data
@@ -23,6 +25,8 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
 
   const course = byLegacySlug.data;
   if (!course) notFound();
+  const institute = Array.isArray(course.institute) ? course.institute[0] : course.institute;
+  const enrollmentOpen = isInstituteEligibleForEnrollment(institute);
   const { data: featuredRow } = await dataClient.from("active_featured_courses").select("course_id").eq("course_id", course.id).maybeSingle<{ course_id: string }>();
   const isFeaturedCourse = Boolean(featuredRow?.course_id);
   const coursePath = `/courses/${slug}`;
@@ -88,7 +92,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
       </article>
 
       <aside className="space-y-4">
-        <CoursePurchaseCard courseId={course.id} courseTitle={course.title} feeAmount={Number(course.fees ?? 0)} />
+        <CoursePurchaseCard courseId={course.id} courseTitle={course.title} feeAmount={Number(course.fees ?? 0)} enrollmentOpen={enrollmentOpen} />
         <div className="rounded-xl border bg-white p-4">
           <p className="mt-2 text-sm text-slate-600">Certificate: {course.certificate_status ?? "-"}</p>
           {course.certificate_details ? <p className="mt-1 text-sm text-slate-600">{course.certificate_details}</p> : null}

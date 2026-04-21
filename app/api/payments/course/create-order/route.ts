@@ -6,6 +6,7 @@ import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payment
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
+import { isInstituteEligibleForEnrollment } from "@/lib/institutes/enrollment-eligibility";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type CourseRow = {
@@ -28,7 +29,8 @@ type StudentProfileRow = {
 type InstituteRow = {
   id: string;
   status: string | null;
-  is_active: boolean | null;
+  verified: boolean | null;
+  rejection_reason: string | null;
   is_deleted: boolean | null;
 };
 
@@ -38,19 +40,6 @@ function normalizeStatus(value: string | null | undefined) {
   return String(value ?? "")
     .trim()
     .toLowerCase();
-}
-
-function isInstituteUsable(institute: InstituteRow | null) {
-  if (!institute || institute.is_deleted) return false;
-  if (institute.is_active === false) return false;
-
-  const instituteStatus = normalizeStatus(institute.status);
-  const effectiveStatus = instituteStatus;
-
-  if (["rejected", "suspended", "blocked", "inactive", "archived"].includes(effectiveStatus)) return false;
-  if (effectiveStatus && !["approved", "active"].includes(effectiveStatus)) return false;
-
-  return true;
 }
 
 function isAdmissionDeadlinePassed(admissionDeadline: string | null) {
@@ -173,7 +162,7 @@ export async function POST(request: Request) {
 
     const { data: institute } = await admin.data
       .from("institutes")
-      .select("id,status,is_active,is_deleted")
+      .select("id,status,verified,rejection_reason,is_deleted")
       .eq("id", ensuredCourse.institute_id)
       .maybeSingle<InstituteRow>();
 
@@ -185,13 +174,14 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ error: "This institute is not currently accepting enrollments." }, { status: 400 });
     }
-    if (!isInstituteUsable(institute)) {
+    if (!isInstituteEligibleForEnrollment(institute)) {
       console.warn("[course/create-order] institute invalid for enrollment", {
         courseId: ensuredCourse.id,
         instituteId: institute.id,
         studentId,
         status: institute.status,
-        isActive: institute.is_active,
+        verified: institute.verified,
+        rejectionReason: institute.rejection_reason,
         isDeleted: institute.is_deleted,
       });
       return NextResponse.json({ error: "Institute invalid: enrollment is currently unavailable for this course." }, { status: 400 });

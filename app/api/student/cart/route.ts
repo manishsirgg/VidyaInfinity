@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { isInstituteEligibleForEnrollment } from "@/lib/institutes/enrollment-eligibility";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
 
   const { data: course, error: courseError } = await admin.data
     .from("courses")
-    .select("id,status,is_active,admission_deadline,batch_size")
+    .select("id,status,is_active,admission_deadline,batch_size,institute:institutes!inner(id,status,verified,rejection_reason,is_deleted)")
     .eq("id", courseId)
     .eq("status", "approved")
     .eq("is_active", true)
@@ -58,6 +59,10 @@ export async function POST(request: Request) {
 
   if (courseError) return NextResponse.json({ error: "Unable to validate course availability." }, { status: 500 });
   if (!course) return NextResponse.json({ error: "Course is not available" }, { status: 400 });
+  const institute = Array.isArray(course.institute) ? course.institute[0] : course.institute;
+  if (!isInstituteEligibleForEnrollment(institute)) {
+    return NextResponse.json({ error: "This institute is not currently accepting enrollments." }, { status: 400 });
+  }
   if (isAdmissionDeadlinePassed(course.admission_deadline)) {
     return NextResponse.json({ error: "Admission deadline has passed for this course." }, { status: 400 });
   }
