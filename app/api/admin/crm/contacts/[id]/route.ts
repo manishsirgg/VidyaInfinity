@@ -5,11 +5,21 @@ import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return UUID_REGEX.test(value);
+}
+
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "Invalid contact id" }, { status: 400 });
+  }
+
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
@@ -72,6 +82,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "Invalid contact id" }, { status: 400 });
+  }
+
   const body = await request.json();
 
   const lifecycleStage = typeof body.lifecycle_stage === "string" ? body.lifecycle_stage.trim().toLowerCase() : undefined;
@@ -89,6 +103,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
+  if (assignedTo && !isUuid(assignedTo)) {
+    return NextResponse.json({ error: "Invalid assigned_to user id" }, { status: 400 });
+  }
+
+  if (nextFollowUpAt) {
+    const parsedDate = new Date(nextFollowUpAt);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return NextResponse.json({ error: "Invalid next_follow_up_at datetime" }, { status: 400 });
+    }
+  }
+
+  if (assignedTo) {
+    const { data: assignee, error: assigneeError } = await admin.data
+      .from("profiles")
+      .select("id,role")
+      .eq("id", assignedTo)
+      .maybeSingle<{ id: string; role: string }>();
+
+    if (assigneeError || !assignee || assignee.role !== "admin") {
+      return NextResponse.json({ error: "assigned_to must be an existing admin user id" }, { status: 400 });
+    }
+  }
 
   const { data: existing, error: lookupError } = await admin.data
     .from("crm_contacts")
