@@ -60,8 +60,8 @@ type WebinarRegistrationItem = {
   access_status: string;
   registration_status: string;
   webinars:
-    | { title: string; starts_at: string; status: string; webinar_mode: string; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }
-    | { title: string; starts_at: string; status: string; webinar_mode: string; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }[]
+    | { title: string; starts_at: string; ends_at: string | null; status: string; webinar_mode: string; meeting_provider: string | null; meeting_url: string | null; institutes: { name: string | null } | { name: string | null }[] | null }
+    | { title: string; starts_at: string; ends_at: string | null; status: string; webinar_mode: string; meeting_provider: string | null; meeting_url: string | null; institutes: { name: string | null } | { name: string | null }[] | null }[]
     | null;
 };
 
@@ -73,8 +73,8 @@ type WebinarOrderItem = {
   paid_at: string | null;
   created_at: string;
   webinars:
-    | { title: string | null; starts_at: string | null; webinar_mode: string | null; status: string | null; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }
-    | { title: string | null; starts_at: string | null; webinar_mode: string | null; status: string | null; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }[]
+    | { title: string | null; starts_at: string | null; ends_at: string | null; webinar_mode: string | null; status: string | null; meeting_provider: string | null; meeting_url: string | null; institutes: { name: string | null } | { name: string | null }[] | null }
+    | { title: string | null; starts_at: string | null; ends_at: string | null; webinar_mode: string | null; status: string | null; meeting_provider: string | null; meeting_url: string | null; institutes: { name: string | null } | { name: string | null }[] | null }[]
     | null;
 };
 
@@ -116,7 +116,7 @@ function statusTone(status: string) {
 
 function webinarInfo(
   webinar: WebinarRegistrationItem["webinars"],
-): { title: string; starts_at: string; status: string; webinar_mode: string; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null } | null {
+): { title: string; starts_at: string; ends_at: string | null; status: string; webinar_mode: string; meeting_provider: string | null; meeting_url: string | null; institutes: { name: string | null } | { name: string | null }[] | null } | null {
   if (!webinar) return null;
   if (Array.isArray(webinar)) return webinar[0] ?? null;
   return webinar;
@@ -232,14 +232,14 @@ export default async function StudentDashboardPage() {
     dataClient.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("order_kind", "webinar"),
     dataClient
       .from("webinar_registrations")
-      .select("id,webinar_id,created_at,payment_status,access_status,registration_status,webinars(title,starts_at,status,webinar_mode,meeting_provider,institutes(name))")
+      .select("id,webinar_id,created_at,payment_status,access_status,registration_status,webinars(title,starts_at,ends_at,status,webinar_mode,meeting_provider,meeting_url,institutes(name))")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<WebinarRegistrationItem[]>(),
     dataClient
       .from("webinar_orders")
-      .select("id,webinar_id,payment_status,amount,paid_at,created_at,webinars(title,starts_at,webinar_mode,status,meeting_provider,institutes(name))")
+      .select("id,webinar_id,payment_status,amount,paid_at,created_at,webinars(title,starts_at,ends_at,webinar_mode,status,meeting_provider,meeting_url,institutes(name))")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3)
@@ -366,8 +366,8 @@ export default async function StudentDashboardPage() {
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Overview</h2>
         <div className="mt-3 grid gap-4 md:grid-cols-7">
-          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></Link>
-          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></Link>
+          <Link href="/student/purchases?kind=course" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></Link>
+          <Link href="/student/purchases?kind=psychometric" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></Link>
           <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{normalizedActiveEnrollments}</span></Link>
           <Link href="/student/webinar-registrations?filter=all" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Webinar Registrations: <span className="font-semibold">{normalizedActiveWebinarRegistrations}</span></Link>
           <Link href="/student/webinar-registrations?filter=upcoming" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Upcoming Webinars: <span className="font-semibold">{upcomingWebinarsCount}</span></Link>
@@ -490,6 +490,11 @@ export default async function StudentDashboardPage() {
                   </p>
                   <p className="text-slate-700">Access: {toTitleCase(item.access_status)} · Payment: {toTitleCase(item.payment_status)}</p>
                   <p className="text-slate-700">Provider: {webinar?.meeting_provider ?? "N/A"} · Institute: {extractInstituteName(webinar?.institutes) ?? "N/A"}</p>
+                  {item.access_status === "granted" && webinar?.meeting_url ? (
+                    <a href={webinar.meeting_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white">
+                      Join Webinar
+                    </a>
+                  ) : null}
                   <p className="text-xs text-slate-500">
                     {webinar?.starts_at ? `Starts: ${formatDate(webinar.starts_at)} · ` : ""}
                     Registered: {formatDate(item.created_at)}
@@ -514,6 +519,11 @@ export default async function StudentDashboardPage() {
                   </p>
                   <p className="text-slate-700">Payment: {toTitleCase(item.payment_status ?? "pending")} · Amount: ₹{item.amount ?? 0}</p>
                   <p className="text-slate-700">Provider: {webinar?.meeting_provider ?? "N/A"} · Institute: {extractInstituteName(webinar?.institutes) ?? "N/A"}</p>
+                  {(item.payment_status ?? "").toLowerCase() === "paid" && webinar?.meeting_url ? (
+                    <a href={webinar.meeting_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white">
+                      Join Webinar
+                    </a>
+                  ) : null}
                   <p className="text-xs text-slate-500">
                     {webinar?.starts_at ? `Starts: ${formatDate(webinar.starts_at)} · ` : ""}
                     Transaction: {formatDate(item.paid_at ?? item.created_at)}

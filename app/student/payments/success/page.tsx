@@ -20,6 +20,8 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
 
   let itemTitle: string | null = null;
   let amount: number | null = null;
+  let webinarMeetingUrl: string | null = null;
+  let webinarAccessGranted = false;
   const kindTitle = kind === "webinar" ? "webinar" : kind === "psychometric" ? "psychometric test" : "course";
 
   if (orderId) {
@@ -27,12 +29,29 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
     if (kind === "webinar") {
       const { data } = await supabase
         .from("webinar_orders")
-        .select("amount,webinars(title)")
+        .select("webinar_id,amount,webinars(title,meeting_url)")
         .eq("student_id", user.id)
         .eq("razorpay_order_id", orderId)
-        .maybeSingle<{ amount: number; webinars: { title: string | null } | { title: string | null }[] | null }>();
+        .maybeSingle<{
+          webinar_id: string;
+          amount: number;
+          webinars: { title: string | null; meeting_url: string | null } | { title: string | null; meeting_url: string | null }[] | null;
+        }>();
       amount = data?.amount ?? null;
-      if (data?.webinars) itemTitle = Array.isArray(data.webinars) ? (data.webinars[0]?.title ?? null) : (data.webinars.title ?? null);
+      if (data?.webinars) {
+        const webinar = Array.isArray(data.webinars) ? data.webinars[0] : data.webinars;
+        itemTitle = webinar?.title ?? null;
+        webinarMeetingUrl = webinar?.meeting_url ?? null;
+      }
+      if (data?.webinar_id) {
+        const { data: registration } = await supabase
+          .from("webinar_registrations")
+          .select("access_status")
+          .eq("student_id", user.id)
+          .eq("webinar_id", data.webinar_id)
+          .maybeSingle<{ access_status: string | null }>();
+        webinarAccessGranted = registration?.access_status === "granted";
+      }
     } else if (kind === "psychometric") {
       const { data } = await supabase
         .from("psychometric_orders")
@@ -85,8 +104,13 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
           {kind === "webinar" ? (
             <>
               <Link href="/student/dashboard" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">My Webinar Registrations</Link>
-              <Link href="/student/purchases" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Webinar Purchases</Link>
+              <Link href="/student/purchases?kind=webinar" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Webinar Purchases</Link>
               <Link href="/webinars" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Browse Webinars</Link>
+              {webinarAccessGranted && webinarMeetingUrl ? (
+                <a href={webinarMeetingUrl} target="_blank" rel="noreferrer" className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white">
+                  Join Webinar
+                </a>
+              ) : null}
             </>
           ) : (
             <>

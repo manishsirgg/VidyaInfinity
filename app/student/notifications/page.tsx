@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { NotificationsCenter } from "@/components/notifications/notifications-center";
 import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
@@ -33,7 +35,10 @@ export default async function StudentNotificationsPage() {
           <h1 className="text-2xl font-semibold">My Notifications</h1>
           <p className="mt-1 text-sm text-slate-600">Stay updated on purchases, approvals, and account activity.</p>
         </div>
-        <div className="rounded-lg border bg-white px-3 py-2 text-sm">Unread: <span className="font-semibold">{unreadCount ?? 0}</span></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="rounded-lg border bg-white px-3 py-2 text-sm">Unread: <span className="font-semibold">{unreadCount ?? 0}</span></div>
+          <Link href="/student/dashboard" className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700">Back to Dashboard</Link>
+        </div>
       </div>
       <NotificationsCenter initialNotifications={notifications ?? []} initialUnreadCount={unreadCount ?? 0} backHref="/student/dashboard" />
     </div>

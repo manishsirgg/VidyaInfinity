@@ -94,6 +94,13 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
   const enrollmentOpen = ["scheduled", "live"].includes(webinar.status) && !isEnded;
 
   const canJoin = hasAccess && !isCancelled && !isCompleted && shouldShowMeetingJoinWindow(webinar.starts_at, webinar.ends_at);
+  console.info("[webinars/detail] webinar_join_visibility_resolved", {
+    event: "webinar_join_visibility_resolved",
+    webinar_id: webinar.id,
+    student_id: viewer?.user.id ?? null,
+    has_access: hasAccess,
+    can_join: canJoin,
+  });
 
   const { data: featuredRow } = await dataClient
     .from("active_featured_webinars")
@@ -149,8 +156,10 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
           activeAccessEndAt={activeAccessEndAt}
           enrollmentOpen={enrollmentOpen}
           statusLabel={statusLabel}
-          canJoin={canJoin}
-          joinUrl={canJoin ? webinar.meeting_url : null}
+          startsAt={webinar.starts_at}
+          endsAt={webinar.ends_at}
+          timezone={webinar.timezone}
+          joinUrl={hasAccess ? webinar.meeting_url : null}
           isStudent={viewer?.profile.role === "student"}
           initiallySaved={isSaved}
         />

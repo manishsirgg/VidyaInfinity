@@ -54,6 +54,7 @@ type WebinarRegistration = {
     | {
         title: string | null;
         starts_at: string | null;
+        meeting_url: string | null;
         webinar_mode: string | null;
         meeting_provider: string | null;
         institutes: { name: string | null } | { name: string | null }[] | null;
@@ -61,6 +62,7 @@ type WebinarRegistration = {
     | {
         title: string | null;
         starts_at: string | null;
+        meeting_url: string | null;
         webinar_mode: string | null;
         meeting_provider: string | null;
         institutes: { name: string | null } | { name: string | null }[] | null;
@@ -191,7 +193,7 @@ export default async function Page({
   const [webinarRegistrationsResult, refundsResult] = await Promise.all([
     dataClient
       .from("webinar_registrations")
-      .select("webinar_order_id,webinar_id,registration_status,access_status,webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))")
+      .select("webinar_order_id,webinar_id,registration_status,access_status,webinars(title,starts_at,meeting_url,webinar_mode,meeting_provider,institutes(name))")
       .eq("student_id", user.id)
       .returns<WebinarRegistration[]>(),
     dataClient
@@ -292,8 +294,15 @@ export default async function Page({
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
-      <h1 className="text-2xl font-semibold">Student Purchases</h1>
-      <p className="mt-2 text-sm text-slate-600">View your transactions category-wise with refund and access status in one place.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Student Purchases</h1>
+          <p className="mt-2 text-sm text-slate-600">View your transactions category-wise with refund and access status in one place.</p>
+        </div>
+        <Link href="/student/dashboard" className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700">
+          Back to Dashboard
+        </Link>
+      </div>
 
       <div className="mt-4 flex flex-wrap gap-2 text-sm">
         {PURCHASE_TABS.map((tab) => {
@@ -386,6 +395,13 @@ export default async function Page({
                     {institute?.name ? <p className="mt-1 text-slate-700">Institute: {institute.name}</p> : null}
                     <div className="mt-1 text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
                     {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Razorpay Payment ID: {order.razorpay_payment_id}</div> : null}
+                    {registration?.access_status === "granted" && webinar?.meeting_url ? (
+                      <div className="mt-2">
+                        <a href={webinar.meeting_url} target="_blank" rel="noreferrer" className="inline-flex rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white">
+                          Join Webinar
+                        </a>
+                      </div>
+                    ) : null}
                     <div className="mt-2">
                       {refund ? null : isConfirmedPayment(order.payment_status, order.paid_at) ? (
                         <RefundRequestButton orderType="webinar" orderId={order.id} buttonLabel="Request Webinar Refund" />
