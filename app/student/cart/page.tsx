@@ -6,13 +6,22 @@ import { createClient } from "@/lib/supabase/server";
 
 const ENROLLMENT_STATUSES_ACTIVE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 
+function resolveCourseEndAt(endDate: string | null | undefined) {
+  const normalized = String(endDate ?? "").trim();
+  if (!normalized) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  const parsed = new Date(`${normalized}T23:59:59.999Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
 export default async function StudentCartPage() {
   const { user } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
 
   const { data: cartItems } = await supabase
     .from("student_cart_items")
-    .select("id,created_at,course:courses!inner(id,title,summary,fees,status,is_active)")
+    .select("id,created_at,course:courses!inner(id,title,summary,fees,status,is_active,end_date)")
     .eq("student_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -25,6 +34,14 @@ export default async function StudentCartPage() {
         })
         .filter((value): value is string => Boolean(value))
     )
+  );
+  const courseById = new Map(
+    (cartItems ?? [])
+      .map((item) => {
+        const course = Array.isArray(item.course) ? item.course[0] : item.course;
+        return course ? [course.id, course] : null;
+      })
+      .filter((entry): entry is [string, { end_date?: string | null }] => Boolean(entry))
   );
 
   const activeEnrollmentMap = new Map<string, { access_end_at: string | null }>();
@@ -39,9 +56,11 @@ export default async function StudentCartPage() {
 
     for (const row of enrollments ?? []) {
       if (!row.course_id || activeEnrollmentMap.has(row.course_id)) continue;
-      const isActive = !row.access_end_at || new Date(row.access_end_at).getTime() > Date.now();
+      const fallbackCourseEndAt = resolveCourseEndAt(courseById.get(row.course_id)?.end_date);
+      const effectiveEndAt = row.access_end_at ?? (courseById.get(row.course_id)?.end_date ? fallbackCourseEndAt : null);
+      const isActive = !effectiveEndAt || new Date(effectiveEndAt).getTime() > Date.now();
       if (isActive) {
-        activeEnrollmentMap.set(row.course_id, { access_end_at: row.access_end_at ?? null });
+        activeEnrollmentMap.set(row.course_id, { access_end_at: effectiveEndAt ?? null });
         console.info("[student/cart] course_purchase_disabled_existing_active_enrollment", {
           event: "course_purchase_disabled_existing_active_enrollment",
           student_id: user.id,

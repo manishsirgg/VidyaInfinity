@@ -21,6 +21,7 @@ type CourseRow = {
   is_deleted: boolean | null;
   duration_value: number | null;
   duration_unit: string | null;
+  end_date: string | null;
 };
 
 type StudentProfileRow = {
@@ -109,6 +110,22 @@ function resolveAccessEndAt(startAtIso: string | null, durationValue: number | n
   return resolved.toISOString();
 }
 
+function resolveCourseEndAt(endDate: string | null) {
+  if (!endDate) return null;
+  const normalized = endDate.trim();
+  if (!normalized) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    const endOfDay = new Date(`${normalized}T23:59:59.999Z`);
+    if (Number.isNaN(endOfDay.getTime())) return null;
+    return endOfDay.toISOString();
+  }
+
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
 export async function POST(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "course"]);
   if (schemaErrorResponse) return schemaErrorResponse;
@@ -164,7 +181,7 @@ export async function POST(request: Request) {
 
     const { data: course, error: courseError } = await admin.data
       .from("courses")
-      .select("id,title,institute_id,fees,batch_size,status,admission_deadline,is_active,is_deleted,duration_value,duration_unit")
+      .select("id,title,institute_id,fees,batch_size,status,admission_deadline,is_active,is_deleted,duration_value,duration_unit,end_date")
       .eq("id", courseId)
       .maybeSingle<CourseRow>();
 
@@ -296,9 +313,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unable to validate enrollment status right now." }, { status: 500 });
     }
 
-    const hasActiveEnrollment = Boolean(
-      existingEnrollment && (!existingEnrollment.access_end_at || new Date(existingEnrollment.access_end_at).getTime() > Date.now())
-    );
+    const enrollmentAccessEndsAt = existingEnrollment?.access_end_at ?? resolveCourseEndAt(ensuredCourse.end_date);
+    const hasActiveEnrollment = Boolean(existingEnrollment && (!enrollmentAccessEndsAt || new Date(enrollmentAccessEndsAt).getTime() > Date.now()));
 
     if (hasActiveEnrollment && existingEnrollment) {
       console.warn("[course/create-order] already enrolled", {
@@ -309,7 +325,7 @@ export async function POST(request: Request) {
         accessEndAt: existingEnrollment.access_end_at,
       });
       return NextResponse.json(
-        { error: existingEnrollment.access_end_at ? `Enrollment active until ${existingEnrollment.access_end_at}.` : "You are already enrolled in this course." },
+        { error: enrollmentAccessEndsAt ? `Enrollment active until ${enrollmentAccessEndsAt}.` : "You are already enrolled in this course." },
         { status: 409 }
       );
     }
@@ -341,10 +357,11 @@ export async function POST(request: Request) {
           ensuredCourse.duration_value ?? null,
           ensuredCourse.duration_unit ?? null
         );
-        const hasActivePaidAccess = !fallbackAccessEndAt || new Date(fallbackAccessEndAt).getTime() > Date.now();
+        const effectivePaidAccessEndAt = fallbackAccessEndAt ?? resolveCourseEndAt(ensuredCourse.end_date);
+        const hasActivePaidAccess = !effectivePaidAccessEndAt || new Date(effectivePaidAccessEndAt).getTime() > Date.now();
         if (hasActivePaidAccess) {
           return NextResponse.json(
-            { error: fallbackAccessEndAt ? `Enrollment active until ${fallbackAccessEndAt}.` : "You are already enrolled in this course." },
+            { error: effectivePaidAccessEndAt ? `Enrollment active until ${effectivePaidAccessEndAt}.` : "You are already enrolled in this course." },
             { status: 409 }
           );
         }
