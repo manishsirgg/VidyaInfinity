@@ -58,7 +58,24 @@ type WebinarRegistrationItem = {
   created_at: string;
   payment_status: string;
   access_status: string;
-  webinars: { title: string; starts_at: string; status: string } | { title: string; starts_at: string; status: string }[] | null;
+  registration_status: string;
+  webinars:
+    | { title: string; starts_at: string; status: string; webinar_mode: string; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }
+    | { title: string; starts_at: string; status: string; webinar_mode: string; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }[]
+    | null;
+};
+
+type WebinarOrderItem = {
+  id: string;
+  webinar_id: string;
+  payment_status: string | null;
+  amount: number | null;
+  paid_at: string | null;
+  created_at: string;
+  webinars:
+    | { title: string | null; starts_at: string | null; webinar_mode: string | null; status: string | null; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }
+    | { title: string | null; starts_at: string | null; webinar_mode: string | null; status: string | null; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }[]
+    | null;
 };
 
 type RefundItem = {
@@ -99,10 +116,16 @@ function statusTone(status: string) {
 
 function webinarInfo(
   webinar: WebinarRegistrationItem["webinars"],
-): { title: string; starts_at: string; status: string } | null {
+): { title: string; starts_at: string; status: string; webinar_mode: string; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null } | null {
   if (!webinar) return null;
   if (Array.isArray(webinar)) return webinar[0] ?? null;
   return webinar;
+}
+
+function extractInstituteName(institutes: { name: string | null } | { name: string | null }[] | null | undefined) {
+  if (!institutes) return null;
+  if (Array.isArray(institutes)) return institutes[0]?.name ?? null;
+  return institutes.name ?? null;
 }
 
 function isConfirmedPayment(status: string | null | undefined, paidAt?: string | null) {
@@ -130,7 +153,11 @@ export default async function StudentDashboardPage() {
     { data: recentTestAttempts },
     { count: webinarRegistrationsCount },
     { count: paidWebinarOrdersCount },
+    { count: freeWebinarRegistrationsCount },
+    { data: webinarMetricRows },
+    { count: webinarRefundRequestsCount },
     { data: recentWebinarRegistrations },
+    { data: recentWebinarTransactions },
     { count: openRefundRequestsCount },
     { data: recentRefundRequests },
   ] = await Promise.all([
@@ -185,13 +212,29 @@ export default async function StudentDashboardPage() {
       .returns<TestAttemptItem[]>(),
     supabase.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("student_id", user.id),
     supabase.from("webinar_orders").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "paid"),
+    supabase.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "not_required"),
     supabase
       .from("webinar_registrations")
-      .select("id,webinar_id,created_at,payment_status,access_status,webinars(title,starts_at,status)")
+      .select("id,registration_status,webinars(starts_at,webinar_mode)")
+      .eq("student_id", user.id)
+      .returns<
+        { id: string; registration_status: string; webinars: { starts_at: string | null; webinar_mode: string | null } | { starts_at: string | null; webinar_mode: string | null }[] | null }[]
+      >(),
+    supabase.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("order_kind", "webinar"),
+    supabase
+      .from("webinar_registrations")
+      .select("id,webinar_id,created_at,payment_status,access_status,registration_status,webinars(title,starts_at,status,webinar_mode,meeting_provider,institutes(name))")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<WebinarRegistrationItem[]>(),
+    supabase
+      .from("webinar_orders")
+      .select("id,webinar_id,payment_status,amount,paid_at,created_at,webinars(title,starts_at,webinar_mode,status,meeting_provider,institutes(name))")
+      .eq("student_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(3)
+      .returns<WebinarOrderItem[]>(),
     supabase.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).in("refund_status", [...REFUND_OPEN_STATUSES]),
     supabase
       .from("refunds")
@@ -224,6 +267,13 @@ export default async function StudentDashboardPage() {
     }));
   const mergedRecentEnrollments = [...((recentEnrollments ?? []) as EnrollmentItem[]), ...fallbackRecentEnrollments].slice(0, 3);
   const normalizedActiveEnrollments = Math.max(activeEnrollmentCount ?? enrollmentRows.length, confirmedCourseOrders.length);
+  const normalizedActiveWebinarRegistrations = Math.max(webinarRegistrationsCount ?? 0, paidWebinarOrdersCount ?? 0);
+  const webinarMetricItems = webinarMetricRows ?? [];
+  const upcomingWebinarsCount = webinarMetricItems.filter((item) => {
+    const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
+    if (!webinar?.starts_at) return false;
+    return item.registration_status === "registered" && new Date(webinar.starts_at).getTime() > Date.now();
+  }).length;
 
   const approvalStatus = profile.approval_status ?? "pending";
   const isRejected = approvalStatus === "rejected";
@@ -302,8 +352,11 @@ export default async function StudentDashboardPage() {
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></Link>
           <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{normalizedActiveEnrollments}</span></Link>
-          <Link href="/webinars" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Webinar Registrations: <span className="font-semibold">{webinarRegistrationsCount ?? 0}</span></Link>
+          <Link href="/student/dashboard" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Webinar Registrations: <span className="font-semibold">{normalizedActiveWebinarRegistrations}</span></Link>
+          <Link href="/student/dashboard" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Upcoming Webinars: <span className="font-semibold">{upcomingWebinarsCount}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Webinar Orders: <span className="font-semibold">{paidWebinarOrdersCount ?? 0}</span></Link>
+          <Link href="/student/dashboard" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Free Webinar Registrations: <span className="font-semibold">{freeWebinarRegistrationsCount ?? 0}</span></Link>
+          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Webinar Refund Requests: <span className="font-semibold">{webinarRefundRequestsCount ?? 0}</span></Link>
           <Link href="/student/leads" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">My Inquiries: <span className="font-semibold">{inquiryCount ?? 0}</span></Link>
           <Link href="/student/notifications" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Unread Notifications: <span className="font-semibold">{unreadNotificationCount ?? 0}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Open Refund Requests: <span className="font-semibold">{openRefundRequestsCount ?? 0}</span></Link>
@@ -416,11 +469,37 @@ export default async function StudentDashboardPage() {
                 <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
                   <p className="font-medium text-slate-900">Webinar: {webinar?.title ?? item.webinar_id}</p>
                   <p className="text-slate-700">
-                    Access: {toTitleCase(item.access_status)} · Payment: {toTitleCase(item.payment_status)}
+                    Status: {toTitleCase(webinar?.status ?? item.registration_status)} · Mode: {toTitleCase(webinar?.webinar_mode ?? "unknown")}
                   </p>
+                  <p className="text-slate-700">Access: {toTitleCase(item.access_status)} · Payment: {toTitleCase(item.payment_status)}</p>
+                  <p className="text-slate-700">Provider: {webinar?.meeting_provider ?? "N/A"} · Institute: {extractInstituteName(webinar?.institutes) ?? "N/A"}</p>
                   <p className="text-xs text-slate-500">
                     {webinar?.starts_at ? `Starts: ${formatDate(webinar.starts_at)} · ` : ""}
                     Registered: {formatDate(item.created_at)}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <h2 className="text-lg font-semibold">Recent Webinar Transactions</h2>
+          <div className="mt-3 space-y-2 text-sm">
+            {(recentWebinarTransactions ?? []).length === 0 ? <p className="text-slate-500">No webinar transactions yet.</p> : null}
+            {(recentWebinarTransactions ?? []).map((item) => {
+              const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
+              return (
+                <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <p className="font-medium text-slate-900">Webinar: {webinar?.title ?? item.webinar_id}</p>
+                  <p className="text-slate-700">
+                    Status: {toTitleCase(webinar?.status ?? "unknown")} · Mode: {toTitleCase(webinar?.webinar_mode ?? "unknown")}
+                  </p>
+                  <p className="text-slate-700">Payment: {toTitleCase(item.payment_status ?? "pending")} · Amount: ₹{item.amount ?? 0}</p>
+                  <p className="text-slate-700">Provider: {webinar?.meeting_provider ?? "N/A"} · Institute: {extractInstituteName(webinar?.institutes) ?? "N/A"}</p>
+                  <p className="text-xs text-slate-500">
+                    {webinar?.starts_at ? `Starts: ${formatDate(webinar.starts_at)} · ` : ""}
+                    Transaction: {formatDate(item.paid_at ?? item.created_at)}
                   </p>
                 </div>
               );

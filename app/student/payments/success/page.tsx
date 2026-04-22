@@ -20,6 +20,7 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
 
   let itemTitle: string | null = null;
   let amount: number | null = null;
+  const kindTitle = kind === "webinar" ? "webinar" : kind === "psychometric" ? "psychometric test" : "course";
 
   if (orderId) {
     const supabase = await createClient();
@@ -63,20 +64,36 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
       <div className="rounded-xl border bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold text-emerald-700">Payment successful</h1>
-        <p className="mt-2 text-sm text-slate-600">Your {kind} purchase is confirmed and access is being activated.</p>
+        <h1 className="text-2xl font-semibold text-emerald-700">
+          {kind === "webinar" ? "Webinar payment successful" : "Payment successful"}
+        </h1>
+        <p className="mt-2 text-sm text-slate-600">
+          {kind === "webinar"
+            ? "Your webinar registration is confirmed and your access has been activated."
+            : `Your ${kindTitle} purchase is confirmed and access is being activated.`}
+        </p>
 
         <div className="mt-4 space-y-2 rounded bg-slate-50 p-4 text-sm text-slate-700">
-          <p>Item: {itemTitle ?? "Your selected item"}</p>
+          <p>{kind === "webinar" ? "Webinar" : "Item"}: {itemTitle ?? `Your selected ${kindTitle}`}</p>
           <p>Amount: {amount !== null ? `₹${amount}` : "-"}</p>
-          <p>Order ID: {orderId || "-"}</p>
-          <p>Payment ID: {paymentId || "-"}</p>
+          <p>{kind === "webinar" ? "Webinar Order ID" : "Order ID"}: {orderId || "-"}</p>
+          <p>{kind === "webinar" ? "Webinar Payment ID" : "Payment ID"}: {paymentId || "-"}</p>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/student/dashboard" className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white">Student dashboard</Link>
-          <Link href="/student/enrollments" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">My enrollments</Link>
-          <Link href="/student/purchases" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Purchases</Link>
+          {kind === "webinar" ? (
+            <>
+              <Link href="/student/dashboard" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">My Webinar Registrations</Link>
+              <Link href="/student/purchases" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Webinar Purchases</Link>
+              <Link href="/webinars" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Browse Webinars</Link>
+            </>
+          ) : (
+            <>
+              <Link href="/student/enrollments" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">My enrollments</Link>
+              <Link href="/student/purchases" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Purchases</Link>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -13,7 +13,7 @@ export async function GET() {
   const { data: refunds, error } = await admin.data
     .from("refunds")
     .select(
-      "id,user_id,order_kind,course_order_id,psychometric_order_id,reason,internal_notes,refund_status,amount,requested_at,processed_at,created_at,updated_at",
+      "id,user_id,order_kind,course_order_id,psychometric_order_id,webinar_order_id,reason,internal_notes,refund_status,amount,requested_at,processed_at,created_at,updated_at",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -25,8 +25,9 @@ export async function GET() {
   const psychometricOrderIds = [
     ...new Set(refunds.map((refund) => refund.psychometric_order_id).filter((value): value is string => Boolean(value))),
   ];
+  const webinarOrderIds = [...new Set(refunds.map((refund) => refund.webinar_order_id).filter((value): value is string => Boolean(value)))];
 
-  const [profilesResult, courseOrdersResult, psychometricOrdersResult] = await Promise.all([
+  const [profilesResult, courseOrdersResult, psychometricOrdersResult, webinarOrdersResult] = await Promise.all([
     userIds.length
       ? admin.data.from("profiles").select("id,full_name,email").in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
@@ -36,15 +37,20 @@ export async function GET() {
     psychometricOrderIds.length
       ? admin.data.from("psychometric_orders").select("id,final_paid_amount,currency,payment_status,paid_at").in("id", psychometricOrderIds)
       : Promise.resolve({ data: [], error: null }),
+    webinarOrderIds.length
+      ? admin.data.from("webinar_orders").select("id,amount,currency,payment_status,paid_at").in("id", webinarOrderIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   if (profilesResult.error) return NextResponse.json({ error: profilesResult.error.message }, { status: 500 });
   if (courseOrdersResult.error) return NextResponse.json({ error: courseOrdersResult.error.message }, { status: 500 });
   if (psychometricOrdersResult.error) return NextResponse.json({ error: psychometricOrdersResult.error.message }, { status: 500 });
+  if (webinarOrdersResult.error) return NextResponse.json({ error: webinarOrdersResult.error.message }, { status: 500 });
 
   const profilesById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile]));
   const courseOrdersById = new Map((courseOrdersResult.data ?? []).map((order) => [order.id, order]));
   const psychometricOrdersById = new Map((psychometricOrdersResult.data ?? []).map((order) => [order.id, order]));
+  const webinarOrdersById = new Map((webinarOrdersResult.data ?? []).map((order) => [order.id, order]));
 
   const enrichedRefunds = refunds.map((refund) => ({
     ...refund,
@@ -60,7 +66,11 @@ export async function GET() {
           : null;
       }
 
-      return refund.psychometric_order_id ? psychometricOrdersById.get(refund.psychometric_order_id) ?? null : null;
+      if (refund.order_kind === "psychometric_test") {
+        return refund.psychometric_order_id ? psychometricOrdersById.get(refund.psychometric_order_id) ?? null : null;
+      }
+
+      return refund.webinar_order_id ? webinarOrdersById.get(refund.webinar_order_id) ?? null : null;
     })(),
   }));
 

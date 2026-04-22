@@ -42,6 +42,25 @@ type WebinarPurchase = {
   created_at?: string | null;
 };
 
+type WebinarRegistration = {
+  webinar_order_id: string | null;
+  webinar_id: string;
+  registration_status: string | null;
+  access_status: string | null;
+  webinars:
+    | { title: string | null; starts_at: string | null; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }
+    | { title: string | null; starts_at: string | null; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }[]
+    | null;
+};
+
+type RefundRecord = {
+  id: string;
+  refund_status: "requested" | "processing" | "refunded" | "failed" | "cancelled";
+  course_order_id: string | null;
+  psychometric_order_id: string | null;
+  webinar_order_id: string | null;
+};
+
 const SUCCESS_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"] as const;
 const SUCCESS_PAYMENT_STATUSES_SET = new Set<string>(SUCCESS_PAYMENT_STATUSES);
 const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
@@ -90,6 +109,19 @@ export default async function Page() {
   const courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
   const webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
+  const [webinarRegistrationsResult, refundsResult] = await Promise.all([
+    dataClient
+      .from("webinar_registrations")
+      .select("webinar_order_id,webinar_id,registration_status,access_status,webinars(title,starts_at,meeting_provider,institutes(name))")
+      .eq("student_id", user.id)
+      .returns<WebinarRegistration[]>(),
+    dataClient
+      .from("refunds")
+      .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id")
+      .eq("user_id", user.id)
+      .returns<RefundRecord[]>(),
+  ]);
+
   const enrollmentWithStatus = await dataClient
     .from("course_enrollments")
     .select("course_id,course_order_id")
@@ -187,6 +219,15 @@ export default async function Page() {
   }
 
   const criticalLoadErrors = [courseResult.error].filter(Boolean);
+  const webinarRegistrations = webinarRegistrationsResult.data ?? [];
+  const webinarRegistrationByOrderId = new Map(
+    webinarRegistrations.filter((item) => item.webinar_order_id).map((item) => [item.webinar_order_id as string, item]),
+  );
+  const webinarRefundByOrderId = new Map(
+    (refundsResult.data ?? [])
+      .filter((refund) => refund.webinar_order_id)
+      .map((refund) => [refund.webinar_order_id as string, refund]),
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -247,10 +288,33 @@ export default async function Page() {
               {order.order_status ? ` · ${order.order_status}` : ""}
               <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
               {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
+              {(() => {
+                const registration = webinarRegistrationByOrderId.get(order.id);
+                const refund = webinarRefundByOrderId.get(order.id);
+                const webinar = webinarJoin(registration?.webinars);
+                const institute = webinarJoin(webinar?.institutes);
+
+                return (
+                  <div className="mt-1 text-xs text-slate-600">
+                    <div>Registration: {registration?.registration_status ?? "pending"}</div>
+                    {webinar?.starts_at ? <div>Webinar Time: {new Date(webinar.starts_at).toLocaleString()}</div> : null}
+                    {webinar?.meeting_provider ? <div>Provider: {webinar.meeting_provider}</div> : null}
+                    {institute?.name ? <div>Institute: {institute.name}</div> : null}
+                    {refund ? <div className="font-medium">Webinar Refund: {refund.refund_status}</div> : null}
+                    {refund ? null : isConfirmedPayment(order.payment_status, order.paid_at) ? (
+                      <RefundRequestButton orderType="webinar" orderId={order.id} buttonLabel="Request Webinar Refund" />
+                    ) : null}
+                  </div>
+                );
+              })()}
             </div>
           ))
         )}
       </div>
     </div>
   );
+}
+function webinarJoin<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
 }

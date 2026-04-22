@@ -2,11 +2,19 @@
 
 import { useState } from "react";
 
-export function RefundRequestButton({ orderType, orderId }: { orderType: "course" | "psychometric"; orderId: string }) {
+export function RefundRequestButton({
+  orderType,
+  orderId,
+  buttonLabel = "Request Refund",
+}: {
+  orderType: "course" | "psychometric" | "webinar";
+  orderId: string;
+  buttonLabel?: string;
+}) {
   const [msg, setMsg] = useState("");
 
   async function requestRefund() {
-    const reason = window.prompt("Reason for refund request", "Changed plan");
+    const reason = window.prompt(`Reason for ${orderType} refund request`, "Changed plan");
     if (!reason) return;
 
     const response = await fetch("/api/refunds/request", {
@@ -22,7 +30,7 @@ export function RefundRequestButton({ orderType, orderId }: { orderType: "course
   return (
     <div className="mt-1">
       <button className="rounded bg-amber-600 px-2 py-1 text-xs text-white" onClick={requestRefund}>
-        Request Refund
+        {buttonLabel}
       </button>
       {msg && <p className="text-xs text-slate-600">{msg}</p>}
     </div>

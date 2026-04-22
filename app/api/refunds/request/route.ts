@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if ("error" in auth) return auth.error;
 
   const { orderType, orderId, reason } = await request.json();
-  if (!["course", "psychometric"].includes(orderType) || !orderId || !reason || !String(reason).trim()) {
+  if (!["course", "psychometric", "webinar"].includes(orderType) || !orderId || !reason || !String(reason).trim()) {
     return NextResponse.json({ error: "orderType, orderId, reason are required" }, { status: 400 });
   }
 
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     refundAmount = Number(order.gross_amount ?? 0);
     instituteId = order.institute_id ?? null;
     razorpayPaymentId = order.razorpay_payment_id ?? null;
-  } else {
+  } else if (orderType === "psychometric") {
     const { data: order } = await admin.data
       .from("psychometric_orders")
       .select("id,final_paid_amount,payment_status,razorpay_payment_id")
@@ -58,6 +58,25 @@ export async function POST(request: Request) {
     }
 
     refundAmount = Number(order.final_paid_amount ?? 0);
+    razorpayPaymentId = order.razorpay_payment_id ?? null;
+  } else {
+    const { data: order } = await admin.data
+      .from("webinar_orders")
+      .select("id,amount,payment_status,institute_id,razorpay_payment_id")
+      .eq("id", orderId)
+      .eq("student_id", auth.user.id)
+      .maybeSingle();
+
+    if (!order) return NextResponse.json({ error: "Webinar order not found" }, { status: 404 });
+    if (!REFUND_ELIGIBLE_PAYMENT_STATUSES.includes(String(order.payment_status ?? "").toLowerCase() as (typeof REFUND_ELIGIBLE_PAYMENT_STATUSES)[number])) {
+      return NextResponse.json({ error: "Refund is allowed only for paid webinar orders" }, { status: 400 });
+    }
+    if (String(order.payment_status ?? "").toLowerCase() === "refunded") {
+      return NextResponse.json({ error: "Webinar order is already refunded" }, { status: 409 });
+    }
+
+    refundAmount = Number(order.amount ?? 0);
+    instituteId = order.institute_id ?? null;
     razorpayPaymentId = order.razorpay_payment_id ?? null;
   }
 
@@ -78,7 +97,9 @@ export async function POST(request: Request) {
   const scopedBlockingRefundQuery =
     orderType === "course"
       ? blockingRefundQuery.eq("course_order_id", orderId)
-      : blockingRefundQuery.eq("psychometric_order_id", orderId);
+      : orderType === "psychometric"
+        ? blockingRefundQuery.eq("psychometric_order_id", orderId)
+        : blockingRefundQuery.eq("webinar_order_id", orderId);
 
   const { count: blockingRefundCount, error: blockingRefundError } = await scopedBlockingRefundQuery;
   if (blockingRefundError) return NextResponse.json({ error: blockingRefundError.message }, { status: 500 });
@@ -89,9 +110,10 @@ export async function POST(request: Request) {
   const insertPayload = {
     user_id: auth.user.id,
     institute_id: instituteId,
-    order_kind: orderType === "course" ? "course_enrollment" : "psychometric_test",
+    order_kind: orderType === "course" ? "course_enrollment" : orderType === "psychometric" ? "psychometric_test" : "webinar",
     course_order_id: orderType === "course" ? orderId : null,
     psychometric_order_id: orderType === "psychometric" ? orderId : null,
+    webinar_order_id: orderType === "webinar" ? orderId : null,
     amount: refundAmount,
     reason: String(reason).trim(),
     internal_notes: null,
