@@ -7,7 +7,7 @@ type SearchItem = {
   title: string;
   subtitle: string;
   href: string;
-  kind: "course" | "institute" | "blog" | "test";
+  kind: "course" | "institute" | "blog" | "test" | "webinar";
 };
 
 function escapeLike(value: string) {
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
   const term = `%${escapeLike(query)}%`;
 
-  const [coursesRes, blogsRes, testsRes, institutesRes] = await Promise.all([
+  const [coursesRes, blogsRes, testsRes, institutesRes, webinarsRes] = await Promise.all([
     admin.data
       .from("courses")
       .select("id,title,category,status")
@@ -50,6 +50,15 @@ export async function GET(request: Request) {
       .select("id,name,slug,status")
       .eq("status", "approved")
       .or(`name.ilike.${term},description.ilike.${term}`)
+      .limit(5),
+    admin.data
+      .from("webinars")
+      .select("id,title,description,faculty_name,webinar_mode,approval_status,is_public,is_deleted,status")
+      .eq("approval_status", "approved")
+      .eq("is_public", true)
+      .eq("is_deleted", false)
+      .in("status", ["scheduled", "live"])
+      .or(`title.ilike.${term},description.ilike.${term},faculty_name.ilike.${term}`)
       .limit(5),
   ]);
 
@@ -92,6 +101,16 @@ export async function GET(request: Request) {
       subtitle: "Psychometric Test",
       href: `/psychometric-tests/${row.slug}`,
       kind: "test",
+    });
+  }
+
+  for (const row of webinarsRes.data ?? []) {
+    items.push({
+      id: row.id,
+      title: row.title,
+      subtitle: `Webinar · ${row.webinar_mode === "paid" ? "Paid" : "Free"}${row.faculty_name ? ` · ${row.faculty_name}` : ""}`,
+      href: `/webinars/${row.id}`,
+      kind: "webinar",
     });
   }
 

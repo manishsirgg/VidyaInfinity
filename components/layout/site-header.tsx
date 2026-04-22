@@ -30,7 +30,7 @@ type SearchItem = {
   title: string;
   subtitle: string;
   href: string;
-  kind: "course" | "institute" | "blog" | "test";
+  kind: "course" | "institute" | "blog" | "test" | "webinar";
 };
 
 const links: Array<{ href: Route; label: string }> = [
@@ -208,7 +208,7 @@ export function SiteHeader() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onFocus={() => setSearchOpen(searchResults.length > 0)}
-                placeholder="Search courses, institutes, tests, blogs"
+                placeholder="Search courses, webinars, institutes, tests, blogs"
                 className="vi-input py-2 text-sm"
                 aria-label="Global search"
               />

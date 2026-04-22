@@ -59,7 +59,10 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
 
   if (mode === "free" || mode === "paid") query = query.eq("webinar_mode", mode);
   if (timeline === "upcoming") query = query.gte("starts_at", nowIso);
-  if (q && q.trim().length > 0) query = query.ilike("title", `%${q.trim()}%`);
+  const searchTerm = q?.trim();
+  if (searchTerm && searchTerm.length > 0) {
+    query = query.or(`title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,faculty_name.ilike.%${searchTerm}%`);
+  }
 
   const [{ data: webinars }, { data: featuredRows }] = await Promise.all([
     query.order("starts_at", { ascending: true }),
@@ -87,7 +90,7 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
         <input
           name="q"
           defaultValue={q ?? ""}
-          placeholder="Search webinars by title"
+          placeholder="Search webinars by title, description, or faculty"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
         />
         <input type="hidden" name="mode" value={mode === "free" || mode === "paid" ? mode : ""} />
