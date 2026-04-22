@@ -9,8 +9,8 @@ import { siteConfig } from "@/lib/constants/site";
 import { isInstituteEligibleForEnrollment } from "@/lib/institutes/enrollment-eligibility";
 import { createClient } from "@/lib/supabase/server";
 
-const ENROLLMENT_STATUSES_ACTIVE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+const ENROLLMENT_TERMINAL_STATUSES = new Set(["cancelled", "canceled", "expired", "dropped", "revoked", "refunded", "failed"]);
 
 function resolveAccessEndAt(startAtIso: string | null, durationValue: number | null, durationUnit: string | null) {
   if (!startAtIso || !durationValue || durationValue <= 0) return null;
@@ -42,6 +42,18 @@ function resolveCourseEndAt(endDate: string | null) {
   return parsed.toISOString();
 }
 
+function normalizeStatus(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function isEnrollmentActiveStatus(status: string | null | undefined) {
+  const normalized = normalizeStatus(status);
+  if (!normalized) return true;
+  return !ENROLLMENT_TERMINAL_STATUSES.has(normalized);
+}
+
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const supabase = await createClient();
@@ -71,27 +83,25 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   let existingActiveEnrollment = false;
   let activeEnrollmentEndsAt: string | null = null;
   if (user?.id) {
-    const { data: existingEnrollmentByStudent } = await dataClient
+    const { data: existingEnrollmentsByStudent } = await dataClient
       .from("course_enrollments")
-      .select("id,access_end_at")
+      .select("id,access_end_at,enrollment_status,created_at")
       .eq("student_id", user.id)
       .eq("course_id", course.id)
-      .in("enrollment_status", [...ENROLLMENT_STATUSES_ACTIVE])
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle<{ id: string; access_end_at: string | null }>();
-    const { data: existingEnrollmentByUser } = existingEnrollmentByStudent
-      ? { data: null as { id: string; access_end_at: string | null } | null }
+      .limit(20);
+    const { data: existingEnrollmentsByUser } = (existingEnrollmentsByStudent ?? []).length > 0
+      ? { data: null as { id: string; access_end_at: string | null; enrollment_status: string | null; created_at: string | null }[] | null }
       : await dataClient
           .from("course_enrollments")
-          .select("id,access_end_at")
+          .select("id,access_end_at,enrollment_status,created_at")
           .eq("user_id", user.id)
           .eq("course_id", course.id)
-          .in("enrollment_status", [...ENROLLMENT_STATUSES_ACTIVE])
           .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle<{ id: string; access_end_at: string | null }>();
-    const existingEnrollment = existingEnrollmentByStudent ?? existingEnrollmentByUser;
+          .limit(20);
+    const existingEnrollment =
+      [...(existingEnrollmentsByStudent ?? []), ...(existingEnrollmentsByUser ?? [])].find((row) => isEnrollmentActiveStatus(row.enrollment_status)) ??
+      null;
 
     if (existingEnrollment) {
       const effectiveEnrollmentEndAt = existingEnrollment.access_end_at ?? resolveCourseEndAt(course.end_date ?? null);

@@ -37,8 +37,8 @@ type InstituteRow = {
   is_deleted: boolean | null;
 };
 
-const ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+const ENROLLMENT_TERMINAL_STATUSES = new Set(["cancelled", "canceled", "expired", "dropped", "revoked", "refunded", "failed"]);
 
 function extractUnknownErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -76,6 +76,12 @@ function normalizeStatus(value: string | null | undefined) {
   return String(value ?? "")
     .trim()
     .toLowerCase();
+}
+
+function isEnrollmentBlocking(status: string | null | undefined) {
+  const normalized = normalizeStatus(status);
+  if (!normalized) return true;
+  return !ENROLLMENT_TERMINAL_STATUSES.has(normalized);
 }
 
 function isAdmissionDeadlinePassed(admissionDeadline: string | null) {
@@ -269,20 +275,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Admission deadline has passed for this course." }, { status: 400 });
     }
 
-    const { count: activeEnrollmentCount, error: activeEnrollmentCountError } = await admin.data
+    const { data: courseEnrollmentRows, error: courseEnrollmentRowsError } = await admin.data
       .from("course_enrollments")
-      .select("id", { count: "exact", head: true })
-      .eq("course_id", ensuredCourse.id)
-      .in("enrollment_status", [...ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE]);
+      .select("id,enrollment_status")
+      .eq("course_id", ensuredCourse.id);
 
-    if (activeEnrollmentCountError) {
+    if (courseEnrollmentRowsError) {
       console.error("[course/create-order] enrollment seat count failed", {
         courseId: ensuredCourse.id,
         studentId,
-        error: activeEnrollmentCountError.message,
+        error: courseEnrollmentRowsError.message,
       });
       return NextResponse.json({ error: "Unable to validate seat availability right now." }, { status: 500 });
     }
+    const activeEnrollmentCount = (courseEnrollmentRows ?? []).filter((row) => isEnrollmentBlocking(row.enrollment_status)).length;
 
     const capacity = ensuredCourse.batch_size ?? null;
     if (capacity !== null && capacity >= 0 && (activeEnrollmentCount ?? 0) >= capacity) {
@@ -295,14 +301,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "This course batch is full and not accepting new enrollments." }, { status: 400 });
     }
 
-    const { data: existingEnrollment, error: existingEnrollmentError } = await admin.data
+    const { data: existingEnrollments, error: existingEnrollmentError } = await admin.data
       .from("course_enrollments")
-      .select("id,access_end_at")
+      .select("id,access_end_at,enrollment_status,created_at")
       .eq("student_id", studentId)
       .eq("course_id", ensuredCourse.id)
-      .in("enrollment_status", [...ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE])
       .order("created_at", { ascending: false })
-      .maybeSingle();
+      .limit(20);
 
     if (existingEnrollmentError) {
       console.error("[course/create-order] existing enrollment lookup failed", {
@@ -313,6 +318,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unable to validate enrollment status right now." }, { status: 500 });
     }
 
+    const existingEnrollment =
+      (existingEnrollments ?? []).find((row) => isEnrollmentBlocking(row.enrollment_status)) ?? null;
     const enrollmentAccessEndsAt = existingEnrollment?.access_end_at ?? resolveCourseEndAt(ensuredCourse.end_date);
     const hasActiveEnrollment = Boolean(existingEnrollment && (!enrollmentAccessEndsAt || new Date(enrollmentAccessEndsAt).getTime() > Date.now()));
 
