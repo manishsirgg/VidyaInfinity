@@ -9,6 +9,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
 
+function moderationMessage(status: string, reason: string | null = null) {
+  if (status === "approved") return "Approved by admin and visible to students.";
+  if (status === "rejected") {
+    return `Rejected by admin. Please update details and resubmit for approval.${reason ? ` Reason: ${reason}` : ""}`;
+  }
+  return "Sent for admin approval. It will be reviewed shortly.";
+}
+
 export default async function InstituteWebinarsPage() {
   const { user } = await requireUser("institute", { requireApproved: false });
   const supabase = await createClient();
@@ -24,7 +32,7 @@ export default async function InstituteWebinarsPage() {
   const [{ data: webinars }, { data: registrations }, { data: orders }, { data: webinarFeaturedSummary }] = await Promise.all([
     dataClient
       .from("webinars")
-      .select("id,title,starts_at,ends_at,webinar_mode,price,currency,approval_status,status")
+      .select("id,title,starts_at,ends_at,webinar_mode,price,currency,approval_status,status,rejection_reason")
       .eq("institute_id", institute.id)
       .eq("is_deleted", false)
       .order("starts_at", { ascending: true }),
@@ -82,7 +90,9 @@ export default async function InstituteWebinarsPage() {
           <article key={item.id} className="rounded-xl border bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p className="font-semibold">{item.title}</p>
+                <Link href={`/institute/webinars/${item.id}`} className="font-semibold text-slate-900 hover:text-brand-700 hover:underline">
+                  {item.title}
+                </Link>
                 <p className="text-sm text-slate-600">{toDateTimeLabel(item.starts_at)} · {item.webinar_mode === "paid" ? toCurrency(Number(item.price), item.currency ?? "INR") : "Free"}</p>
               </div>
               <div className="flex items-center gap-2">
@@ -91,6 +101,9 @@ export default async function InstituteWebinarsPage() {
               </div>
             </div>
             <p className="mt-2 text-xs text-slate-600">Attendees: {attendeeCountMap.get(item.id) ?? 0}</p>
+            <p className={`mt-2 rounded px-2 py-1 text-xs ${item.approval_status === "approved" ? "bg-emerald-50 text-emerald-700" : item.approval_status === "rejected" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800"}`}>
+              {moderationMessage(item.approval_status ?? "pending", item.rejection_reason ?? null)}
+            </p>
             <div className="mt-3 flex flex-wrap gap-2 text-sm">
               <Link className="rounded border px-3 py-1.5" href={`/institute/webinars/${item.id}`}>View</Link>
               <Link className="rounded border px-3 py-1.5" href={`/institute/webinars/${item.id}/edit`}>Edit</Link>

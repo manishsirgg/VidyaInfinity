@@ -201,7 +201,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     updateData.status = payload.status;
   }
 
-  if (existing.approval_status === "approved") {
+  if (existing.approval_status === "approved" || existing.approval_status === "rejected") {
     updateData.approval_status = "pending";
     updateData.rejection_reason = null;
   }
@@ -227,7 +227,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           category: "moderation",
           priority: "high",
           title: "Webinar resubmission pending",
-          message: `Webinar "${existing.title}" was updated and needs moderation.`,
+          message: `Webinar "${existing.title}" was resubmitted and is waiting for moderation.`,
           targetUrl: "/admin/webinars?approval_status=pending",
           actionLabel: "Review webinars",
           entityType: "webinar",

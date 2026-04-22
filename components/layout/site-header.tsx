@@ -293,7 +293,7 @@ export function SiteHeader() {
                         className="block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100"
                         onClick={() => setAccountOpen(false)}
                       >
-                        Saved Courses
+                        Saved
                       </Link>
                     </>
                   ) : null}
@@ -424,7 +424,7 @@ export function SiteHeader() {
                     Cart
                   </Link>
                   <Link href="/student/saved-courses" onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
-                    Saved Courses
+                    Saved
                   </Link>
                 </>
               ) : null}

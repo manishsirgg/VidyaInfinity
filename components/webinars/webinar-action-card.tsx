@@ -21,6 +21,8 @@ type WebinarActionCardProps = {
   statusLabel: string;
   canJoin: boolean;
   joinUrl: string | null;
+  isStudent: boolean;
+  initiallySaved?: boolean;
 };
 
 export function WebinarActionCard({
@@ -35,11 +37,15 @@ export function WebinarActionCard({
   statusLabel,
   canJoin,
   joinUrl,
+  isStudent,
+  initiallySaved = false,
 }: WebinarActionCardProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
   const [couponCode, setCouponCode] = useState("");
+  const [savedBusy, setSavedBusy] = useState(false);
+  const [isSaved, setIsSaved] = useState(initiallySaved);
 
   async function registerFree() {
     setLoading(true);
@@ -124,6 +130,29 @@ export function WebinarActionCard({
     razorpay.open();
   }
 
+  async function toggleSaved() {
+    setSavedBusy(true);
+    setMessage("");
+    setIsError(false);
+
+    const response = await fetch("/api/student/saved-courses", {
+      method: isSaved ? "DELETE" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ webinarId }),
+    });
+    const body = await response.json().catch(() => null);
+    setSavedBusy(false);
+
+    if (!response.ok) {
+      setIsError(true);
+      setMessage(body?.error ?? "Unable to update saved webinars.");
+      return;
+    }
+
+    setIsSaved((prev) => !prev);
+    setMessage(isSaved ? "Removed from saved list." : "Webinar saved.");
+  }
+
   if (canJoin && joinUrl) {
     return <a href={joinUrl} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white">Join Webinar</a>;
   }
@@ -163,6 +192,18 @@ export function WebinarActionCard({
       )}
 
       {!enrollmentOpen ? <p className="mt-2 text-xs text-slate-600">Enrollment is closed for this webinar.</p> : null}
+      {isLoggedIn && isStudent ? (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={toggleSaved}
+            disabled={savedBusy}
+            className="w-full rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-60"
+          >
+            {savedBusy ? "Updating..." : isSaved ? "Unsave Webinar" : "Save Webinar"}
+          </button>
+        </div>
+      ) : null}
       {message ? <p className={`mt-2 text-xs ${isError ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
     </div>
   );
