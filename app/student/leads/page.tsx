@@ -26,9 +26,14 @@ export default async function StudentInquiriesPage() {
           <h1 className="text-2xl font-semibold">My Inquiries</h1>
           <p className="mt-1 text-sm text-slate-600">Track your course inquiries and submissions in one place.</p>
         </div>
-        <Link href="/courses" className="rounded bg-brand-600 px-3 py-2 text-sm text-white">
-          Browse Courses
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/student/dashboard" className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700">
+            Back to Dashboard
+          </Link>
+          <Link href="/courses" className="rounded bg-brand-600 px-3 py-2 text-sm text-white">
+            Browse Courses
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 space-y-2">

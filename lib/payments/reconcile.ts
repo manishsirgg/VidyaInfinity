@@ -2,6 +2,7 @@ import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
 import { notifyCoursePurchase } from "@/lib/marketplace/course-notifications";
 import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications";
+import { deliverWebinarAccess } from "@/lib/webinars/access-delivery";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -967,6 +968,14 @@ export async function reconcileWebinarOrderPaid({
   if (!convergedRegistration) {
     return { error: "Webinar entitlement convergence failed: granted registration row missing." };
   }
+  console.info("[payments/reconcile] webinar_registration_updated", {
+    event: existingRegistration ? "webinar_registration_updated" : "webinar_registration_created",
+    registrationId: convergedRegistration.id,
+    orderId: canonicalPaidOrderId,
+    studentId: order.student_id,
+    webinarId: order.webinar_id,
+    source,
+  });
 
   const { data: existingPayout, error: existingPayoutError } = await supabase
     .from("institute_payouts")
@@ -1015,6 +1024,23 @@ export async function reconcileWebinarOrderPaid({
     instituteId: webinar.institute_id,
     mode: "paid",
   }).catch(() => undefined);
+
+  await deliverWebinarAccess({
+    supabase,
+    registrationId: convergedRegistration.id,
+    webinarId: webinar.id,
+    studentId: order.student_id,
+  }).catch((deliveryError) => {
+    console.error("[payments/reconcile] webinar_delivery_failed_non_blocking", {
+      event: "webinar_delivery_failed_non_blocking",
+      registrationId: convergedRegistration.id,
+      orderId: canonicalPaidOrderId,
+      studentId: order.student_id,
+      webinarId: order.webinar_id,
+      source,
+      error: deliveryError instanceof Error ? deliveryError.message : "Unknown error",
+    });
+  });
 
   console.info("[payments/reconcile] reconcileWebinarOrderPaid:completed", {
     orderId: canonicalPaidOrderId,

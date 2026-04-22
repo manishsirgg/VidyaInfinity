@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { deliverWebinarAccess } from "@/lib/webinars/access-delivery";
 import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications";
 
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -70,7 +71,21 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (!alreadyGranted) {
+  const { data: registration } = await admin.data
+    .from("webinar_registrations")
+    .select("id")
+    .eq("webinar_id", webinar.id)
+    .eq("student_id", auth.user.id)
+    .maybeSingle<{ id: string }>();
+
+  if (!alreadyGranted && registration?.id) {
+    console.info("[api/webinars/register] webinar_registration_created", {
+      event: "webinar_registration_created",
+      webinar_id: webinar.id,
+      student_id: auth.user.id,
+      registration_id: registration.id,
+    });
+
     await notifyWebinarEnrollment({
       supabase: admin.data,
       webinarId: webinar.id,
@@ -79,6 +94,21 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       instituteId: webinar.institute_id,
       mode: "free",
     }).catch(() => undefined);
+
+    await deliverWebinarAccess({
+      supabase: admin.data,
+      registrationId: registration.id,
+      webinarId: webinar.id,
+      studentId: auth.user.id,
+    }).catch((deliveryError) => {
+      console.error("[api/webinars/register] webinar_delivery_failed_non_blocking", {
+        event: "webinar_delivery_failed_non_blocking",
+        webinar_id: webinar.id,
+        student_id: auth.user.id,
+        registration_id: registration.id,
+        error: deliveryError instanceof Error ? deliveryError.message : "Unknown error",
+      });
+    });
   }
 
   return NextResponse.json({ ok: true });

@@ -19,7 +19,9 @@ type WebinarActionCardProps = {
   activeAccessEndAt?: string | null;
   enrollmentOpen: boolean;
   statusLabel: string;
-  canJoin: boolean;
+  startsAt: string;
+  endsAt?: string | null;
+  timezone?: string | null;
   joinUrl: string | null;
   isStudent: boolean;
   initiallySaved?: boolean;
@@ -35,7 +37,9 @@ export function WebinarActionCard({
   activeAccessEndAt,
   enrollmentOpen,
   statusLabel,
-  canJoin,
+  startsAt,
+  endsAt,
+  timezone,
   joinUrl,
   isStudent,
   initiallySaved = false,
@@ -153,11 +157,8 @@ export function WebinarActionCard({
     setMessage(isSaved ? "Removed from saved list." : "Webinar saved.");
   }
 
-  if (canJoin && joinUrl) {
-    return <a href={joinUrl} target="_blank" rel="noreferrer" className="inline-flex w-full items-center justify-center rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white">Join Webinar</a>;
-  }
-
   const isEnrolled = enrollmentStatus === "enrolled";
+  const hasJoinAccess = isEnrolled && Boolean(joinUrl);
   const ctaDisabled = loading || !isLoggedIn || !enrollmentOpen || isEnrolled;
 
   return (
@@ -167,7 +168,18 @@ export function WebinarActionCard({
       <p className="text-sm font-medium text-slate-800">Status: {statusLabel}</p>
 
       {!isLoggedIn ? <p className="mt-2 text-sm text-slate-600">Please login as a student to enroll.</p> : null}
-      {isEnrolled && !canJoin ? <p className="mt-2 text-sm text-emerald-700">Already Registered{activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}</p> : null}
+      {hasJoinAccess ? (
+        <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          <p className="font-semibold">Access Granted</p>
+          <p className="mt-1">Webinar link unlocked.</p>
+          <p className="mt-1">Date: {new Date(startsAt).toLocaleDateString()}</p>
+          <p className="mt-1">Time: {new Date(startsAt).toLocaleTimeString()} {endsAt ? `- ${new Date(endsAt).toLocaleTimeString()}` : ""}</p>
+          <p className="mt-1">Timezone: {timezone ?? "Asia/Kolkata"}</p>
+          <a href={joinUrl!} target="_blank" rel="noreferrer" className="mt-3 inline-flex w-full items-center justify-center rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white">Join Webinar</a>
+          <p className="mt-2 text-xs">Link also sent to your WhatsApp and email.</p>
+        </div>
+      ) : null}
+      {isEnrolled && !hasJoinAccess ? <p className="mt-2 text-sm text-emerald-700">Already Registered{activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}</p> : null}
 
       {webinarMode === "free" ? (
         <button type="button" disabled={ctaDisabled} onClick={registerFree} className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
