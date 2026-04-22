@@ -7,7 +7,7 @@ import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed", "enrolled"] as const;
+const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
 
 type StatusRow = {
   id: string;
@@ -25,6 +25,12 @@ type StatusRow = {
 
 function normalizeStatus(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function toErrorMessage(error: unknown) {
+  if (!error) return null;
+  if (typeof error === "object" && error && "message" in error) return String((error as { message?: unknown }).message ?? "");
+  return String(error);
 }
 
 export async function GET(request: Request) {
@@ -105,6 +111,7 @@ export async function GET(request: Request) {
         ...orderLogCtx,
         enrollmentError: enrollmentError?.message ?? null,
         transactionError: transactionError?.message ?? null,
+        db_error: enrollmentError?.message ?? transactionError?.message ?? null,
       });
     }
 
@@ -113,7 +120,28 @@ export async function GET(request: Request) {
 
     const normalizedOrderStatus = normalizeStatus(resolvedOrder.payment_status);
     const hasPaidMarker = normalizedOrderStatus === "paid" || Boolean(resolvedOrder.paid_at);
-    const effectivePaymentId = paymentId ?? resolvedOrder.razorpay_payment_id ?? null;
+    let effectivePaymentId = paymentId ?? resolvedOrder.razorpay_payment_id ?? null;
+
+    if (!effectivePaymentId && hasPaidMarker && (resolvedOrder.razorpay_order_id ?? orderId)) {
+      const razorpay = getRazorpayClient();
+      if (razorpay.ok) {
+        try {
+          const orderPayments = (await razorpay.data.orders.fetchPayments(resolvedOrder.razorpay_order_id ?? orderId ?? "")) as {
+            items?: Array<{ id?: string; status?: string }>;
+          };
+          const captured = (orderPayments.items ?? []).find((item) => normalizeStatus(item.status) === "captured" && item.id);
+          if (captured?.id) {
+            effectivePaymentId = captured.id;
+          }
+        } catch (error) {
+          console.error("[course/status] unable to derive payment id from order", {
+            ...orderLogCtx,
+            error: toErrorMessage(error),
+          });
+        }
+      }
+    }
+
     const shouldTryPassiveReconciliation = (!resolvedEnrollment || !transaction) && Boolean(effectivePaymentId);
 
     if (shouldTryPassiveReconciliation && effectivePaymentId) {
