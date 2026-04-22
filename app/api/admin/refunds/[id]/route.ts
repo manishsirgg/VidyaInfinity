@@ -53,7 +53,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: currentRefund, error: fetchError } = await admin.data
     .from("refunds")
-    .select("id,refund_status,course_order_id,psychometric_order_id,user_id,amount,razorpay_payment_id,razorpay_refund_id,metadata")
+    .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id,user_id,amount,razorpay_payment_id,razorpay_refund_id,metadata")
     .eq("id", id)
     .single();
 
@@ -92,7 +92,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       })
       .eq("id", id)
       .eq("refund_status", "requested")
-      .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
+      .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id,user_id")
       .single();
 
     if (cancelError || !cancelledRefund) {
@@ -156,7 +156,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         },
       })
       .eq("id", id)
-      .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
+      .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id,user_id")
       .single();
 
     logRefundAdminEvent("razorpay_refund_request_failed", {
@@ -192,7 +192,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         },
       })
       .eq("id", id)
-      .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
+      .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id,user_id")
       .single();
 
     logRefundAdminEvent("razorpay_refund_request_failed", {
@@ -236,7 +236,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         },
       })
       .eq("id", id)
-      .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
+      .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id,user_id")
       .single();
 
     logRefundAdminEvent("razorpay_refund_request_failed", {
@@ -278,7 +278,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     })
     .eq("id", id)
     .eq("refund_status", "requested")
-    .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
+    .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id,user_id")
     .single();
 
   if (updateError || !refund) return NextResponse.json({ error: updateError?.message ?? "Unable to update refund" }, { status: 500 });
@@ -304,6 +304,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
         .eq("id", refund.psychometric_order_id);
     }
+
+    if (refund.webinar_order_id) {
+      await admin.data
+        .from("webinar_orders")
+        .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
+        .eq("id", refund.webinar_order_id);
+    }
   }
 
   await createAccountNotification({
@@ -318,7 +325,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     entityType: "refund",
     entityId: refund.id,
     dedupeKey: `refund:${refund.id}:${refund.refund_status}`,
-    metadata: { refundStatus: refund.refund_status, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
+    metadata: {
+      refundStatus: refund.refund_status,
+      courseOrderId: refund.course_order_id,
+      psychometricOrderId: refund.psychometric_order_id,
+      webinarOrderId: refund.webinar_order_id,
+    },
   }).catch(() => undefined);
 
   await writeAdminAuditLog({
@@ -326,7 +338,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     action: "REFUND_APPROVED",
     targetTable: "refunds",
     targetId: refund.id,
-    metadata: { refundStatus: refund.refund_status, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
+    metadata: {
+      refundStatus: refund.refund_status,
+      courseOrderId: refund.course_order_id,
+      psychometricOrderId: refund.psychometric_order_id,
+      webinarOrderId: refund.webinar_order_id,
+    },
   });
 
   logRefundAdminEvent("refund_admin_action_completed", {
