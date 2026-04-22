@@ -6,6 +6,7 @@ import { normalizeWebinarMode } from "@/lib/webinars/utils";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { generateUniqueWebinarSlug } from "@/lib/webinars/slug";
 
 type WebinarUpdatePayload = {
   title?: string;
@@ -17,7 +18,6 @@ type WebinarUpdatePayload = {
   price?: number;
   currency?: string;
   meetingUrl?: string;
-  registrationUrl?: string;
   facultyName?: string;
   facultyBio?: string;
   thumbnailUrl?: string;
@@ -76,7 +76,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   const { data, error } = await dataClient
     .from("webinars")
     .select(
-      "id,institute_id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,registration_url,meeting_provider,status,approval_status,rejection_reason,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points,created_at,updated_at"
+      "id,institute_id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,meeting_provider,status,approval_status,rejection_reason,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points,created_at,updated_at"
     )
     .eq("id", id)
     .eq("institute_id", instituteId)
@@ -104,10 +104,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: existing } = await dataClient
     .from("webinars")
-    .select("id,title,status,is_deleted,approval_status,starts_at,ends_at,meeting_url")
+    .select("id,title,slug,status,is_deleted,approval_status,starts_at,ends_at,meeting_url")
     .eq("id", id)
     .eq("institute_id", instituteId)
-    .maybeSingle<{ id: string; title: string; status: string; is_deleted: boolean; approval_status: string | null; starts_at: string; ends_at: string | null; meeting_url: string | null }>();
+    .maybeSingle<{ id: string; title: string; slug: string; status: string; is_deleted: boolean; approval_status: string | null; starts_at: string; ends_at: string | null; meeting_url: string | null }>();
 
   if (!existing) return NextResponse.json({ error: "Webinar not found" }, { status: 404 });
 
@@ -171,7 +171,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     updated_at: new Date().toISOString(),
   };
 
-  if (typeof payload.title === "string") updateData.title = payload.title.trim();
+  if (typeof payload.title === "string") {
+    const trimmedTitle = payload.title.trim();
+    updateData.title = trimmedTitle;
+    if (trimmedTitle && trimmedTitle !== existing.title) {
+      updateData.slug = await generateUniqueWebinarSlug({
+        client: dataClient,
+        title: trimmedTitle,
+        excludeWebinarId: id,
+      });
+    }
+  }
   if (typeof payload.description === "string") updateData.description = payload.description.trim() || null;
   if (typeof payload.startsAt === "string") updateData.starts_at = payload.startsAt;
   if (typeof payload.endsAt === "string") updateData.ends_at = payload.endsAt || null;
@@ -180,7 +190,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (typeof payload.price === "number" || payload.webinarMode) updateData.price = price;
   if (typeof payload.currency === "string") updateData.currency = payload.currency;
   if (typeof payload.meetingUrl === "string") updateData.meeting_url = payload.meetingUrl.trim() || null;
-  if (typeof payload.registrationUrl === "string") updateData.registration_url = payload.registrationUrl.trim() || null;
   if (typeof payload.facultyName === "string") updateData.faculty_name = payload.facultyName.trim() || null;
   if (typeof payload.facultyBio === "string") updateData.faculty_bio = payload.facultyBio.trim() || null;
   if (typeof payload.thumbnailUrl === "string") updateData.thumbnail_url = payload.thumbnailUrl.trim() || null;
