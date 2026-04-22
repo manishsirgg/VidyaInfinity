@@ -57,8 +57,9 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
 
   let hasAccess = false;
   let activeAccessEndAt: string | null = null;
+  let isSaved = false;
   if (viewer?.user.id) {
-    const [{ data: registration }, { data: paidOrder }] = await Promise.all([
+    const [{ data: registration }, { data: paidOrder }, { data: savedWebinar }] = await Promise.all([
       dataClient
       .from("webinar_registrations")
       .select("access_status,access_end_at")
@@ -75,9 +76,16 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
         .eq("payment_status", "paid")
         .eq("order_status", "confirmed")
         .maybeSingle<{ access_status: string | null; payment_status: string; order_status: string }>(),
+      dataClient
+        .from("student_saved_webinars")
+        .select("id")
+        .eq("student_id", viewer.user.id)
+        .eq("webinar_id", id)
+        .maybeSingle<{ id: string }>(),
     ]);
     hasAccess = registration?.access_status === "granted" || paidOrder?.access_status === "granted";
     activeAccessEndAt = registration?.access_end_at ?? null;
+    isSaved = Boolean(savedWebinar?.id);
   }
 
   const isEnded = webinar.ends_at ? new Date(webinar.ends_at).getTime() < Date.now() : false;
@@ -143,6 +151,8 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
           statusLabel={statusLabel}
           canJoin={canJoin}
           joinUrl={canJoin ? webinar.meeting_url : null}
+          isStudent={viewer?.profile.role === "student"}
+          initiallySaved={isSaved}
         />
       </div>
     </div>

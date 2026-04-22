@@ -13,6 +13,12 @@ function maskMeeting(url: string | null) {
   return `${start}...`;
 }
 
+function moderationMessage(status: string | null, reason: string | null) {
+  if (status === "approved") return "Approved by admin and visible to students.";
+  if (status === "rejected") return `Rejected by admin. Update details and resubmit for approval.${reason ? ` Reason: ${reason}` : ""}`;
+  return "Waiting for admin approval.";
+}
+
 export default async function WebinarDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { user } = await requireUser("institute", { requireApproved: false });
   const { id } = await params;
@@ -60,7 +66,9 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
-      {webinar.rejection_reason ? <p className="mt-3 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">Rejection: {webinar.rejection_reason}</p> : null}
+      <p className={`mt-3 rounded border p-3 text-sm ${webinar.approval_status === "approved" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : webinar.approval_status === "rejected" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+        {moderationMessage(webinar.approval_status, webinar.rejection_reason)}
+      </p>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <section className="rounded-xl border bg-white p-4 text-sm">

@@ -284,7 +284,7 @@ export function CoursePurchaseCard({
       <div className="mt-3 flex gap-2 text-xs">
         <Link href="/student/cart" className="text-brand-700 underline underline-offset-2">Go to checkout cart</Link>
         <span className="text-slate-400">·</span>
-        <Link href="/student/saved-courses" className="text-brand-700 underline underline-offset-2">Saved courses</Link>
+        <Link href="/student/saved-courses" className="text-brand-700 underline underline-offset-2">Saved</Link>
       </div>
 
       {message ? <p className={`mt-2 text-xs ${state === "error" ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
