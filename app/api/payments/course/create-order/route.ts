@@ -19,6 +19,8 @@ type CourseRow = {
   admission_deadline: string | null;
   is_active: boolean | null;
   is_deleted: boolean | null;
+  duration_value: number | null;
+  duration_unit: string | null;
 };
 
 type StudentProfileRow = {
@@ -35,6 +37,7 @@ type InstituteRow = {
 };
 
 const ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
+const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 
 function extractUnknownErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -88,6 +91,22 @@ function isAdmissionDeadlinePassed(admissionDeadline: string | null) {
   const deadlineAt = new Date(normalized);
   if (Number.isNaN(deadlineAt.getTime())) return false;
   return deadlineAt.getTime() < Date.now();
+}
+
+function resolveAccessEndAt(startAtIso: string | null, durationValue: number | null, durationUnit: string | null) {
+  if (!startAtIso || !durationValue || durationValue <= 0) return null;
+  const startAt = new Date(startAtIso);
+  if (Number.isNaN(startAt.getTime())) return null;
+
+  const normalizedUnit = String(durationUnit ?? "").trim().toLowerCase();
+  const resolved = new Date(startAt);
+  if (["day", "days"].includes(normalizedUnit)) resolved.setUTCDate(resolved.getUTCDate() + durationValue);
+  else if (["week", "weeks"].includes(normalizedUnit)) resolved.setUTCDate(resolved.getUTCDate() + durationValue * 7);
+  else if (["month", "months"].includes(normalizedUnit)) resolved.setUTCMonth(resolved.getUTCMonth() + durationValue);
+  else if (["year", "years"].includes(normalizedUnit)) resolved.setUTCFullYear(resolved.getUTCFullYear() + durationValue);
+  else return null;
+
+  return resolved.toISOString();
 }
 
 export async function POST(request: Request) {
@@ -145,7 +164,7 @@ export async function POST(request: Request) {
 
     const { data: course, error: courseError } = await admin.data
       .from("courses")
-      .select("id,title,institute_id,fees,batch_size,status,admission_deadline,is_active,is_deleted")
+      .select("id,title,institute_id,fees,batch_size,status,admission_deadline,is_active,is_deleted,duration_value,duration_unit")
       .eq("id", courseId)
       .maybeSingle<CourseRow>();
 
@@ -293,6 +312,43 @@ export async function POST(request: Request) {
         { error: existingEnrollment.access_end_at ? `Enrollment active until ${existingEnrollment.access_end_at}.` : "You are already enrolled in this course." },
         { status: 409 }
       );
+    }
+
+    const { data: existingPaidOrder, error: existingPaidOrderError } = await admin.data
+      .from("course_orders")
+      .select("id,payment_status,paid_at,created_at")
+      .eq("student_id", studentId)
+      .eq("course_id", ensuredCourse.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; created_at: string | null }>();
+
+    if (existingPaidOrderError) {
+      console.error("[course/create-order] existing paid order lookup failed", {
+        courseId: ensuredCourse.id,
+        studentId,
+        error: existingPaidOrderError.message,
+      });
+      return NextResponse.json({ error: "Unable to validate existing purchases right now." }, { status: 500 });
+    }
+
+    if (existingPaidOrder) {
+      const normalizedPaymentStatus = normalizeStatus(existingPaidOrder.payment_status);
+      const hasConfirmedPayment = SUCCESS_PAYMENT_STATUSES.has(normalizedPaymentStatus) || Boolean(existingPaidOrder.paid_at);
+      if (hasConfirmedPayment) {
+        const fallbackAccessEndAt = resolveAccessEndAt(
+          existingPaidOrder.paid_at ?? existingPaidOrder.created_at ?? null,
+          ensuredCourse.duration_value ?? null,
+          ensuredCourse.duration_unit ?? null
+        );
+        const hasActivePaidAccess = !fallbackAccessEndAt || new Date(fallbackAccessEndAt).getTime() > Date.now();
+        if (hasActivePaidAccess) {
+          return NextResponse.json(
+            { error: fallbackAccessEndAt ? `Enrollment active until ${fallbackAccessEndAt}.` : "You are already enrolled in this course." },
+            { status: 409 }
+          );
+        }
+      }
     }
 
     const { data: commissionRow, error: commissionError } = await admin.data

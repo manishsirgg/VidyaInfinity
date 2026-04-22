@@ -10,6 +10,23 @@ import { isInstituteEligibleForEnrollment } from "@/lib/institutes/enrollment-el
 import { createClient } from "@/lib/supabase/server";
 
 const ENROLLMENT_STATUSES_ACTIVE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
+const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+
+function resolveAccessEndAt(startAtIso: string | null, durationValue: number | null, durationUnit: string | null) {
+  if (!startAtIso || !durationValue || durationValue <= 0) return null;
+  const startAt = new Date(startAtIso);
+  if (Number.isNaN(startAt.getTime())) return null;
+
+  const normalizedUnit = String(durationUnit ?? "").trim().toLowerCase();
+  const resolved = new Date(startAt);
+  if (["day", "days"].includes(normalizedUnit)) resolved.setUTCDate(resolved.getUTCDate() + durationValue);
+  else if (["week", "weeks"].includes(normalizedUnit)) resolved.setUTCDate(resolved.getUTCDate() + durationValue * 7);
+  else if (["month", "months"].includes(normalizedUnit)) resolved.setUTCMonth(resolved.getUTCMonth() + durationValue);
+  else if (["year", "years"].includes(normalizedUnit)) resolved.setUTCFullYear(resolved.getUTCFullYear() + durationValue);
+  else return null;
+
+  return resolved.toISOString();
+}
 
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -62,6 +79,32 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           enrollment_id: existingEnrollment.id,
           access_end_at: existingEnrollment.access_end_at,
         });
+      }
+    }
+
+    if (!existingActiveEnrollment) {
+      const { data: paidOrder } = await dataClient
+        .from("course_orders")
+        .select("id,payment_status,paid_at,created_at")
+        .eq("student_id", user.id)
+        .eq("course_id", course.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; created_at: string | null }>();
+
+      const normalizedPaymentStatus = String(paidOrder?.payment_status ?? "").trim().toLowerCase();
+      const hasConfirmedPayment = Boolean(paidOrder && (SUCCESS_PAYMENT_STATUSES.has(normalizedPaymentStatus) || paidOrder.paid_at));
+      if (paidOrder && hasConfirmedPayment) {
+        const fallbackEndAt = resolveAccessEndAt(
+          paidOrder.paid_at ?? paidOrder.created_at ?? null,
+          Number(course.duration_value ?? 0) || null,
+          course.duration_unit ?? null
+        );
+        const hasActivePaidAccess = !fallbackEndAt || new Date(fallbackEndAt).getTime() > Date.now();
+        if (hasActivePaidAccess) {
+          existingActiveEnrollment = true;
+          activeEnrollmentEndsAt = fallbackEndAt;
+        }
       }
     }
   }

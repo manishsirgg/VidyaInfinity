@@ -125,7 +125,7 @@ export default async function Page() {
     confirmedCourseOrders: confirmedCourseOrders.length,
   });
 
-  const courseIds = Array.from(new Set(confirmedCourseOrders.map((order) => order.course_id).filter(Boolean)));
+  const courseIds = Array.from(new Set(courseOrders.map((order) => order.course_id).filter(Boolean)));
   const courseTitles = new Map<string, string>();
 
   if (courseIds.length > 0) {
@@ -156,12 +156,12 @@ export default async function Page() {
     }
   }
 
-  const loadErrors = [courseResult.error].filter(Boolean);
+  const loadErrors = [courseResult.error, testResult.error, webinarResult.error, enrollmentResult.error].filter(Boolean);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Student Purchases</h1>
-      <p className="mt-2 text-sm text-slate-600">Showing confirmed purchases only (paid/captured/confirmed).</p>
+      <p className="mt-2 text-sm text-slate-600">Showing complete transaction history with latest payment state.</p>
 
       {loadErrors.length > 0 ? (
         <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -171,12 +171,16 @@ export default async function Page() {
 
       <h2 className="mt-6 font-medium">Course Orders</h2>
       <div className="mt-2 space-y-2">
-        {confirmedCourseOrders.length === 0 ? (
-          <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No confirmed course purchases found yet.</p>
+        {courseOrders.length === 0 ? (
+          <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No course transactions found yet.</p>
         ) : (
-          confirmedCourseOrders.map((order) => (
+          courseOrders.map((order) => (
             <div key={order.id} className="rounded border bg-white p-3 text-sm">
-              {courseTitles.get(order.course_id) ?? order.course_id} · ₹{order.gross_amount} · {order.payment_status ?? "paid"}
+              {courseTitles.get(order.course_id) ?? order.course_id} · ₹{order.gross_amount} · {order.payment_status ?? "created"}
+              {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
+              {confirmedCourseOrders.some((confirmed) => confirmed.id === order.id) ? " · Enrollment eligible" : ""}
+              <div className="text-xs text-slate-500">Order ID: {order.id}</div>
+              {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
               <RefundRequestButton orderType="course" orderId={order.id} />
             </div>
           ))

@@ -6,6 +6,27 @@ import { createClient } from "@/lib/supabase/server";
 const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 
+type EnrollmentRow = {
+  id: string;
+  course_id: string;
+  enrollment_status: string | null;
+  enrolled_at: string | null;
+  access_start_at: string | null;
+  access_end_at: string | null;
+  created_at: string | null;
+  course: { title: string | null; institute_id: string | null } | { title: string | null; institute_id: string | null }[] | null;
+  institute: { name: string | null; phone: string | null; user_id: string | null } | { name: string | null; phone: string | null; user_id: string | null }[] | null;
+  order: { payment_status: string | null; paid_at: string | null } | { payment_status: string | null; paid_at: string | null }[] | null;
+};
+
+type CourseOrderRow = {
+  id: string;
+  course_id: string | null;
+  payment_status: string | null;
+  paid_at: string | null;
+  created_at: string | null;
+};
+
 function formatDate(value: string | null) {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -31,64 +52,110 @@ export default async function StudentEnrollmentsPage() {
   const { user } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
 
-  const { data: enrollments, error: enrollmentsError } = await supabase
-    .from("course_enrollments")
-    .select(
-      "id,course_id,enrollment_status,enrolled_at,access_start_at,access_end_at,created_at,course:courses(title,institute_id),institute:institutes(name,phone,user_id),order:course_orders(payment_status,paid_at)"
-    )
-    .eq("student_id", user.id)
-    .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE])
-    .order("created_at", { ascending: false });
+  const [enrollmentsResult, ordersResult] = await Promise.all([
+    supabase
+      .from("course_enrollments")
+      .select(
+        "id,course_id,enrollment_status,enrolled_at,access_start_at,access_end_at,created_at,course:courses(title,institute_id),institute:institutes(name,phone,user_id),order:course_orders(payment_status,paid_at)"
+      )
+      .eq("student_id", user.id)
+      .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE])
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("course_orders")
+      .select("id,course_id,payment_status,paid_at,created_at")
+      .eq("student_id", user.id)
+      .order("created_at", { ascending: false }),
+  ]);
 
-  if (enrollmentsError) {
+  if (enrollmentsResult.error) {
     console.error("[student/enrollments] enrollment fetch failed", {
       user_id: user.id,
-      error: enrollmentsError.message,
+      error: enrollmentsResult.error.message,
     });
   }
 
-  const instituteUserIds = Array.from(
+  if (ordersResult.error) {
+    console.error("[student/enrollments] orders fetch failed", {
+      user_id: user.id,
+      error: ordersResult.error.message,
+    });
+  }
+
+  const enrollments = (enrollmentsResult.data ?? []) as EnrollmentRow[];
+  const courseOrders = (ordersResult.data ?? []) as CourseOrderRow[];
+
+  const courseIds = Array.from(
+    new Set([
+      ...enrollments.map((row) => row.course_id).filter((value): value is string => Boolean(value)),
+      ...courseOrders.map((row) => row.course_id).filter((value): value is string => Boolean(value)),
+    ])
+  );
+
+  const { data: courseRows } =
+    courseIds.length > 0
+      ? await supabase.from("courses").select("id,title,institute_id").in("id", courseIds)
+      : { data: [] as { id: string; title: string | null; institute_id: string | null }[] };
+
+  const courseById = new Map((courseRows ?? []).map((item) => [item.id, item]));
+
+  const instituteIds = Array.from(
     new Set(
-      (enrollments ?? [])
-        .map((item) => one(item.institute)?.user_id)
+      (courseRows ?? [])
+        .map((item) => item.institute_id)
         .filter((value): value is string => Boolean(value))
     )
   );
+
+  const { data: institutes } =
+    instituteIds.length > 0
+      ? await supabase.from("institutes").select("id,name,phone,user_id").in("id", instituteIds)
+      : { data: [] as { id: string; name: string | null; phone: string | null; user_id: string | null }[] };
+
+  const instituteById = new Map((institutes ?? []).map((item) => [item.id, item]));
+  const instituteUserIds = Array.from(new Set((institutes ?? []).map((item) => item.user_id).filter((value): value is string => Boolean(value))));
+
   const profileMap = new Map<string, { email: string | null }>();
 
-  if (instituteUserIds.length > 0) {
-    const { data: profiles } = await supabase.from("profiles").select("id,email").in("id", instituteUserIds);
-    for (const profile of profiles ?? []) {
-      profileMap.set(profile.id, { email: profile.email ?? null });
+  const { data: profiles } =
+    instituteUserIds.length > 0 ? await supabase.from("profiles").select("id,email").in("id", instituteUserIds) : { data: [] as { id: string; email: string | null }[] };
+  for (const profile of profiles ?? []) {
+    profileMap.set(profile.id, { email: profile.email ?? null });
+  }
+
+  const paidOrderByCourseId = new Map<string, CourseOrderRow>();
+  for (const order of courseOrders) {
+    if (!order.course_id || paidOrderByCourseId.has(order.course_id)) continue;
+    const normalized = String(order.payment_status ?? "").trim().toLowerCase();
+    if (SUCCESS_PAYMENT_STATUSES.has(normalized) || order.paid_at) {
+      paidOrderByCourseId.set(order.course_id, order);
     }
   }
 
-  const courseIds = Array.from(new Set((enrollments ?? []).map((row) => row.course_id).filter((value): value is string => Boolean(value))));
-  const paidOrderByCourseId = new Map<string, { payment_status: string | null; paid_at: string | null }>();
+  const fallbackEnrollmentCards = courseOrders
+    .filter((order) => {
+      if (!order.course_id) return false;
+      if (enrollments.some((enrollment) => enrollment.course_id === order.course_id)) return false;
+      const normalized = String(order.payment_status ?? "").trim().toLowerCase();
+      return SUCCESS_PAYMENT_STATUSES.has(normalized) || Boolean(order.paid_at);
+    })
+    .map((order) => ({
+      id: `order-${order.id}`,
+      course_id: order.course_id as string,
+      enrollment_status: "enrolled",
+      enrolled_at: order.paid_at ?? order.created_at,
+      access_start_at: order.paid_at ?? order.created_at,
+      access_end_at: null,
+      created_at: order.created_at,
+      course: courseById.get(order.course_id as string) ?? null,
+      institute: instituteById.get(courseById.get(order.course_id as string)?.institute_id ?? "") ?? null,
+      order: { payment_status: order.payment_status, paid_at: order.paid_at },
+    }));
 
-  if (courseIds.length > 0) {
-    const { data: paidOrders, error: paidOrdersError } = await supabase
-      .from("course_orders")
-      .select("course_id,payment_status,paid_at,created_at")
-      .eq("student_id", user.id)
-      .in("course_id", courseIds)
-      .order("created_at", { ascending: false });
-
-    if (paidOrdersError) {
-      console.error("[student/enrollments] paid order lookup failed", { user_id: user.id, error: paidOrdersError.message });
-    } else {
-      for (const order of paidOrders ?? []) {
-        if (!order.course_id || paidOrderByCourseId.has(order.course_id)) continue;
-        const normalized = String(order.payment_status ?? "").trim().toLowerCase();
-        if (SUCCESS_PAYMENT_STATUSES.has(normalized) || order.paid_at) {
-          paidOrderByCourseId.set(order.course_id, { payment_status: order.payment_status ?? null, paid_at: order.paid_at ?? null });
-        }
-      }
-    }
-  }
+  const mergedEnrollments = [...enrollments, ...fallbackEnrollmentCards];
 
   const nowMs = Date.now();
-  const activeEnrollmentCount = (enrollments ?? []).filter((enrollment) => {
+  const activeEnrollmentCount = mergedEnrollments.filter((enrollment) => {
     if (!enrollment.access_end_at) return true;
     const accessEndAtMs = new Date(enrollment.access_end_at).getTime();
     return Number.isFinite(accessEndAtMs) && accessEndAtMs > nowMs;
@@ -97,7 +164,7 @@ export default async function StudentEnrollmentsPage() {
   console.info("[student/enrollments] enrollments_page_loaded", {
     event: "enrollments_page_loaded",
     user_id: user.id,
-    total_enrollments: (enrollments ?? []).length,
+    total_enrollments: mergedEnrollments.length,
     active_enrollments: activeEnrollmentCount,
   });
 
@@ -112,13 +179,13 @@ export default async function StudentEnrollmentsPage() {
       </div>
 
       <div className="mt-6 space-y-2">
-        {(enrollments ?? []).length === 0 ? (
+        {mergedEnrollments.length === 0 ? (
           <div className="rounded-xl border bg-white p-4 text-sm text-slate-600">No enrollments yet. Purchase a course to see enrollments here.</div>
         ) : null}
 
-        {(enrollments ?? []).map((enrollment) => {
-          const course = one(enrollment.course);
-          const institute = one(enrollment.institute);
+        {mergedEnrollments.map((enrollment) => {
+          const course = one(enrollment.course) ?? courseById.get(enrollment.course_id) ?? null;
+          const institute = one(enrollment.institute) ?? instituteById.get(course?.institute_id ?? "") ?? null;
           const order = one(enrollment.order);
           const fallbackPaidOrder = paidOrderByCourseId.get(enrollment.course_id);
           const normalizedPaymentStatus = String(order?.payment_status ?? fallbackPaidOrder?.payment_status ?? "").trim().toLowerCase();
@@ -131,7 +198,7 @@ export default async function StudentEnrollmentsPage() {
               <p className="font-medium text-slate-900">{course?.title ?? `Course ${enrollment.course_id}`}</p>
               <p className="mt-1 text-slate-700">Status: {toTitleCase(enrollment.enrollment_status ?? "unknown")}</p>
               <p className="mt-1 text-slate-700">Access: {hasActiveAccess ? "Active" : "Expired"}</p>
-              <p className="mt-1 text-slate-700">Payment: {toTitleCase(order?.payment_status ?? "unknown")}</p>
+              <p className="mt-1 text-slate-700">Payment: {toTitleCase(order?.payment_status ?? fallbackPaidOrder?.payment_status ?? "unknown")}</p>
               <p className="mt-1 text-slate-700">Enrolled at: {formatDate(enrollment.enrolled_at ?? enrollment.created_at)}</p>
               {enrollment.access_start_at ? <p className="mt-1 text-slate-700">Access starts: {formatDate(enrollment.access_start_at)}</p> : null}
               {enrollment.access_end_at ? <p className="mt-1 text-slate-700">Access ends: {formatDate(enrollment.access_end_at)}</p> : null}

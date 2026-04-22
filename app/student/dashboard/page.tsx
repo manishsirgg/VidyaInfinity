@@ -34,6 +34,14 @@ type EnrollmentItem = {
   created_at: string;
 };
 
+type CourseOrderItem = {
+  id: string;
+  course_id: string | null;
+  payment_status: string | null;
+  paid_at: string | null;
+  created_at: string | null;
+};
+
 type TestAttemptItem = {
   id: string;
   test_id: string;
@@ -52,6 +60,7 @@ type WebinarRegistrationItem = {
 };
 
 const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
+const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -82,12 +91,18 @@ function webinarInfo(
   return webinar;
 }
 
+function isConfirmedPayment(status: string | null | undefined, paidAt?: string | null) {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (SUCCESS_PAYMENT_STATUSES.has(normalized)) return true;
+  return Boolean(paidAt);
+}
+
 export default async function StudentDashboardPage() {
   const { user, profile } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
 
   const [
-    { count: paidCourseOrders },
+    { data: courseOrderRows },
     { count: paidPsychometricOrders },
     { count: activeEnrollments },
     { count: inquiryCount },
@@ -101,7 +116,7 @@ export default async function StudentDashboardPage() {
     { count: paidWebinarOrdersCount },
     { data: recentWebinarRegistrations },
   ] = await Promise.all([
-    supabase.from("course_orders").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "paid"),
+    supabase.from("course_orders").select("id,course_id,payment_status,paid_at,created_at").eq("student_id", user.id).order("created_at", { ascending: false }),
     supabase.from("psychometric_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
     supabase
       .from("course_enrollments")
@@ -160,6 +175,16 @@ export default async function StudentDashboardPage() {
       .limit(3)
       .returns<WebinarRegistrationItem[]>(),
   ]);
+
+  const allCourseOrders = (courseOrderRows ?? []) as CourseOrderItem[];
+  const confirmedCourseOrders = allCourseOrders.filter((order) => isConfirmedPayment(order.payment_status, order.paid_at));
+  const paidCourseOrders = confirmedCourseOrders.length;
+  const courseIds = Array.from(new Set(allCourseOrders.map((item) => item.course_id).filter((value): value is string => Boolean(value))));
+  const { data: courseRows } =
+    courseIds.length > 0 ? await supabase.from("courses").select("id,title").in("id", courseIds) : { data: [] as { id: string; title: string | null }[] };
+  const courseTitleMap = new Map((courseRows ?? []).map((item) => [item.id, item.title ?? item.id]));
+  const recentCourseTransactions = allCourseOrders.slice(0, 3);
+  const normalizedActiveEnrollments = Math.max(activeEnrollments ?? 0, confirmedCourseOrders.length);
 
   const approvalStatus = profile.approval_status ?? "pending";
   const isRejected = approvalStatus === "rejected";
@@ -237,7 +262,7 @@ export default async function StudentDashboardPage() {
         <div className="mt-3 grid gap-4 md:grid-cols-7">
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></Link>
-          <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{activeEnrollments ?? 0}</span></Link>
+          <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{normalizedActiveEnrollments}</span></Link>
           <Link href="/webinars" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Webinar Registrations: <span className="font-semibold">{webinarRegistrationsCount ?? 0}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Webinar Orders: <span className="font-semibold">{paidWebinarOrdersCount ?? 0}</span></Link>
           <Link href="/student/leads" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">My Inquiries: <span className="font-semibold">{inquiryCount ?? 0}</span></Link>
@@ -304,9 +329,23 @@ export default async function StudentDashboardPage() {
             {(recentEnrollments ?? []).length === 0 ? <p className="text-slate-500">No enrollments yet.</p> : null}
             {(recentEnrollments ?? []).map((item) => (
               <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
-                <p className="font-medium text-slate-900">Course: {item.course_id}</p>
+                <p className="font-medium text-slate-900">Course: {courseTitleMap.get(item.course_id) ?? item.course_id}</p>
                 <p className="text-slate-700">Status: {toTitleCase(item.enrollment_status)}</p>
                 <p className="text-xs text-slate-500">{formatDate(item.created_at)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <h2 className="text-lg font-semibold">Recent Course Transactions</h2>
+          <div className="mt-3 space-y-2 text-sm">
+            {recentCourseTransactions.length === 0 ? <p className="text-slate-500">No course transactions yet.</p> : null}
+            {recentCourseTransactions.map((item) => (
+              <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+                <p className="font-medium text-slate-900">Course: {courseTitleMap.get(item.course_id ?? "") ?? item.course_id ?? "-"}</p>
+                <p className="text-slate-700">Payment: {toTitleCase(item.payment_status ?? "created")}</p>
+                <p className="text-xs text-slate-500">{formatDate(item.paid_at ?? item.created_at ?? new Date().toISOString())}</p>
               </div>
             ))}
           </div>
