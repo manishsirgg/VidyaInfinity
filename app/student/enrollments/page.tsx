@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
@@ -9,14 +10,15 @@ const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confir
 type EnrollmentRow = {
   id: string;
   course_id: string;
+  course_order_id?: string | null;
   enrollment_status: string | null;
   enrolled_at: string | null;
   access_start_at: string | null;
   access_end_at: string | null;
   created_at: string | null;
-  course: { title: string | null; institute_id: string | null } | { title: string | null; institute_id: string | null }[] | null;
-  institute: { name: string | null; phone: string | null; user_id: string | null } | { name: string | null; phone: string | null; user_id: string | null }[] | null;
-  order: { payment_status: string | null; paid_at: string | null } | { payment_status: string | null; paid_at: string | null }[] | null;
+  course?: { title: string | null; institute_id: string | null } | { title: string | null; institute_id: string | null }[] | null;
+  institute?: { name: string | null; phone: string | null; user_id: string | null } | { name: string | null; phone: string | null; user_id: string | null }[] | null;
+  order?: { payment_status: string | null; paid_at: string | null } | { payment_status: string | null; paid_at: string | null }[] | null;
 };
 
 type CourseOrderRow = {
@@ -51,17 +53,17 @@ function one<T>(value: T | T[] | null | undefined): T | null {
 export default async function StudentEnrollmentsPage() {
   const { user } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
 
   const [enrollmentsResult, ordersResult] = await Promise.all([
-    supabase
+    dataClient
       .from("course_enrollments")
-      .select(
-        "id,course_id,enrollment_status,enrolled_at,access_start_at,access_end_at,created_at,course:courses(title,institute_id),institute:institutes(name,phone,user_id),order:course_orders(payment_status,paid_at)"
-      )
+      .select("id,course_id,enrollment_status,enrolled_at,access_start_at,access_end_at,created_at,course_order_id")
       .eq("student_id", user.id)
       .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE])
       .order("created_at", { ascending: false }),
-    supabase
+    dataClient
       .from("course_orders")
       .select("id,course_id,payment_status,paid_at,created_at")
       .eq("student_id", user.id)
@@ -94,7 +96,7 @@ export default async function StudentEnrollmentsPage() {
 
   const { data: courseRows } =
     courseIds.length > 0
-      ? await supabase.from("courses").select("id,title,institute_id").in("id", courseIds)
+      ? await dataClient.from("courses").select("id,title,institute_id").in("id", courseIds)
       : { data: [] as { id: string; title: string | null; institute_id: string | null }[] };
 
   const courseById = new Map((courseRows ?? []).map((item) => [item.id, item]));
@@ -109,7 +111,7 @@ export default async function StudentEnrollmentsPage() {
 
   const { data: institutes } =
     instituteIds.length > 0
-      ? await supabase.from("institutes").select("id,name,phone,user_id").in("id", instituteIds)
+      ? await dataClient.from("institutes").select("id,name,phone,user_id").in("id", instituteIds)
       : { data: [] as { id: string; name: string | null; phone: string | null; user_id: string | null }[] };
 
   const instituteById = new Map((institutes ?? []).map((item) => [item.id, item]));
@@ -118,7 +120,7 @@ export default async function StudentEnrollmentsPage() {
   const profileMap = new Map<string, { email: string | null }>();
 
   const { data: profiles } =
-    instituteUserIds.length > 0 ? await supabase.from("profiles").select("id,email").in("id", instituteUserIds) : { data: [] as { id: string; email: string | null }[] };
+    instituteUserIds.length > 0 ? await dataClient.from("profiles").select("id,email").in("id", instituteUserIds) : { data: [] as { id: string; email: string | null }[] };
   for (const profile of profiles ?? []) {
     profileMap.set(profile.id, { email: profile.email ?? null });
   }

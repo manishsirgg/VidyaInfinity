@@ -1,5 +1,6 @@
 import { RefundRequestButton } from "@/components/student/refund-request-button";
 import { requireUser } from "@/lib/auth/get-session";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type CoursePurchase = {
@@ -48,20 +49,22 @@ function isConfirmedPayment(status: string | null | undefined, paidAt?: string |
 export default async function Page() {
   const { user } = await requireUser("student");
   const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
 
   const [courseResult, testResult, webinarResult] = await Promise.all([
-    supabase
+    dataClient
       .from("course_orders")
       .select("id,gross_amount,payment_status,paid_at,created_at,course_id,razorpay_payment_id")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false }),
-    supabase
+    dataClient
       .from("psychometric_orders")
       .select("id,final_paid_amount,payment_status,paid_at,test_id")
       .eq("user_id", user.id)
       .in("payment_status", [...SUCCESS_PAYMENT_STATUSES])
       .order("paid_at", { ascending: false, nullsFirst: false }),
-    supabase
+    dataClient
       .from("webinar_orders")
       .select("id,webinar_id,amount,currency,payment_status,paid_at,order_status")
       .eq("student_id", user.id)
@@ -85,7 +88,7 @@ export default async function Page() {
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
   const webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
   const [enrollmentResult] = await Promise.all([
-    supabase
+    dataClient
       .from("course_enrollments")
       .select("course_id,course_order_id")
       .eq("student_id", user.id)
@@ -129,7 +132,7 @@ export default async function Page() {
   const courseTitles = new Map<string, string>();
 
   if (courseIds.length > 0) {
-    const { data: courses, error: coursesError } = await supabase.from("courses").select("id,title").in("id", courseIds);
+    const { data: courses, error: coursesError } = await dataClient.from("courses").select("id,title").in("id", courseIds);
     if (coursesError) {
       console.error("[student/purchases] course title fetch failed", { user_id: user.id, error: coursesError.message });
     }
@@ -142,7 +145,7 @@ export default async function Page() {
   const webinarTitles = new Map<string, string>();
 
   if (webinarIds.length > 0) {
-    const { data: webinars, error: webinarsError } = await supabase
+    const { data: webinars, error: webinarsError } = await dataClient
       .from("webinars")
       .select("id,title")
       .in("id", webinarIds);

@@ -57,7 +57,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   let existingActiveEnrollment = false;
   let activeEnrollmentEndsAt: string | null = null;
   if (user?.id) {
-    const { data: existingEnrollment } = await dataClient
+    const { data: existingEnrollmentByStudent } = await dataClient
       .from("course_enrollments")
       .select("id,access_end_at")
       .eq("student_id", user.id)
@@ -66,6 +66,18 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle<{ id: string; access_end_at: string | null }>();
+    const { data: existingEnrollmentByUser } = existingEnrollmentByStudent
+      ? { data: null as { id: string; access_end_at: string | null } | null }
+      : await dataClient
+          .from("course_enrollments")
+          .select("id,access_end_at")
+          .eq("user_id", user.id)
+          .eq("course_id", course.id)
+          .in("enrollment_status", [...ENROLLMENT_STATUSES_ACTIVE])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<{ id: string; access_end_at: string | null }>();
+    const existingEnrollment = existingEnrollmentByStudent ?? existingEnrollmentByUser;
 
     if (existingEnrollment) {
       const hasActiveEnrollment = !existingEnrollment.access_end_at || new Date(existingEnrollment.access_end_at).getTime() > Date.now();
@@ -83,7 +95,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
     }
 
     if (!existingActiveEnrollment) {
-      const { data: paidOrder } = await dataClient
+      const { data: paidOrderByStudent } = await dataClient
         .from("course_orders")
         .select("id,payment_status,paid_at,created_at")
         .eq("student_id", user.id)
@@ -91,6 +103,17 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; created_at: string | null }>();
+      const { data: paidOrderByUser } = paidOrderByStudent
+        ? { data: null as { id: string; payment_status: string | null; paid_at: string | null; created_at: string | null } | null }
+        : await dataClient
+            .from("course_orders")
+            .select("id,payment_status,paid_at,created_at")
+            .eq("user_id", user.id)
+            .eq("course_id", course.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; created_at: string | null }>();
+      const paidOrder = paidOrderByStudent ?? paidOrderByUser;
 
       const normalizedPaymentStatus = String(paidOrder?.payment_status ?? "").trim().toLowerCase();
       const hasConfirmedPayment = Boolean(paidOrder && (SUCCESS_PAYMENT_STATUSES.has(normalizedPaymentStatus) || paidOrder.paid_at));
