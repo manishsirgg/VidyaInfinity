@@ -26,6 +26,16 @@ function toUiLabel(status: RefundDbStatus) {
   return "Requested";
 }
 
+function logRefundAdminEvent(event: string, payload: Record<string, unknown>) {
+  console.info(
+    JSON.stringify({
+      event,
+      timestamp: new Date().toISOString(),
+      ...payload,
+    }),
+  );
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
   if ("error" in auth) return auth.error;
@@ -61,6 +71,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     );
   }
 
+  logRefundAdminEvent("refund_admin_action_started", {
+    refundId: id,
+    currentStatus,
+    requestedStatus,
+    adminUserId: auth.user.id,
+  });
+
   if (requestedStatus === "cancelled") {
     const { data: cancelledRefund, error: cancelError } = await admin.data
       .from("refunds")
@@ -81,6 +98,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (cancelError || !cancelledRefund) {
       return NextResponse.json({ error: cancelError?.message ?? "Unable to cancel refund" }, { status: 409 });
     }
+
+    logRefundAdminEvent("refund_admin_action_rejected", {
+      refundId: id,
+      adminUserId: auth.user.id,
+      nextStatus: "cancelled",
+    });
 
     await createAccountNotification({
       userId: cancelledRefund.user_id,
@@ -105,7 +128,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       metadata: { refundStatus: "cancelled", note: adminNote ?? null },
     });
 
-    return NextResponse.json({ ok: true, refund: cancelledRefund });
+    logRefundAdminEvent("refund_admin_action_completed", {
+      refundId: id,
+      adminUserId: auth.user.id,
+      finalStatus: "cancelled",
+    });
+
+    return NextResponse.json({
+      ok: true,
+      message: "Refund request was rejected and marked as cancelled.",
+      refund: cancelledRefund,
+    });
   }
 
   if (!currentRefund.razorpay_payment_id) {
@@ -126,31 +159,61 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
       .single();
 
-    return NextResponse.json({ error: "Refund failed: missing Razorpay payment id", refund: failedRefund }, { status: 400 });
-  }
+    logRefundAdminEvent("razorpay_refund_request_failed", {
+      refundId: id,
+      adminUserId: auth.user.id,
+      reason: "missing_razorpay_payment_id",
+    });
 
-  const { error: markProcessingError } = await admin.data
-    .from("refunds")
-    .update({
-      refund_status: "processing",
-      internal_notes: adminNote ?? null,
-      processed_at: new Date().toISOString(),
-      metadata: {
-        ...(currentRefund.metadata ?? {}),
-        approved_by: auth.user.id,
-        approved_at: new Date().toISOString(),
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Refund failed: missing Razorpay payment id",
+        refund: failedRefund,
       },
-    })
-    .eq("id", id)
-    .eq("refund_status", "requested");
-
-  if (markProcessingError) {
-    return NextResponse.json({ error: markProcessingError.message }, { status: 409 });
+      { status: 400 },
+    );
   }
+
+  const requestAmount = Number(currentRefund.amount ?? 0);
+  if (!Number.isFinite(requestAmount) || requestAmount <= 0) {
+    const failureReason = `Invalid refund amount: ${currentRefund.amount}`;
+    const { data: failedRefund } = await admin.data
+      .from("refunds")
+      .update({
+        refund_status: "failed",
+        failed_at: new Date().toISOString(),
+        internal_notes: adminNote ?? failureReason,
+        metadata: {
+          ...(currentRefund.metadata ?? {}),
+          failure_reason: failureReason,
+          failed_at: new Date().toISOString(),
+          failed_by: auth.user.id,
+        },
+      })
+      .eq("id", id)
+      .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
+      .single();
+
+    logRefundAdminEvent("razorpay_refund_request_failed", {
+      refundId: id,
+      adminUserId: auth.user.id,
+      reason: failureReason,
+    });
+
+    return NextResponse.json({ ok: false, error: failureReason, refund: failedRefund }, { status: 400 });
+  }
+
+  logRefundAdminEvent("razorpay_refund_request_sent", {
+    refundId: id,
+    adminUserId: auth.user.id,
+    paymentId: currentRefund.razorpay_payment_id,
+    amount: requestAmount,
+  });
 
   const razorpayRefund = await createRazorpayRefund({
     paymentId: currentRefund.razorpay_payment_id,
-    amount: Number(currentRefund.amount ?? 0),
+    amount: requestAmount,
     receipt: `refund_${currentRefund.id}`,
     notes: {
       refund_id: currentRefund.id,
@@ -176,8 +239,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
       .single();
 
-    return NextResponse.json({ error: razorpayRefund.error, refund: failedRefund }, { status: 502 });
+    logRefundAdminEvent("razorpay_refund_request_failed", {
+      refundId: id,
+      adminUserId: auth.user.id,
+      reason: razorpayRefund.error,
+    });
+
+    return NextResponse.json({ ok: false, error: razorpayRefund.error, refund: failedRefund }, { status: 502 });
   }
+
+  logRefundAdminEvent("razorpay_refund_request_succeeded", {
+    refundId: id,
+    adminUserId: auth.user.id,
+    razorpayRefundId: razorpayRefund.data.id,
+    razorpayStatus: razorpayRefund.data.status ?? "unknown",
+  });
 
   const mappedStatus = mapRazorpayRefundStatus(razorpayRefund.data.status);
   const finalStatus: RefundDbStatus = mappedStatus === "processing" ? "processing" : mappedStatus;
@@ -188,19 +264,31 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       refund_status: finalStatus,
       razorpay_refund_id: razorpayRefund.data.id,
       internal_notes: adminNote ?? null,
+      processed_at: new Date().toISOString(),
       failed_at: finalStatus === "failed" ? new Date().toISOString() : null,
       metadata: {
         ...(currentRefund.metadata ?? {}),
+        approved_by: auth.user.id,
+        approved_at: new Date().toISOString(),
         razorpay_refund_status: razorpayRefund.data.status ?? "unknown",
         razorpay_refund_amount_subunits: razorpayRefund.data.amount ?? null,
         razorpay_refund_created_at: razorpayRefund.data.created_at ?? null,
+        razorpay_refund_payment_id: razorpayRefund.data.payment_id ?? currentRefund.razorpay_payment_id,
       },
     })
     .eq("id", id)
+    .eq("refund_status", "requested")
     .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
     .single();
 
   if (updateError || !refund) return NextResponse.json({ error: updateError?.message ?? "Unable to update refund" }, { status: 500 });
+
+  logRefundAdminEvent("refund_status_updated_processing", {
+    refundId: id,
+    adminUserId: auth.user.id,
+    finalStatus: refund.refund_status,
+    razorpayRefundId: razorpayRefund.data.id,
+  });
 
   if (refund.refund_status === "refunded") {
     if (refund.course_order_id) {
@@ -241,5 +329,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     metadata: { refundStatus: refund.refund_status, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
   });
 
-  return NextResponse.json({ ok: true, refund });
+  logRefundAdminEvent("refund_admin_action_completed", {
+    refundId: id,
+    adminUserId: auth.user.id,
+    finalStatus: refund.refund_status,
+  });
+
+  return NextResponse.json({
+    ok: true,
+    message:
+      refund.refund_status === "refunded"
+        ? "Refund was successfully processed."
+        : "Refund initiation succeeded and is now processing.",
+    refund,
+  });
 }
