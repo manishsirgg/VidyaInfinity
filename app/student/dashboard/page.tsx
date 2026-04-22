@@ -210,33 +210,33 @@ export default async function StudentDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<TestAttemptItem[]>(),
-    supabase.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("student_id", user.id),
-    supabase.from("webinar_orders").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "paid"),
-    supabase.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "not_required"),
-    supabase
+    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("student_id", user.id),
+    dataClient.from("webinar_orders").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "paid"),
+    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "not_required"),
+    dataClient
       .from("webinar_registrations")
       .select("id,registration_status,webinars(starts_at,webinar_mode)")
       .eq("student_id", user.id)
       .returns<
         { id: string; registration_status: string; webinars: { starts_at: string | null; webinar_mode: string | null } | { starts_at: string | null; webinar_mode: string | null }[] | null }[]
       >(),
-    supabase.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("order_kind", "webinar"),
-    supabase
+    dataClient.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("order_kind", "webinar"),
+    dataClient
       .from("webinar_registrations")
       .select("id,webinar_id,created_at,payment_status,access_status,registration_status,webinars(title,starts_at,status,webinar_mode,meeting_provider,institutes(name))")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<WebinarRegistrationItem[]>(),
-    supabase
+    dataClient
       .from("webinar_orders")
       .select("id,webinar_id,payment_status,amount,paid_at,created_at,webinars(title,starts_at,webinar_mode,status,meeting_provider,institutes(name))")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<WebinarOrderItem[]>(),
-    supabase.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).in("refund_status", [...REFUND_OPEN_STATUSES]),
-    supabase
+    dataClient.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).in("refund_status", [...REFUND_OPEN_STATUSES]),
+    dataClient
       .from("refunds")
       .select("id,order_kind,reason,refund_status,amount,requested_at,processed_at,created_at")
       .eq("user_id", user.id)
