@@ -56,14 +56,17 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
   if (!webinar) notFound();
 
   let hasAccess = false;
+  let activeAccessEndAt: string | null = null;
   if (viewer?.user.id) {
     const [{ data: registration }, { data: paidOrder }] = await Promise.all([
       dataClient
       .from("webinar_registrations")
-      .select("access_status")
+      .select("access_status,access_end_at")
       .eq("webinar_id", id)
       .eq("student_id", viewer.user.id)
-      .maybeSingle<{ access_status: string }>(),
+      .in("access_status", ["granted"])
+      .or("access_end_at.is.null,access_end_at.gte.now()")
+      .maybeSingle<{ access_status: string; access_end_at: string | null }>(),
       dataClient
         .from("webinar_orders")
         .select("access_status,payment_status,order_status")
@@ -74,6 +77,7 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
         .maybeSingle<{ access_status: string | null; payment_status: string; order_status: string }>(),
     ]);
     hasAccess = registration?.access_status === "granted" || paidOrder?.access_status === "granted";
+    activeAccessEndAt = registration?.access_end_at ?? null;
   }
 
   const isEnded = webinar.ends_at ? new Date(webinar.ends_at).getTime() < Date.now() : false;
@@ -134,6 +138,7 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
           price={Number(webinar.price ?? 0)}
           isLoggedIn={Boolean(viewer?.user)}
           enrollmentStatus={hasAccess ? "enrolled" : "none"}
+          activeAccessEndAt={activeAccessEndAt}
           enrollmentOpen={enrollmentOpen}
           statusLabel={statusLabel}
           canJoin={canJoin}

@@ -13,6 +13,8 @@ export default async function PendingPaymentPage({ searchParams }: { searchParam
   const razorpayOrderId = toFirstString(params.razorpay_order_id) || orderId;
   const paymentId = toFirstString(params.payment_id) || toFirstString(params.razorpay_payment_id);
   const reason = toFirstString(params.reason);
+  const paymentKindRaw = toFirstString(params.kind).trim().toLowerCase();
+  const paymentKind = paymentKindRaw === "webinar" || paymentKindRaw === "psychometric" ? paymentKindRaw : "course";
 
   return (
     <PendingPaymentClient
@@ -20,6 +22,7 @@ export default async function PendingPaymentPage({ searchParams }: { searchParam
       razorpayOrderId={razorpayOrderId}
       paymentId={paymentId}
       initialReason={reason}
+      paymentKind={paymentKind}
     />
   );
 }

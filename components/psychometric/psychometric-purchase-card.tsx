@@ -9,7 +9,17 @@ declare global {
   }
 }
 
-export function PsychometricPurchaseCard({ testId, testTitle, price }: { testId: string; testTitle: string; price: number }) {
+export function PsychometricPurchaseCard({
+  testId,
+  testTitle,
+  price,
+  purchaseLocked,
+}: {
+  testId: string;
+  testTitle: string;
+  price: number;
+  purchaseLocked?: boolean;
+}) {
   const [couponCode, setCouponCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -62,24 +72,19 @@ export function PsychometricPurchaseCard({ testId, testTitle, price }: { testId:
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orderId: response.razorpay_order_id, paymentId: response.razorpay_payment_id, signature: response.razorpay_signature }),
         });
-        const verifyBody = await verifyRes.json().catch(() => null);
+        await verifyRes.json().catch(() => null);
 
         setLoading(false);
         if (!verifyRes.ok) {
-          setIsError(true);
-          setMessage(verifyBody?.error ?? "Payment verification failed.");
+          window.location.href = `/student/payments/pending?kind=psychometric&order_id=${encodeURIComponent(response.razorpay_order_id)}&payment_id=${encodeURIComponent(response.razorpay_payment_id)}&reason=${encodeURIComponent("verification_pending")}`;
           return;
         }
-
-        setIsError(false);
-        setMessage("Payment successful. Test access is now unlocked.");
-        window.location.reload();
+        window.location.href = `/student/payments/success?kind=psychometric&order_id=${encodeURIComponent(response.razorpay_order_id)}&payment_id=${encodeURIComponent(response.razorpay_payment_id)}`;
       },
       modal: {
         ondismiss: () => {
           setLoading(false);
-          setIsError(false);
-          setMessage("Payment cancelled.");
+          window.location.href = `/student/payments/pending?kind=psychometric&order_id=${encodeURIComponent(order.id)}&reason=${encodeURIComponent("payment_modal_closed")}`;
         },
       },
     });
@@ -105,10 +110,10 @@ export function PsychometricPurchaseCard({ testId, testTitle, price }: { testId:
       <button
         type="button"
         onClick={payNow}
-        disabled={loading}
+        disabled={loading || Boolean(purchaseLocked)}
         className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
       >
-        {loading ? "Processing..." : "Pay & Unlock Test"}
+        {loading ? "Processing..." : purchaseLocked ? "Already Purchased" : "Pay & Unlock Test"}
       </button>
       {message ? <p className={`mt-2 text-xs ${isError ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
     </div>

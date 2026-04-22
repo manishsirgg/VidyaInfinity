@@ -24,6 +24,9 @@ type PsychometricPurchase = {
   payment_status: string | null;
   paid_at: string | null;
   test_id: string;
+  razorpay_order_id?: string | null;
+  razorpay_payment_id?: string | null;
+  created_at?: string | null;
 };
 
 type WebinarPurchase = {
@@ -34,6 +37,9 @@ type WebinarPurchase = {
   payment_status: string | null;
   paid_at: string | null;
   order_status: string | null;
+  razorpay_order_id?: string | null;
+  razorpay_payment_id?: string | null;
+  created_at?: string | null;
 };
 
 const SUCCESS_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"] as const;
@@ -60,17 +66,14 @@ export default async function Page() {
       .order("created_at", { ascending: false }),
     dataClient
       .from("psychometric_orders")
-      .select("id,final_paid_amount,payment_status,paid_at,test_id")
+      .select("id,final_paid_amount,payment_status,paid_at,test_id,razorpay_order_id,razorpay_payment_id,created_at")
       .eq("user_id", user.id)
-      .in("payment_status", [...SUCCESS_PAYMENT_STATUSES])
-      .order("paid_at", { ascending: false, nullsFirst: false }),
+      .order("created_at", { ascending: false }),
     dataClient
       .from("webinar_orders")
-      .select("id,webinar_id,amount,currency,payment_status,paid_at,order_status")
+      .select("id,webinar_id,amount,currency,payment_status,paid_at,order_status,razorpay_order_id,razorpay_payment_id,created_at")
       .eq("student_id", user.id)
-      .in("payment_status", [...SUCCESS_PAYMENT_STATUSES])
-      .in("order_status", ["confirmed", "paid", "success"])
-      .order("paid_at", { ascending: false, nullsFirst: false }),
+      .order("created_at", { ascending: false }),
   ]);
 
 
@@ -118,6 +121,16 @@ export default async function Page() {
     total_course_orders: courseOrders.length,
     enrollment_rows: enrollmentRows.length,
   });
+  console.info("[student/purchases] purchases_page_psychometric_orders_loaded", {
+    event: "purchases_page_psychometric_orders_loaded",
+    user_id: user.id,
+    total_psychometric_orders: testOrders.length,
+  });
+  console.info("[student/purchases] purchases_page_webinar_orders_loaded", {
+    event: "purchases_page_webinar_orders_loaded",
+    user_id: user.id,
+    total_webinar_orders: webinarOrders.length,
+  });
 
   const confirmedCourseOrders = courseOrders.filter((order) => {
     if (enrolledOrderIds.has(order.id)) return true;
@@ -146,6 +159,8 @@ export default async function Page() {
 
   const webinarIds = Array.from(new Set(webinarOrders.map((order) => order.webinar_id).filter(Boolean)));
   const webinarTitles = new Map<string, string>();
+  const testIds = Array.from(new Set(testOrders.map((order) => order.test_id).filter(Boolean)));
+  const testTitles = new Map<string, string>();
 
   if (webinarIds.length > 0) {
     const { data: webinars, error: webinarsError } = await dataClient
@@ -159,6 +174,15 @@ export default async function Page() {
 
     for (const webinar of webinars ?? []) {
       webinarTitles.set(webinar.id, webinar.title ?? webinar.id);
+    }
+  }
+  if (testIds.length > 0) {
+    const { data: tests, error: testsError } = await dataClient.from("psychometric_tests").select("id,title").in("id", testIds);
+    if (testsError) {
+      console.error("[student/purchases] psychometric title fetch failed", { user_id: user.id, error: testsError.message });
+    }
+    for (const test of tests ?? []) {
+      testTitles.set(test.id, test.title ?? test.id);
     }
   }
 
@@ -201,6 +225,10 @@ export default async function Page() {
           testOrders.map((order) => (
             <div key={order.id} className="rounded border bg-white p-3 text-sm">
               {order.test_id} · ₹{order.final_paid_amount} · {order.payment_status}
+              {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
+              <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
+              {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
+              <div>{testTitles.get(order.test_id) ?? order.test_id}</div>
               <RefundRequestButton orderType="psychometric" orderId={order.id} />
             </div>
           ))
@@ -215,7 +243,10 @@ export default async function Page() {
           webinarOrders.map((order) => (
             <div key={order.id} className="rounded border bg-white p-3 text-sm">
               {webinarTitles.get(order.webinar_id) ?? order.webinar_id} · {order.currency ?? "INR"} {order.amount} · {order.payment_status}
+              {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
               {order.order_status ? ` · ${order.order_status}` : ""}
+              <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
+              {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
             </div>
           ))
         )}

@@ -27,6 +27,36 @@ export async function POST(request: Request) {
 
     if (!test || !test.is_active) return NextResponse.json({ error: "Invalid test" }, { status: 400 });
 
+    const [{ data: paidOrder }, { data: unlockedAttempt }] = await Promise.all([
+      admin.data
+        .from("psychometric_orders")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("test_id", test.id)
+        .eq("payment_status", "paid")
+        .limit(1)
+        .maybeSingle(),
+      admin.data
+        .from("test_attempts")
+        .select("id,status")
+        .eq("user_id", user.id)
+        .eq("test_id", test.id)
+        .eq("status", "unlocked")
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    if (paidOrder || unlockedAttempt) {
+      console.info("[payments/test/create-order] psychometric_purchase_disabled_existing_active_access", {
+        event: "psychometric_purchase_disabled_existing_active_access",
+        userId: user.id,
+        testId: test.id,
+        paidOrderId: paidOrder?.id ?? null,
+        unlockedAttemptId: unlockedAttempt?.id ?? null,
+      });
+      return NextResponse.json({ error: "You have already purchased this assessment." }, { status: 409 });
+    }
+
     let finalAmount = Number(test.price);
     let discountAmount = 0;
 

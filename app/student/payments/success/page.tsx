@@ -15,22 +15,48 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
   const { user } = await requireUser("student");
   const orderId = first(params.order_id) || first(params.razorpay_order_id);
   const paymentId = first(params.payment_id) || first(params.razorpay_payment_id);
+  const kindRaw = first(params.kind).trim().toLowerCase();
+  const kind = kindRaw === "webinar" || kindRaw === "psychometric" ? kindRaw : "course";
 
-  let courseTitle: string | null = null;
+  let itemTitle: string | null = null;
   let amount: number | null = null;
 
   if (orderId) {
     const supabase = await createClient();
-    const { data } = await supabase
-      .from("course_orders")
-      .select("gross_amount,courses(title)")
-      .eq("student_id", user.id)
-      .eq("razorpay_order_id", orderId)
-      .maybeSingle<{ gross_amount: number; courses: { title: string | null } | { title: string | null }[] | null }>();
+    if (kind === "webinar") {
+      const { data } = await supabase
+        .from("webinar_orders")
+        .select("amount,webinars(title)")
+        .eq("student_id", user.id)
+        .eq("razorpay_order_id", orderId)
+        .maybeSingle<{ amount: number; webinars: { title: string | null } | { title: string | null }[] | null }>();
+      amount = data?.amount ?? null;
+      if (data?.webinars) itemTitle = Array.isArray(data.webinars) ? (data.webinars[0]?.title ?? null) : (data.webinars.title ?? null);
+    } else if (kind === "psychometric") {
+      const { data } = await supabase
+        .from("psychometric_orders")
+        .select("final_paid_amount,psychometric_tests(title)")
+        .eq("user_id", user.id)
+        .eq("razorpay_order_id", orderId)
+        .maybeSingle<{ final_paid_amount: number; psychometric_tests: { title: string | null } | { title: string | null }[] | null }>();
+      amount = data?.final_paid_amount ?? null;
+      if (data?.psychometric_tests) {
+        itemTitle = Array.isArray(data.psychometric_tests)
+          ? (data.psychometric_tests[0]?.title ?? null)
+          : (data.psychometric_tests.title ?? null);
+      }
+    } else {
+      const { data } = await supabase
+        .from("course_orders")
+        .select("gross_amount,courses(title)")
+        .eq("student_id", user.id)
+        .eq("razorpay_order_id", orderId)
+        .maybeSingle<{ gross_amount: number; courses: { title: string | null } | { title: string | null }[] | null }>();
 
-    amount = data?.gross_amount ?? null;
-    if (data?.courses) {
-      courseTitle = Array.isArray(data.courses) ? (data.courses[0]?.title ?? null) : (data.courses.title ?? null);
+      amount = data?.gross_amount ?? null;
+      if (data?.courses) {
+        itemTitle = Array.isArray(data.courses) ? (data.courses[0]?.title ?? null) : (data.courses.title ?? null);
+      }
     }
   }
 
@@ -38,10 +64,10 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
     <div className="mx-auto max-w-2xl px-4 py-12">
       <div className="rounded-xl border bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-semibold text-emerald-700">Payment successful</h1>
-        <p className="mt-2 text-sm text-slate-600">Your course purchase is confirmed and enrollment is being activated.</p>
+        <p className="mt-2 text-sm text-slate-600">Your {kind} purchase is confirmed and access is being activated.</p>
 
         <div className="mt-4 space-y-2 rounded bg-slate-50 p-4 text-sm text-slate-700">
-          <p>Course: {courseTitle ?? "Your selected course"}</p>
+          <p>Item: {itemTitle ?? "Your selected item"}</p>
           <p>Amount: {amount !== null ? `₹${amount}` : "-"}</p>
           <p>Order ID: {orderId || "-"}</p>
           <p>Payment ID: {paymentId || "-"}</p>

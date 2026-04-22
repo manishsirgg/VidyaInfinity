@@ -16,6 +16,7 @@ type WebinarActionCardProps = {
   price: number;
   isLoggedIn: boolean;
   enrollmentStatus: "none" | "enrolled";
+  activeAccessEndAt?: string | null;
   enrollmentOpen: boolean;
   statusLabel: string;
   canJoin: boolean;
@@ -29,6 +30,7 @@ export function WebinarActionCard({
   price,
   isLoggedIn,
   enrollmentStatus,
+  activeAccessEndAt,
   enrollmentOpen,
   statusLabel,
   canJoin,
@@ -103,16 +105,19 @@ export function WebinarActionCard({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orderId: response.razorpay_order_id, paymentId: response.razorpay_payment_id, signature: response.razorpay_signature }),
         });
-        const verifyBody = await verifyRes.json().catch(() => null);
+        await verifyRes.json().catch(() => null);
         setLoading(false);
         if (!verifyRes.ok) {
-          setIsError(true);
-          setMessage(verifyBody?.error ?? "Payment verification failed");
+          window.location.href = `/student/payments/pending?kind=webinar&order_id=${encodeURIComponent(response.razorpay_order_id)}&payment_id=${encodeURIComponent(response.razorpay_payment_id)}&reason=${encodeURIComponent("verification_pending")}`;
           return;
         }
-        setIsError(false);
-        setMessage("Payment successful. Enrollment confirmed.");
-        window.location.reload();
+        window.location.href = `/student/payments/success?kind=webinar&order_id=${encodeURIComponent(response.razorpay_order_id)}&payment_id=${encodeURIComponent(response.razorpay_payment_id)}`;
+      },
+      modal: {
+        ondismiss: () => {
+          setLoading(false);
+          window.location.href = `/student/payments/pending?kind=webinar&order_id=${encodeURIComponent(order.id)}&reason=${encodeURIComponent("payment_modal_closed")}`;
+        },
       },
     });
 
@@ -133,7 +138,7 @@ export function WebinarActionCard({
       <p className="text-sm font-medium text-slate-800">Status: {statusLabel}</p>
 
       {!isLoggedIn ? <p className="mt-2 text-sm text-slate-600">Please login as a student to enroll.</p> : null}
-      {isEnrolled && !canJoin ? <p className="mt-2 text-sm text-emerald-700">Enrolled</p> : null}
+      {isEnrolled && !canJoin ? <p className="mt-2 text-sm text-emerald-700">Already Registered{activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}</p> : null}
 
       {webinarMode === "free" ? (
         <button type="button" disabled={ctaDisabled} onClick={registerFree} className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">

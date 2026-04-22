@@ -497,27 +497,109 @@ export async function reconcilePsychometricOrderPaid({
   source: "verify_api" | "webhook";
   adminUserId?: string;
 }) {
-  if (order.payment_status !== "paid") {
+  const now = new Date().toISOString();
+  console.info("[payments/reconcile] reconcilePsychometricOrderPaid:start", {
+    orderId: order.id,
+    razorpayOrderId,
+    razorpayPaymentId,
+    source,
+  });
+
+  let canonicalPaidOrderId = order.id;
+
+  const { data: existingPaidOrder } = await supabase
+    .from("psychometric_orders")
+    .select("id,payment_status,paid_at,razorpay_payment_id")
+    .eq("user_id", order.user_id)
+    .eq("test_id", order.test_id)
+    .eq("payment_status", "paid")
+    .limit(1)
+    .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; razorpay_payment_id: string | null }>();
+
+  if (existingPaidOrder) {
+    canonicalPaidOrderId = existingPaidOrder.id;
+    console.info("[payments/reconcile] already_paid_order_found", {
+      event: "already_paid_order_found",
+      orderId: order.id,
+      existingPaidOrderId: existingPaidOrder.id,
+      userId: order.user_id,
+      testId: order.test_id,
+      source,
+    });
+  }
+
+  if (canonicalPaidOrderId === order.id && order.payment_status !== "paid") {
     const { error: updateError } = await supabase
       .from("psychometric_orders")
       .update({
         payment_status: "paid",
         razorpay_payment_id: razorpayPaymentId,
         razorpay_signature: razorpaySignature ?? null,
-        paid_at: new Date().toISOString(),
+        paid_at: now,
       })
       .eq("id", order.id)
       .in("payment_status", ["created", "failed"]);
 
-    if (updateError) return { error: updateError.message };
+    if (updateError) {
+      if (isUniqueViolation(updateError)) {
+        const { data: paidOrderAfterConflict } = await supabase
+          .from("psychometric_orders")
+          .select("id,payment_status,paid_at,razorpay_payment_id")
+          .eq("user_id", order.user_id)
+          .eq("test_id", order.test_id)
+          .eq("payment_status", "paid")
+          .limit(1)
+          .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; razorpay_payment_id: string | null }>();
+
+        if (paidOrderAfterConflict) {
+          canonicalPaidOrderId = paidOrderAfterConflict.id;
+          console.info("[payments/reconcile] duplicate_paid_order_treated_as_success", {
+            event: "duplicate_paid_order_treated_as_success",
+            orderId: order.id,
+            existingPaidOrderId: paidOrderAfterConflict.id,
+            userId: order.user_id,
+            testId: order.test_id,
+            source,
+          });
+        } else {
+          console.error("[payments/reconcile] reconciliation_failed", {
+            event: "reconciliation_failed",
+            orderId: order.id,
+            razorpayOrderId,
+            razorpayPaymentId,
+            source,
+            error: updateError.message,
+          });
+          return { error: updateError.message };
+        }
+      } else {
+        console.error("[payments/reconcile] reconciliation_failed", {
+          event: "reconciliation_failed",
+          orderId: order.id,
+          razorpayOrderId,
+          razorpayPaymentId,
+          source,
+          error: updateError.message,
+        });
+        return { error: updateError.message };
+      }
+    }
+  } else if (canonicalPaidOrderId === order.id && order.payment_status === "paid") {
+    console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
+      event: "reconciliation_skipped_already_finalized",
+      orderId: order.id,
+      userId: order.user_id,
+      testId: order.test_id,
+      source,
+    });
   }
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
       order_type: "psychometric",
-      order_id: order.id,
+      order_id: canonicalPaidOrderId,
       order_kind: "psychometric",
-      psychometric_order_id: order.id,
+      psychometric_order_id: canonicalPaidOrderId,
       user_id: order.user_id,
       razorpay_order_id: razorpayOrderId,
       razorpay_payment_id: razorpayPaymentId,
@@ -529,13 +611,42 @@ export async function reconcilePsychometricOrderPaid({
       status: "captured",
       payload: { source },
       verified: true,
-      verified_at: new Date().toISOString(),
+      verified_at: now,
       gateway_response: { source },
     },
     { onConflict: "razorpay_payment_id" }
   );
 
-  if (txnError) return { error: txnError.message };
+  if (txnError) {
+    console.error("[payments/reconcile] reconciliation_failed", {
+      event: "reconciliation_failed",
+      orderId: canonicalPaidOrderId,
+      razorpayOrderId,
+      razorpayPaymentId,
+      source,
+      error: txnError.message,
+    });
+    return { error: txnError.message };
+  }
+
+  const { data: existingUnlockedAttempt } = await supabase
+    .from("test_attempts")
+    .select("id,status")
+    .eq("user_id", order.user_id)
+    .eq("test_id", order.test_id)
+    .limit(1)
+    .maybeSingle<{ id: string; status: string | null }>();
+
+  if (existingUnlockedAttempt) {
+    console.info("[payments/reconcile] entitlement_row_found", {
+      event: "entitlement_row_found",
+      orderId: canonicalPaidOrderId,
+      entitlementId: existingUnlockedAttempt.id,
+      userId: order.user_id,
+      testId: order.test_id,
+      source,
+    });
+  }
 
   const { error: attemptError } = await supabase.from("test_attempts").upsert(
     {
@@ -547,7 +658,47 @@ export async function reconcilePsychometricOrderPaid({
     { onConflict: "user_id,test_id" }
   );
 
-  if (attemptError) return { error: attemptError.message };
+  if (attemptError) {
+    console.error("[payments/reconcile] reconciliation_failed", {
+      event: "reconciliation_failed",
+      orderId: canonicalPaidOrderId,
+      razorpayOrderId,
+      razorpayPaymentId,
+      source,
+      error: attemptError.message,
+    });
+    return { error: attemptError.message };
+  }
+
+  console.info("[payments/reconcile] entitlement_row_updated", {
+    event: existingUnlockedAttempt ? "entitlement_row_updated" : "entitlement_row_created",
+    orderId: canonicalPaidOrderId,
+    userId: order.user_id,
+    testId: order.test_id,
+    source,
+  });
+
+  const { data: convergedAttempt, error: convergedAttemptError } = await supabase
+    .from("test_attempts")
+    .select("id,status")
+    .eq("user_id", order.user_id)
+    .eq("test_id", order.test_id)
+    .eq("status", "unlocked")
+    .limit(1)
+    .maybeSingle<{ id: string; status: string | null }>();
+
+  if (convergedAttemptError || !convergedAttempt) {
+    const errorMessage = convergedAttemptError?.message ?? "Psychometric entitlement convergence failed: unlocked test_attempt row missing.";
+    console.error("[payments/reconcile] reconciliation_failed", {
+      event: "reconciliation_failed",
+      orderId: canonicalPaidOrderId,
+      razorpayOrderId,
+      razorpayPaymentId,
+      source,
+      error: errorMessage,
+    });
+    return { error: errorMessage };
+  }
 
 
   await createAccountNotification({
@@ -556,17 +707,18 @@ export async function reconcilePsychometricOrderPaid({
     category: "psychometric_order",
     priority: "high",
     title: "Psychometric purchase confirmed",
-    message: `Your psychometric test purchase is successful. Order ID: ${order.id}.`,
+    message: `Your psychometric test purchase is successful. Order ID: ${canonicalPaidOrderId}.`,
     targetUrl: "/student/purchases",
     actionLabel: "View purchase",
     entityType: "psychometric_order",
-    entityId: order.id,
-    dedupeKey: `psychometric-order-paid:${order.id}`,
-    metadata: { orderId: order.id, paymentId: razorpayPaymentId, source },
+    entityId: canonicalPaidOrderId,
+    dedupeKey: `psychometric-order-paid:${canonicalPaidOrderId}`,
+    metadata: { orderId: canonicalPaidOrderId, paymentId: razorpayPaymentId, source },
   }).catch(() => undefined);
 
-  console.info("[payments/reconcile] reconcilePsychometricOrderPaid:completed", {
-    orderId: order.id,
+  console.info("[payments/reconcile] reconciliation_completed", {
+    event: "reconciliation_completed",
+    orderId: canonicalPaidOrderId,
     razorpayOrderId,
     razorpayPaymentId,
     payment_id: razorpayPaymentId,
@@ -578,7 +730,7 @@ export async function reconcilePsychometricOrderPaid({
     adminUserId: adminUserId ?? null,
     action: "PAYMENT_RECONCILED_PSYCHOMETRIC",
     targetTable: "psychometric_orders",
-    targetId: order.id,
+    targetId: canonicalPaidOrderId,
     metadata: { razorpayOrderId, razorpayPaymentId, source },
   });
 
@@ -616,7 +768,7 @@ export async function reconcileWebinarOrderPaid({
 }) {
   const { data: webinar, error: webinarError } = await supabase
     .from("webinars")
-    .select("id,title,institute_id,webinar_mode,price,currency")
+    .select("id,title,institute_id,webinar_mode,price,currency,starts_at,ends_at")
     .eq("id", order.webinar_id)
     .maybeSingle<{
       id: string;
@@ -625,6 +777,8 @@ export async function reconcileWebinarOrderPaid({
       webinar_mode: string;
       price: number;
       currency: string;
+      starts_at: string | null;
+      ends_at: string | null;
     }>();
 
   if (webinarError) return { error: webinarError.message };
@@ -647,8 +801,30 @@ export async function reconcileWebinarOrderPaid({
   const grossAmount = Number(Number(order.amount ?? webinar.price ?? 0).toFixed(2));
   const commission = calculateCommission(grossAmount, commissionPercent);
   const now = new Date().toISOString();
+  let canonicalPaidOrderId = order.id;
 
-  if (order.payment_status !== "paid" || order.order_status !== "confirmed" || order.access_status !== "granted") {
+  const { data: existingPaidOrder } = await supabase
+    .from("webinar_orders")
+    .select("id,payment_status,paid_at,razorpay_payment_id")
+    .eq("student_id", order.student_id)
+    .eq("webinar_id", order.webinar_id)
+    .eq("payment_status", "paid")
+    .limit(1)
+    .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; razorpay_payment_id: string | null }>();
+
+  if (existingPaidOrder) {
+    canonicalPaidOrderId = existingPaidOrder.id;
+    console.info("[payments/reconcile] already_paid_order_found", {
+      event: "already_paid_order_found",
+      orderId: order.id,
+      existingPaidOrderId: existingPaidOrder.id,
+      studentId: order.student_id,
+      webinarId: order.webinar_id,
+      source,
+    });
+  }
+
+  if (canonicalPaidOrderId === order.id && (order.payment_status !== "paid" || order.order_status !== "confirmed" || order.access_status !== "granted")) {
     const { error: updateError } = await supabase
       .from("webinar_orders")
       .update({
@@ -669,15 +845,50 @@ export async function reconcileWebinarOrderPaid({
       .in("payment_status", ["pending", "failed", "paid"])
       .neq("order_status", "cancelled");
 
-    if (updateError) return { error: updateError.message };
+    if (updateError) {
+      if (isUniqueViolation(updateError)) {
+        const { data: paidOrderAfterConflict } = await supabase
+          .from("webinar_orders")
+          .select("id,payment_status,paid_at,razorpay_payment_id")
+          .eq("student_id", order.student_id)
+          .eq("webinar_id", order.webinar_id)
+          .eq("payment_status", "paid")
+          .limit(1)
+          .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; razorpay_payment_id: string | null }>();
+
+        if (paidOrderAfterConflict) {
+          canonicalPaidOrderId = paidOrderAfterConflict.id;
+          console.info("[payments/reconcile] duplicate_paid_order_treated_as_success", {
+            event: "duplicate_paid_order_treated_as_success",
+            orderId: order.id,
+            existingPaidOrderId: paidOrderAfterConflict.id,
+            studentId: order.student_id,
+            webinarId: order.webinar_id,
+            source,
+          });
+        } else {
+          return { error: updateError.message };
+        }
+      } else {
+        return { error: updateError.message };
+      }
+    }
+  } else if (canonicalPaidOrderId === order.id && order.payment_status === "paid") {
+    console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
+      event: "reconciliation_skipped_already_finalized",
+      orderId: order.id,
+      studentId: order.student_id,
+      webinarId: order.webinar_id,
+      source,
+    });
   }
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
       order_type: "course",
-      order_id: order.id,
+      order_id: canonicalPaidOrderId,
       order_kind: "webinar",
-      webinar_order_id: order.id,
+      webinar_order_id: canonicalPaidOrderId,
       user_id: order.student_id,
       institute_id: order.institute_id,
       razorpay_order_id: razorpayOrderId,
@@ -698,26 +909,69 @@ export async function reconcileWebinarOrderPaid({
 
   if (txnError) return { error: txnError.message };
 
+  const { data: existingRegistration } = await supabase
+    .from("webinar_registrations")
+    .select("id,webinar_order_id,access_status,payment_status")
+    .eq("webinar_id", order.webinar_id)
+    .eq("student_id", order.student_id)
+    .limit(1)
+    .maybeSingle<{ id: string; webinar_order_id: string | null; access_status: string | null; payment_status: string | null }>();
+
+  if (existingRegistration) {
+    console.info("[payments/reconcile] entitlement_row_found", {
+      event: "entitlement_row_found",
+      orderId: canonicalPaidOrderId,
+      entitlementId: existingRegistration.id,
+      studentId: order.student_id,
+      webinarId: order.webinar_id,
+      source,
+    });
+  }
+
   const { error: registrationError } = await supabase.from("webinar_registrations").upsert(
     {
       webinar_id: order.webinar_id,
       institute_id: order.institute_id,
       student_id: order.student_id,
-      webinar_order_id: order.id,
+      webinar_order_id: canonicalPaidOrderId,
       registration_status: "registered",
       payment_status: "paid",
       access_status: "granted",
       registered_at: now,
+      access_start_at: webinar.starts_at ?? now,
+      access_end_at: webinar.ends_at ?? null,
     },
     { onConflict: "webinar_id,student_id" }
   );
 
   if (registrationError) return { error: registrationError.message };
 
+  console.info("[payments/reconcile] entitlement_row_updated", {
+    event: existingRegistration ? "entitlement_row_updated" : "entitlement_row_created",
+    orderId: canonicalPaidOrderId,
+    studentId: order.student_id,
+    webinarId: order.webinar_id,
+    source,
+  });
+
+  const { data: convergedRegistration } = await supabase
+    .from("webinar_registrations")
+    .select("id,access_status,payment_status")
+    .eq("webinar_id", order.webinar_id)
+    .eq("student_id", order.student_id)
+    .eq("access_status", "granted")
+    .in("payment_status", ["paid", "not_required"])
+    .limit(1)
+    .maybeSingle<{ id: string; access_status: string; payment_status: string }>();
+
+  if (!convergedRegistration) {
+    return { error: "Webinar entitlement convergence failed: granted registration row missing." };
+  }
+
   const { data: existingPayout, error: existingPayoutError } = await supabase
     .from("institute_payouts")
     .select("id")
-    .eq("webinar_order_id", order.id)
+    .eq("webinar_order_id", canonicalPaidOrderId)
     .maybeSingle<{ id: string }>();
 
   if (existingPayoutError) return { error: existingPayoutError.message };
@@ -738,13 +992,13 @@ export async function reconcileWebinarOrderPaid({
   } else {
     const { error: payoutInsertError } = await supabase.from("institute_payouts").insert({
       institute_id: order.institute_id,
-      webinar_order_id: order.id,
+      webinar_order_id: canonicalPaidOrderId,
       payout_source: "webinar",
       gross_amount: commission.grossAmount,
       platform_fee_amount: commission.commissionAmount,
       payout_amount: commission.instituteReceivable,
       payout_status: "pending",
-      source_reference_id: order.id,
+      source_reference_id: canonicalPaidOrderId,
       source_reference_type: "webinar_order",
       scheduled_at: now,
       updated_at: now,
@@ -763,7 +1017,7 @@ export async function reconcileWebinarOrderPaid({
   }).catch(() => undefined);
 
   console.info("[payments/reconcile] reconcileWebinarOrderPaid:completed", {
-    orderId: order.id,
+    orderId: canonicalPaidOrderId,
     razorpayOrderId,
     razorpayPaymentId,
     payment_id: razorpayPaymentId,
@@ -775,7 +1029,7 @@ export async function reconcileWebinarOrderPaid({
     adminUserId: adminUserId ?? null,
     action: "PAYMENT_RECONCILED_WEBINAR",
     targetTable: "webinar_orders",
-    targetId: order.id,
+    targetId: canonicalPaidOrderId,
     metadata: { razorpayOrderId, razorpayPaymentId, source, commissionPercent, grossAmount },
   });
 
