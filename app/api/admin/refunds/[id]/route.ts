@@ -6,10 +6,9 @@ import { createAccountNotification } from "@/lib/notifications/account-notificat
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const ALLOWED_NEXT_STATUS: Record<string, string[]> = {
-  requested: ["approved", "rejected", "reject"],
-  approved: ["processed", "rejected", "reject"],
+  requested: ["approved", "rejected"],
+  approved: ["processed", "rejected"],
   rejected: [],
-  reject: [],
   processed: [],
 };
 
@@ -17,9 +16,6 @@ function normalizeStatus(status: string) {
   return status === "reject" ? "rejected" : status;
 }
 
-function persistedStatus(status: string) {
-  return status === "rejected" ? "reject" : status;
-}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
@@ -28,7 +24,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const { status, adminNote } = await request.json();
 
-  if (!["requested", "approved", "rejected", "reject", "processed"].includes(status)) {
+  if (!["requested", "approved", "rejected", "processed", "reject"].includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
@@ -59,11 +55,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     );
   }
 
-  const nextPersistedStatus = persistedStatus(requestedStatus);
   const { data: refund, error } = await admin.data
     .from("refunds")
     .update({
-      refund_status: nextPersistedStatus,
+      refund_status: requestedStatus,
       internal_notes: adminNote ?? null,
       processed_at: requestedStatus === "processed" ? new Date().toISOString() : null,
     })

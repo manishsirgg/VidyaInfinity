@@ -43,10 +43,6 @@ function normalizeRefundStatus(status: RefundStatusRaw): RefundStatus {
   return status === "reject" ? "rejected" : status;
 }
 
-function toPersistedRefundStatus(status: RefundStatus): RefundStatusRaw {
-  return status === "rejected" ? "reject" : status;
-}
-
 function formatAmount(amount: number | null, currency: string | null) {
   if (amount === null) return "-";
   const safeCurrency = currency || "INR";
@@ -105,7 +101,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
         refund.id === refundId
           ? {
               ...refund,
-              refund_status: (body.refund.refund_status as RefundStatusRaw) ?? toPersistedRefundStatus(nextStatus),
+              refund_status: (body.refund.refund_status as RefundStatusRaw) ?? nextStatus,
               internal_notes: draftNotes[refundId]?.trim() || null,
               processed_at: nextStatus === "processed" ? new Date().toISOString() : refund.processed_at,
               order:
