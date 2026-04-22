@@ -16,6 +16,10 @@ function normalizeStatus(status: string) {
   return status === "reject" ? "rejected" : status;
 }
 
+function isRefundStatusEnumError(message: string | undefined) {
+  return Boolean(message && message.includes("invalid input value for enum refund_status"));
+}
+
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
@@ -55,16 +59,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     );
   }
 
-  const { data: refund, error } = await admin.data
+  const refundPatch = {
+    refund_status: requestedStatus,
+    internal_notes: adminNote ?? null,
+    processed_at: requestedStatus === "processed" ? new Date().toISOString() : null,
+  };
+
+  let { data: refund, error } = await admin.data
     .from("refunds")
-    .update({
-      refund_status: requestedStatus,
-      internal_notes: adminNote ?? null,
-      processed_at: requestedStatus === "processed" ? new Date().toISOString() : null,
-    })
+    .update(refundPatch)
     .eq("id", id)
     .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
     .single();
+
+  if (!refund && error && requestedStatus === "rejected" && isRefundStatusEnumError(error.message)) {
+    ({ data: refund, error } = await admin.data
+      .from("refunds")
+      .update({
+        ...refundPatch,
+        refund_status: "reject",
+      })
+      .eq("id", id)
+      .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
+      .single());
+  }
 
   if (error || !refund) return NextResponse.json({ error: error?.message ?? "Refund not found" }, { status: 500 });
 
