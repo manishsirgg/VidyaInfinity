@@ -5,7 +5,31 @@ import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
+const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["enrolled", "pending", "active", "suspended", "completed"] as const;
+
+function resolveAccessEndAt(startAtIso: string, durationValue: number | null, durationUnit: string | null) {
+  if (!durationValue || durationValue <= 0) return null;
+
+  const startAt = new Date(startAtIso);
+  if (Number.isNaN(startAt.getTime())) return null;
+
+  const normalizedUnit = String(durationUnit ?? "").trim().toLowerCase();
+  const resolved = new Date(startAt);
+
+  if (["day", "days"].includes(normalizedUnit)) {
+    resolved.setUTCDate(resolved.getUTCDate() + durationValue);
+  } else if (["week", "weeks"].includes(normalizedUnit)) {
+    resolved.setUTCDate(resolved.getUTCDate() + durationValue * 7);
+  } else if (["month", "months"].includes(normalizedUnit)) {
+    resolved.setUTCMonth(resolved.getUTCMonth() + durationValue);
+  } else if (["year", "years"].includes(normalizedUnit)) {
+    resolved.setUTCFullYear(resolved.getUTCFullYear() + durationValue);
+  } else {
+    return null;
+  }
+
+  return resolved.toISOString();
+}
 
 function isUniqueViolation(error: { code?: string | null; message?: string | null; details?: string | null } | null | undefined) {
   if (!error) return false;
@@ -81,12 +105,21 @@ export async function reconcileCourseOrderPaid({
 
   const { data: existingEnrollment } = await supabase
     .from("course_enrollments")
-    .select("id,course_order_id")
+    .select("id,course_order_id,access_end_at")
     .eq("student_id", order.student_id)
     .eq("course_id", order.course_id)
     .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
     .limit(1)
-    .maybeSingle();
+    .maybeSingle<{ id: string; course_order_id: string | null; access_end_at: string | null }>();
+
+  const { data: courseForDuration } = await supabase
+    .from("courses")
+    .select("duration_value,duration_unit")
+    .eq("id", order.course_id)
+    .maybeSingle<{ duration_value: number | null; duration_unit: string | null }>();
+
+  const accessStartAt = now;
+  const resolvedAccessEndAt = resolveAccessEndAt(accessStartAt, courseForDuration?.duration_value ?? null, courseForDuration?.duration_unit ?? null);
 
   if (canonicalPaidOrderId === order.id && order.payment_status !== "paid") {
     const { error: updateError } = await supabase
@@ -189,7 +222,7 @@ export async function reconcileCourseOrderPaid({
 
   if (existingEnrollment) {
     console.info("[payments/reconcile] existing_enrollment_found", {
-      event: "existing_enrollment_found",
+      event: "enrollment_row_found",
       orderId: canonicalPaidOrderId,
       enrollmentId: existingEnrollment.id,
       enrollmentCourseOrderId: existingEnrollment.course_order_id,
@@ -202,7 +235,12 @@ export async function reconcileCourseOrderPaid({
       .from("course_enrollments")
       .update({
         course_order_id: canonicalPaidOrderId,
+        order_id: canonicalPaidOrderId,
+        user_id: order.student_id,
+        enrollment_status: "enrolled",
+        enrolled_at: now,
         access_start_at: now,
+        access_end_at: resolvedAccessEndAt,
         metadata: { source, reconciled: true },
       })
       .eq("id", existingEnrollment.id);
@@ -219,9 +257,10 @@ export async function reconcileCourseOrderPaid({
       return { error: updateEnrollmentError.message };
     }
 
-    console.info("[payments/reconcile] enrollment update success", {
-      orderId: order.id,
-      course_order_id: order.id,
+    console.info("[payments/reconcile] enrollment_row_updated", {
+      event: "enrollment_row_updated",
+      orderId: canonicalPaidOrderId,
+      course_order_id: canonicalPaidOrderId,
       razorpayOrderId,
       razorpayPaymentId,
       enrollmentId: existingEnrollment.id,
@@ -238,9 +277,10 @@ export async function reconcileCourseOrderPaid({
         student_id: order.student_id,
         course_id: order.course_id,
         institute_id: order.institute_id,
-        enrollment_status: "active",
+        enrollment_status: "enrolled",
         enrolled_at: now,
         access_start_at: now,
+        access_end_at: resolvedAccessEndAt,
         metadata: { source },
       },
       { onConflict: "course_order_id" }
@@ -258,9 +298,10 @@ export async function reconcileCourseOrderPaid({
       return { error: enrollError.message };
     }
 
-    console.info("[payments/reconcile] enrollment upsert success", {
-      orderId: order.id,
-      course_order_id: order.id,
+    console.info("[payments/reconcile] enrollment_row_created", {
+      event: "enrollment_row_created",
+      orderId: canonicalPaidOrderId,
+      course_order_id: canonicalPaidOrderId,
       razorpayOrderId,
       razorpayPaymentId,
       source,

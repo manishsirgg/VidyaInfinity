@@ -3,6 +3,9 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
 
+const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
+const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+
 function formatDate(value: string | null) {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -28,13 +31,21 @@ export default async function StudentEnrollmentsPage() {
   const { user } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
 
-  const { data: enrollments } = await supabase
+  const { data: enrollments, error: enrollmentsError } = await supabase
     .from("course_enrollments")
     .select(
       "id,course_id,enrollment_status,enrolled_at,access_start_at,access_end_at,created_at,course:courses(title,institute_id),institute:institutes(name,phone,user_id),order:course_orders(payment_status,paid_at)"
     )
     .eq("student_id", user.id)
+    .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE])
     .order("created_at", { ascending: false });
+
+  if (enrollmentsError) {
+    console.error("[student/enrollments] enrollment fetch failed", {
+      user_id: user.id,
+      error: enrollmentsError.message,
+    });
+  }
 
   const instituteUserIds = Array.from(
     new Set(
@@ -51,6 +62,44 @@ export default async function StudentEnrollmentsPage() {
       profileMap.set(profile.id, { email: profile.email ?? null });
     }
   }
+
+  const courseIds = Array.from(new Set((enrollments ?? []).map((row) => row.course_id).filter((value): value is string => Boolean(value))));
+  const paidOrderByCourseId = new Map<string, { payment_status: string | null; paid_at: string | null }>();
+
+  if (courseIds.length > 0) {
+    const { data: paidOrders, error: paidOrdersError } = await supabase
+      .from("course_orders")
+      .select("course_id,payment_status,paid_at,created_at")
+      .eq("student_id", user.id)
+      .in("course_id", courseIds)
+      .order("created_at", { ascending: false });
+
+    if (paidOrdersError) {
+      console.error("[student/enrollments] paid order lookup failed", { user_id: user.id, error: paidOrdersError.message });
+    } else {
+      for (const order of paidOrders ?? []) {
+        if (!order.course_id || paidOrderByCourseId.has(order.course_id)) continue;
+        const normalized = String(order.payment_status ?? "").trim().toLowerCase();
+        if (SUCCESS_PAYMENT_STATUSES.has(normalized) || order.paid_at) {
+          paidOrderByCourseId.set(order.course_id, { payment_status: order.payment_status ?? null, paid_at: order.paid_at ?? null });
+        }
+      }
+    }
+  }
+
+  const nowMs = Date.now();
+  const activeEnrollmentCount = (enrollments ?? []).filter((enrollment) => {
+    if (!enrollment.access_end_at) return true;
+    const accessEndAtMs = new Date(enrollment.access_end_at).getTime();
+    return Number.isFinite(accessEndAtMs) && accessEndAtMs > nowMs;
+  }).length;
+
+  console.info("[student/enrollments] enrollments_page_loaded", {
+    event: "enrollments_page_loaded",
+    user_id: user.id,
+    total_enrollments: (enrollments ?? []).length,
+    active_enrollments: activeEnrollmentCount,
+  });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -71,13 +120,17 @@ export default async function StudentEnrollmentsPage() {
           const course = one(enrollment.course);
           const institute = one(enrollment.institute);
           const order = one(enrollment.order);
-          const isPaid = order?.payment_status === "paid";
+          const fallbackPaidOrder = paidOrderByCourseId.get(enrollment.course_id);
+          const normalizedPaymentStatus = String(order?.payment_status ?? fallbackPaidOrder?.payment_status ?? "").trim().toLowerCase();
+          const isPaid = SUCCESS_PAYMENT_STATUSES.has(normalizedPaymentStatus) || Boolean(order?.paid_at ?? fallbackPaidOrder?.paid_at);
           const instituteEmail = institute?.user_id ? profileMap.get(institute.user_id)?.email : null;
+          const hasActiveAccess = !enrollment.access_end_at || new Date(enrollment.access_end_at).getTime() > nowMs;
 
           return (
             <div key={enrollment.id} className="rounded-xl border bg-white p-4 text-sm">
               <p className="font-medium text-slate-900">{course?.title ?? `Course ${enrollment.course_id}`}</p>
               <p className="mt-1 text-slate-700">Status: {toTitleCase(enrollment.enrollment_status ?? "unknown")}</p>
+              <p className="mt-1 text-slate-700">Access: {hasActiveAccess ? "Active" : "Expired"}</p>
               <p className="mt-1 text-slate-700">Payment: {toTitleCase(order?.payment_status ?? "unknown")}</p>
               <p className="mt-1 text-slate-700">Enrolled at: {formatDate(enrollment.enrolled_at ?? enrollment.created_at)}</p>
               {enrollment.access_start_at ? <p className="mt-1 text-slate-700">Access starts: {formatDate(enrollment.access_start_at)}</p> : null}

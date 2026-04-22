@@ -14,6 +14,7 @@ type CoursePurchase = {
 };
 
 type EnrollmentRow = {
+  course_id: string | null;
   course_order_id: string | null;
 };
 
@@ -37,6 +38,7 @@ type WebinarPurchase = {
 
 const SUCCESS_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"] as const;
 const SUCCESS_PAYMENT_STATUSES_SET = new Set<string>(SUCCESS_PAYMENT_STATUSES);
+const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 
 function isConfirmedPayment(status: string | null | undefined, paidAt?: string | null) {
   const normalized = String(status ?? "").trim().toLowerCase();
@@ -53,7 +55,7 @@ export default async function Page() {
       .from("course_orders")
       .select("id,gross_amount,payment_status,paid_at,created_at,course_id,razorpay_payment_id,razorpay_signature")
       .eq("student_id", user.id)
-      .order("paid_at", { ascending: false, nullsFirst: false }),
+      .order("created_at", { ascending: false }),
     supabase
       .from("psychometric_orders")
       .select("id,final_paid_amount,payment_status,paid_at,test_id")
@@ -85,22 +87,35 @@ export default async function Page() {
   const [enrollmentResult] = await Promise.all([
     supabase
       .from("course_enrollments")
-      .select("course_order_id")
+      .select("course_id,course_order_id")
       .eq("student_id", user.id)
-      .in("enrollment_status", ["pending", "active", "suspended", "completed"]),
+      .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE]),
   ]);
 
   if (enrollmentResult.error) {
     console.error("[student/purchases] enrollment fetch failed", { user_id: user.id, error: enrollmentResult.error.message });
   }
 
+  const enrollmentRows = (enrollmentResult.data ?? []) as EnrollmentRow[];
   const enrolledOrderIds = new Set(
-    ((enrollmentResult.data ?? []) as EnrollmentRow[])
+    enrollmentRows
       .map((row) => row.course_order_id)
       .filter((id): id is string => Boolean(id))
   );
+  const enrolledCourseIds = new Set(
+    enrollmentRows.map((row) => row.course_id).filter((id): id is string => Boolean(id))
+  );
+
+  console.info("[student/purchases] purchases_page_course_orders_loaded", {
+    event: "purchases_page_course_orders_loaded",
+    user_id: user.id,
+    total_course_orders: courseOrders.length,
+    enrollment_rows: enrollmentRows.length,
+  });
+
   const confirmedCourseOrders = courseOrders.filter((order) => {
     if (enrolledOrderIds.has(order.id)) return true;
+    if (enrolledCourseIds.has(order.course_id)) return true;
     return isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id && order.razorpay_signature);
   });
 
