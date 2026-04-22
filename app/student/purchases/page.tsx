@@ -250,6 +250,10 @@ export default async function Page({
         ? webinarOrders
         : webinarOrders;
 
+  const showCourseOrders = purchaseKind === "all";
+  const showPsychometricOrders = purchaseKind === "all";
+  const showWebinarOrders = purchaseKind !== "all";
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Student Purchases</h1>
@@ -278,79 +282,91 @@ export default async function Page({
         </div>
       ) : null}
 
-      <h2 className="mt-6 font-medium">Course Orders</h2>
-      <div className="mt-2 space-y-2">
-        {courseOrders.length === 0 ? (
-          <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No course transactions found yet.</p>
-        ) : (
-          courseOrders.map((order) => (
-            <div key={order.id} className="rounded border bg-white p-3 text-sm">
-              {courseTitles.get(order.course_id) ?? order.course_id} · ₹{order.gross_amount} · {order.payment_status ?? "created"}
-              {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
-              {confirmedCourseOrders.some((confirmed) => confirmed.id === order.id) ? " · Enrollment eligible" : ""}
-              <div className="text-xs text-slate-500">Order ID: {order.id}</div>
-              {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
-              {isConfirmedPayment(order.payment_status, order.paid_at) ? <RefundRequestButton orderType="course" orderId={order.id} /> : null}
-            </div>
-          ))
-        )}
-      </div>
+      {showCourseOrders ? (
+        <>
+          <h2 className="mt-6 font-medium">Course Orders</h2>
+          <div className="mt-2 space-y-2">
+            {courseOrders.length === 0 ? (
+              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No course transactions found yet.</p>
+            ) : (
+              courseOrders.map((order) => (
+                <div key={order.id} className="rounded border bg-white p-3 text-sm">
+                  {courseTitles.get(order.course_id) ?? order.course_id} · ₹{order.gross_amount} · {order.payment_status ?? "created"}
+                  {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
+                  {confirmedCourseOrders.some((confirmed) => confirmed.id === order.id) ? " · Enrollment eligible" : ""}
+                  <div className="text-xs text-slate-500">Order ID: {order.id}</div>
+                  {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
+                  {isConfirmedPayment(order.payment_status, order.paid_at) ? <RefundRequestButton orderType="course" orderId={order.id} /> : null}
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      ) : null}
 
-      <h2 className="mt-6 font-medium">Psychometric Orders</h2>
-      <div className="mt-2 space-y-2">
-        {testOrders.length === 0 ? (
-          <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No confirmed psychometric purchases found yet.</p>
-        ) : (
-          testOrders.map((order) => (
-            <div key={order.id} className="rounded border bg-white p-3 text-sm">
-              {order.test_id} · ₹{order.final_paid_amount} · {order.payment_status}
-              {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
-              <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
-              {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
-              <div>{testTitles.get(order.test_id) ?? order.test_id}</div>
-              <RefundRequestButton orderType="psychometric" orderId={order.id} />
-            </div>
-          ))
-        )}
-      </div>
+      {showPsychometricOrders ? (
+        <>
+          <h2 className="mt-6 font-medium">Psychometric Orders</h2>
+          <div className="mt-2 space-y-2">
+            {testOrders.length === 0 ? (
+              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No confirmed psychometric purchases found yet.</p>
+            ) : (
+              testOrders.map((order) => (
+                <div key={order.id} className="rounded border bg-white p-3 text-sm">
+                  {order.test_id} · ₹{order.final_paid_amount} · {order.payment_status}
+                  {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
+                  <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
+                  {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
+                  <div>{testTitles.get(order.test_id) ?? order.test_id}</div>
+                  <RefundRequestButton orderType="psychometric" orderId={order.id} />
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      ) : null}
 
-      <h2 className="mt-6 font-medium">{purchaseKind === "webinar-refunds" ? "Webinar Refund Requests" : "Webinar Orders"}</h2>
-      <div className="mt-2 space-y-2">
-        {filteredWebinarOrders.length === 0 ? (
-          <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">
-            {purchaseKind === "webinar-refunds" ? "No webinar refund requests found yet." : "No confirmed webinar purchases found yet."}
-          </p>
-        ) : (
-          filteredWebinarOrders.map((order) => (
-            <div key={order.id} className="rounded border bg-white p-3 text-sm">
-              {webinarTitles.get(order.webinar_id) ?? order.webinar_id} · {order.currency ?? "INR"} {order.amount} · {order.payment_status}
-              {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
-              {order.order_status ? ` · ${order.order_status}` : ""}
-              <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
-              {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
-              {(() => {
-                const registration = webinarRegistrationByOrderId.get(order.id);
-                const refund = webinarRefundByOrderId.get(order.id);
-                const webinar = webinarJoin(registration?.webinars);
-                const institute = webinarJoin(webinar?.institutes);
+      {showWebinarOrders ? (
+        <>
+          <h2 className="mt-6 font-medium">{purchaseKind === "webinar-refunds" ? "Webinar Refund Requests" : "Webinar Orders"}</h2>
+          <div className="mt-2 space-y-2">
+            {filteredWebinarOrders.length === 0 ? (
+              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">
+                {purchaseKind === "webinar-refunds" ? "No webinar refund requests found yet." : "No confirmed webinar purchases found yet."}
+              </p>
+            ) : (
+              filteredWebinarOrders.map((order) => (
+                <div key={order.id} className="rounded border bg-white p-3 text-sm">
+                  {webinarTitles.get(order.webinar_id) ?? order.webinar_id} · {order.currency ?? "INR"} {order.amount} · {order.payment_status}
+                  {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
+                  {order.order_status ? ` · ${order.order_status}` : ""}
+                  <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
+                  {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
+                  {(() => {
+                    const registration = webinarRegistrationByOrderId.get(order.id);
+                    const refund = webinarRefundByOrderId.get(order.id);
+                    const webinar = webinarJoin(registration?.webinars);
+                    const institute = webinarJoin(webinar?.institutes);
 
-                return (
-                  <div className="mt-1 text-xs text-slate-600">
-                    <div>Registration: {registration?.registration_status ?? "pending"}</div>
-                    {webinar?.starts_at ? <div>Webinar Time: {new Date(webinar.starts_at).toLocaleString()}</div> : null}
-                    {webinar?.meeting_provider ? <div>Provider: {webinar.meeting_provider}</div> : null}
-                    {institute?.name ? <div>Institute: {institute.name}</div> : null}
-                    {refund ? <div className="font-medium">Webinar Refund: {refund.refund_status}</div> : null}
-                    {refund ? null : isConfirmedPayment(order.payment_status, order.paid_at) ? (
-                      <RefundRequestButton orderType="webinar" orderId={order.id} buttonLabel="Request Webinar Refund" />
-                    ) : null}
-                  </div>
-                );
-              })()}
-            </div>
-          ))
-        )}
-      </div>
+                    return (
+                      <div className="mt-1 text-xs text-slate-600">
+                        <div>Registration: {registration?.registration_status ?? "pending"}</div>
+                        {webinar?.starts_at ? <div>Webinar Time: {new Date(webinar.starts_at).toLocaleString()}</div> : null}
+                        {webinar?.meeting_provider ? <div>Provider: {webinar.meeting_provider}</div> : null}
+                        {institute?.name ? <div>Institute: {institute.name}</div> : null}
+                        {refund ? <div className="font-medium">Webinar Refund: {refund.refund_status}</div> : null}
+                        {refund ? null : isConfirmedPayment(order.payment_status, order.paid_at) ? (
+                          <RefundRequestButton orderType="webinar" orderId={order.id} buttonLabel="Request Webinar Refund" />
+                        ) : null}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
