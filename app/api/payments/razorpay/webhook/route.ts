@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { detectPaymentSchemaMismatches } from "@/lib/supabase/schema-guard";
 import { getRazorpayClient, verifyRazorpayWebhookSignature } from "@/lib/payments/razorpay";
+import { mapRazorpayRefundStatus } from "@/lib/payments/refunds";
 import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -96,10 +97,11 @@ export async function POST(request: Request) {
 
     const eventType = payload?.event ?? "unknown";
     const paymentEntity = payload?.payload?.payment?.entity ?? null;
+    const refundEntity = payload?.payload?.refund?.entity ?? null;
     const orderEntity = payload?.payload?.order?.entity ?? null;
-    const eventId = paymentEntity?.id ?? orderEntity?.id ?? null;
+    const eventId = refundEntity?.id ?? paymentEntity?.id ?? orderEntity?.id ?? null;
     const razorpayOrderId = paymentEntity?.order_id ?? orderEntity?.id ?? null;
-    let razorpayPaymentId = paymentEntity?.id ?? null;
+    let razorpayPaymentId = paymentEntity?.id ?? refundEntity?.payment_id ?? null;
 
     console.info("[razorpay/webhook] entry", {
       eventType,
@@ -189,8 +191,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, code: "WEBHOOK_SIGNATURE_INVALID", error: "Invalid webhook signature" }, { status: 400 });
     }
 
-    const handledPaymentEvents = ["payment.captured", "payment.failed", "order.paid"];
-    if (!handledPaymentEvents.includes(eventType)) {
+    const handledEvents = ["payment.captured", "payment.failed", "order.paid", "refund.processed", "refund.failed"];
+    if (!handledEvents.includes(eventType)) {
       await updateWebhookLogBestEffort({
         admin: admin.data,
         enabled: webhookLogAvailable,
@@ -203,6 +205,94 @@ export async function POST(request: Request) {
     }
 
     const paymentStatus = typeof paymentEntity?.status === "string" ? paymentEntity.status.toLowerCase() : null;
+    const isRefundEvent = eventType === "refund.processed" || eventType === "refund.failed";
+
+    if (isRefundEvent && refundEntity?.id) {
+      const localStatus = mapRazorpayRefundStatus(refundEntity.status);
+      const { data: refundRow, error: refundFetchError } = await admin.data
+        .from("refunds")
+        .select("id,refund_status,course_order_id,psychometric_order_id,metadata")
+        .or(`razorpay_refund_id.eq.${refundEntity.id},and(razorpay_payment_id.eq.${refundEntity.payment_id},refund_status.eq.processing)`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (refundFetchError) {
+        return NextResponse.json({ ok: false, code: "REFUND_LOOKUP_FAILED", error: refundFetchError.message }, { status: 500 });
+      }
+
+      if (!refundRow) {
+        await updateWebhookLogBestEffort({
+          admin: admin.data,
+          enabled: webhookLogAvailable,
+          logId: insertedLogId,
+          patch: { processed: true, processed_at: new Date().toISOString(), notes: "refund_not_mapped" },
+          eventType,
+          eventId,
+        });
+        return NextResponse.json({ ok: true, skipped: true, reason: "Refund not mapped locally" });
+      }
+
+      if (["refunded", "failed", "cancelled"].includes(refundRow.refund_status)) {
+        await updateWebhookLogBestEffort({
+          admin: admin.data,
+          enabled: webhookLogAvailable,
+          logId: insertedLogId,
+          patch: { processed: true, processed_at: new Date().toISOString(), notes: "refund_event_idempotent" },
+          eventType,
+          eventId,
+        });
+        return NextResponse.json({ ok: true, idempotent: true });
+      }
+
+      const nextStatus = localStatus === "refunded" ? "refunded" : "failed";
+      const { data: updatedRefund, error: refundUpdateError } = await admin.data
+        .from("refunds")
+        .update({
+          refund_status: nextStatus,
+          razorpay_refund_id: refundEntity.id,
+          failed_at: nextStatus === "failed" ? new Date().toISOString() : null,
+          metadata: {
+            ...(refundRow.metadata ?? {}),
+            webhook_event_type: eventType,
+            razorpay_refund_status: refundEntity.status ?? null,
+            razorpay_refund_amount_subunits: refundEntity.amount ?? null,
+          },
+        })
+        .eq("id", refundRow.id)
+        .select("id,refund_status,course_order_id,psychometric_order_id")
+        .single();
+
+      if (refundUpdateError || !updatedRefund) {
+        return NextResponse.json({ ok: false, code: "REFUND_UPDATE_FAILED", error: refundUpdateError?.message ?? "Failed to update refund" }, { status: 500 });
+      }
+
+      if (updatedRefund.refund_status === "refunded") {
+        if (updatedRefund.course_order_id) {
+          await admin.data
+            .from("course_orders")
+            .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
+            .eq("id", updatedRefund.course_order_id);
+        }
+        if (updatedRefund.psychometric_order_id) {
+          await admin.data
+            .from("psychometric_orders")
+            .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
+            .eq("id", updatedRefund.psychometric_order_id);
+        }
+      }
+
+      await updateWebhookLogBestEffort({
+        admin: admin.data,
+        enabled: webhookLogAvailable,
+        logId: insertedLogId,
+        patch: { processed: true, processed_at: new Date().toISOString(), notes: `refund_reconciled:${nextStatus}` },
+        eventType,
+        eventId,
+      });
+
+      return NextResponse.json({ ok: true, reconciled: "refund", status: nextStatus });
+    }
 
     if (!razorpayOrderId) {
       return NextResponse.json({ ok: true, skipped: true, reason: "Missing order id" });
