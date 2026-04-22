@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 type RefundStatus = "requested" | "approved" | "rejected" | "processed";
+type RefundStatusRaw = RefundStatus | "reject";
 
 type RefundRow = {
   id: string;
@@ -12,7 +13,7 @@ type RefundRow = {
   psychometric_order_id: string | null;
   reason: string | null;
   internal_notes: string | null;
-  refund_status: RefundStatus;
+  refund_status: RefundStatusRaw;
   requested_at: string;
   processed_at: string | null;
   created_at: string;
@@ -38,6 +39,14 @@ const STATUS_TRANSITIONS: Record<RefundStatus, RefundStatus[]> = {
   processed: [],
 };
 
+function normalizeRefundStatus(status: RefundStatusRaw): RefundStatus {
+  return status === "reject" ? "rejected" : status;
+}
+
+function toPersistedRefundStatus(status: RefundStatus): RefundStatusRaw {
+  return status === "rejected" ? "reject" : status;
+}
+
 function formatAmount(amount: number | null, currency: string | null) {
   if (amount === null) return "-";
   const safeCurrency = currency || "INR";
@@ -61,7 +70,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
   const counts = useMemo(() => {
     return refunds.reduce(
       (acc, refund) => {
-        acc[refund.refund_status] += 1;
+        acc[normalizeRefundStatus(refund.refund_status)] += 1;
         return acc;
       },
       { requested: 0, approved: 0, rejected: 0, processed: 0 },
@@ -70,7 +79,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
 
   const visibleRefunds = useMemo(() => {
     if (statusFilter === "all") return refunds;
-    return refunds.filter((refund) => refund.refund_status === statusFilter);
+    return refunds.filter((refund) => normalizeRefundStatus(refund.refund_status) === statusFilter);
   }, [refunds, statusFilter]);
 
   async function updateRefund(refundId: string, nextStatus: RefundStatus) {
@@ -96,7 +105,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
         refund.id === refundId
           ? {
               ...refund,
-              refund_status: body.refund.refund_status as RefundStatus,
+              refund_status: (body.refund.refund_status as RefundStatusRaw) ?? toPersistedRefundStatus(nextStatus),
               internal_notes: draftNotes[refundId]?.trim() || null,
               processed_at: nextStatus === "processed" ? new Date().toISOString() : refund.processed_at,
               order:
@@ -161,7 +170,8 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
       ) : (
         <div className="space-y-3">
           {visibleRefunds.map((refund) => {
-            const availableTransitions = STATUS_TRANSITIONS[refund.refund_status];
+            const normalizedStatus = normalizeRefundStatus(refund.refund_status);
+            const availableTransitions = STATUS_TRANSITIONS[normalizedStatus];
             const orderId = refund.order_kind === "course_enrollment" ? refund.course_order_id : refund.psychometric_order_id;
 
             return (
@@ -173,7 +183,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
                     </p>
                     <p className="text-xs text-slate-500">Requested {new Date(refund.requested_at).toLocaleString()}</p>
                   </div>
-                  <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium">Status: {refund.refund_status}</span>
+                  <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium">Status: {normalizedStatus}</span>
                 </div>
 
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
