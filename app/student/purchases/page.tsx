@@ -156,7 +156,7 @@ export default async function Page() {
     }
   }
 
-  const loadErrors = [courseResult.error, testResult.error, webinarResult.error, enrollmentResult.error].filter(Boolean);
+  const loadErrors = [courseResult.error].filter(Boolean);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">

@@ -238,8 +238,10 @@ export async function GET(request: Request) {
           const { data: refreshedEnrollment } = await admin.data
             .from("course_enrollments")
             .select("id,enrollment_status,course_order_id")
-            .eq("course_order_id", resolvedOrder.id)
+            .eq("student_id", resolvedOrder.student_id)
+            .eq("course_id", resolvedOrder.course_id)
             .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
+            .limit(1)
             .maybeSingle<EnrollmentStatusRow>();
 
           resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;
@@ -298,8 +300,10 @@ export async function GET(request: Request) {
               const { data: refreshedEnrollment } = await admin.data
                 .from("course_enrollments")
                 .select("id,enrollment_status,course_order_id")
-                .eq("course_order_id", resolvedOrder.id)
+                .eq("student_id", resolvedOrder.student_id)
+                .eq("course_id", resolvedOrder.course_id)
                 .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
+                .limit(1)
                 .maybeSingle<EnrollmentStatusRow>();
 
               resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;
