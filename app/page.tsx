@@ -389,7 +389,11 @@ export default async function HomePage() {
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             {homeWebinars.map((webinar) => (
-              <article key={webinar.id} className="overflow-hidden rounded-xl border bg-white">
+              <Link
+                key={webinar.id}
+                href={`/webinars/${webinar.id}`}
+                className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
+              >
                 {webinar.thumbnail_url ? <img src={webinar.thumbnail_url} alt={webinar.title} className="h-40 w-full object-cover" /> : null}
                 <div className="p-4">
                   <div className="flex items-center gap-2">
@@ -400,11 +404,9 @@ export default async function HomePage() {
                   </div>
                   <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
                   <p className="mt-1 text-sm text-slate-600">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
-                  <Link href={`/webinars/${webinar.id}`} className="mt-3 inline-flex rounded border px-3 py-1.5 text-sm">
-                    View webinar
-                  </Link>
+                  <p className="mt-3 text-sm text-brand-700 group-hover:underline">View webinar</p>
                 </div>
-              </article>
+              </Link>
             ))}
           </div>
         </section>
