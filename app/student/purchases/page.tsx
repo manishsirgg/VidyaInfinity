@@ -159,14 +159,14 @@ export default async function Page() {
     }
   }
 
-  const loadErrors = [courseResult.error, testResult.error, webinarResult.error, enrollmentResult.error].filter(Boolean);
+  const criticalLoadErrors = [courseResult.error, enrollmentResult.error].filter(Boolean);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Student Purchases</h1>
       <p className="mt-2 text-sm text-slate-600">Showing complete transaction history with latest payment state.</p>
 
-      {loadErrors.length > 0 ? (
+      {criticalLoadErrors.length > 0 ? (
         <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           We could not load all purchase records right now. Please refresh or contact support if this persists.
         </div>

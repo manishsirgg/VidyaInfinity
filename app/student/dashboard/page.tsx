@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type IdentityDocument = {
@@ -32,6 +33,7 @@ type EnrollmentItem = {
   course_id: string;
   enrollment_status: string;
   created_at: string;
+  access_end_at?: string | null;
 };
 
 type CourseOrderItem = {
@@ -59,7 +61,7 @@ type WebinarRegistrationItem = {
   webinars: { title: string; starts_at: string; status: string } | { title: string; starts_at: string; status: string }[] | null;
 };
 
-const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
+const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 
 function formatDate(value: string) {
@@ -100,11 +102,13 @@ function isConfirmedPayment(status: string | null | undefined, paidAt?: string |
 export default async function StudentDashboardPage() {
   const { user, profile } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : supabase;
 
   const [
     { data: courseOrderRows },
     { count: paidPsychometricOrders },
-    { count: activeEnrollments },
+    { data: activeEnrollmentRows, count: activeEnrollmentCount },
     { count: inquiryCount },
     { count: unreadNotificationCount },
     { data: latestIdentityDocument },
@@ -116,11 +120,11 @@ export default async function StudentDashboardPage() {
     { count: paidWebinarOrdersCount },
     { data: recentWebinarRegistrations },
   ] = await Promise.all([
-    supabase.from("course_orders").select("id,course_id,payment_status,paid_at,created_at").eq("student_id", user.id).order("created_at", { ascending: false }),
+    dataClient.from("course_orders").select("id,course_id,payment_status,paid_at,created_at").eq("student_id", user.id).order("created_at", { ascending: false }),
     supabase.from("psychometric_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
-    supabase
+    dataClient
       .from("course_enrollments")
-      .select("id", { count: "exact", head: true })
+      .select("id,course_id,enrollment_status,created_at,access_end_at", { count: "exact" })
       .eq("student_id", user.id)
       .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES]),
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("email", profile.email),
@@ -149,9 +153,9 @@ export default async function StudentDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<InquiryItem[]>(),
-    supabase
+    dataClient
       .from("course_enrollments")
-      .select("id,course_id,enrollment_status,created_at")
+      .select("id,course_id,enrollment_status,created_at,access_end_at")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3)
@@ -177,6 +181,7 @@ export default async function StudentDashboardPage() {
   ]);
 
   const allCourseOrders = (courseOrderRows ?? []) as CourseOrderItem[];
+  const enrollmentRows = ((activeEnrollmentRows ?? []) as EnrollmentItem[]).filter(Boolean);
   const confirmedCourseOrders = allCourseOrders.filter((order) => isConfirmedPayment(order.payment_status, order.paid_at));
   const paidCourseOrders = confirmedCourseOrders.length;
   const courseIds = Array.from(new Set(allCourseOrders.map((item) => item.course_id).filter((value): value is string => Boolean(value))));
@@ -184,7 +189,19 @@ export default async function StudentDashboardPage() {
     courseIds.length > 0 ? await supabase.from("courses").select("id,title").in("id", courseIds) : { data: [] as { id: string; title: string | null }[] };
   const courseTitleMap = new Map((courseRows ?? []).map((item) => [item.id, item.title ?? item.id]));
   const recentCourseTransactions = allCourseOrders.slice(0, 3);
-  const normalizedActiveEnrollments = Math.max(activeEnrollments ?? 0, confirmedCourseOrders.length);
+  const enrollmentCourseIds = new Set(enrollmentRows.map((row) => row.course_id).filter(Boolean));
+  const fallbackRecentEnrollments: EnrollmentItem[] = confirmedCourseOrders
+    .filter((order) => order.course_id && !enrollmentCourseIds.has(order.course_id))
+    .slice(0, 3)
+    .map((order) => ({
+      id: `order-${order.id}`,
+      course_id: order.course_id as string,
+      enrollment_status: "enrolled",
+      created_at: order.paid_at ?? order.created_at ?? new Date().toISOString(),
+      access_end_at: null,
+    }));
+  const mergedRecentEnrollments = [...((recentEnrollments ?? []) as EnrollmentItem[]), ...fallbackRecentEnrollments].slice(0, 3);
+  const normalizedActiveEnrollments = Math.max(activeEnrollmentCount ?? enrollmentRows.length, confirmedCourseOrders.length);
 
   const approvalStatus = profile.approval_status ?? "pending";
   const isRejected = approvalStatus === "rejected";
@@ -326,8 +343,8 @@ export default async function StudentDashboardPage() {
         <div className="rounded-xl border bg-white p-4">
           <h2 className="text-lg font-semibold">Recent Enrollments</h2>
           <div className="mt-3 space-y-2 text-sm">
-            {(recentEnrollments ?? []).length === 0 ? <p className="text-slate-500">No enrollments yet.</p> : null}
-            {(recentEnrollments ?? []).map((item) => (
+            {mergedRecentEnrollments.length === 0 ? <p className="text-slate-500">No enrollments yet.</p> : null}
+            {mergedRecentEnrollments.map((item) => (
               <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
                 <p className="font-medium text-slate-900">Course: {courseTitleMap.get(item.course_id) ?? item.course_id}</p>
                 <p className="text-slate-700">Status: {toTitleCase(item.enrollment_status)}</p>
