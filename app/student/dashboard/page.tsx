@@ -61,8 +61,20 @@ type WebinarRegistrationItem = {
   webinars: { title: string; starts_at: string; status: string } | { title: string; starts_at: string; status: string }[] | null;
 };
 
+type RefundItem = {
+  id: string;
+  order_kind: string | null;
+  reason: string | null;
+  refund_status: string;
+  amount: number | null;
+  requested_at: string | null;
+  processed_at: string | null;
+  created_at: string;
+};
+
 const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+const REFUND_OPEN_STATUSES = ["requested", "processing"] as const;
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -119,6 +131,8 @@ export default async function StudentDashboardPage() {
     { count: webinarRegistrationsCount },
     { count: paidWebinarOrdersCount },
     { data: recentWebinarRegistrations },
+    { count: openRefundRequestsCount },
+    { data: recentRefundRequests },
   ] = await Promise.all([
     dataClient.from("course_orders").select("id,course_id,payment_status,paid_at,created_at").eq("student_id", user.id).order("created_at", { ascending: false }),
     supabase.from("psychometric_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
@@ -178,6 +192,14 @@ export default async function StudentDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<WebinarRegistrationItem[]>(),
+    supabase.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).in("refund_status", [...REFUND_OPEN_STATUSES]),
+    supabase
+      .from("refunds")
+      .select("id,order_kind,reason,refund_status,amount,requested_at,processed_at,created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(3)
+      .returns<RefundItem[]>(),
   ]);
 
   const allCourseOrders = (courseOrderRows ?? []) as CourseOrderItem[];
@@ -284,6 +306,7 @@ export default async function StudentDashboardPage() {
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Webinar Orders: <span className="font-semibold">{paidWebinarOrdersCount ?? 0}</span></Link>
           <Link href="/student/leads" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">My Inquiries: <span className="font-semibold">{inquiryCount ?? 0}</span></Link>
           <Link href="/student/notifications" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Unread Notifications: <span className="font-semibold">{unreadNotificationCount ?? 0}</span></Link>
+          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Open Refund Requests: <span className="font-semibold">{openRefundRequestsCount ?? 0}</span></Link>
         </div>
       </section>
 
@@ -301,6 +324,7 @@ export default async function StudentDashboardPage() {
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/webinars">Browse Webinars</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/psychometric-tests">Take Psychometric Test</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/purchases">View Purchases</Link>
+          <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/refund-cancellation-policy">Refund Policy</Link>
         </div>
       </section>
 
@@ -401,6 +425,26 @@ export default async function StudentDashboardPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-white p-4">
+          <h2 className="text-lg font-semibold">Recent Refund Requests</h2>
+          <div className="mt-3 space-y-2 text-sm">
+            {(recentRefundRequests ?? []).length === 0 ? <p className="text-slate-500">No refund requests yet.</p> : null}
+            {(recentRefundRequests ?? []).map((item) => (
+              <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
+                <p className="font-medium text-slate-900">
+                  {toTitleCase(item.order_kind ?? "order")} · {item.amount ? `₹${item.amount}` : "Amount unavailable"}
+                </p>
+                <p className="text-slate-700">Status: {toTitleCase(item.refund_status)}</p>
+                {item.reason ? <p className="text-slate-700">Reason: {item.reason}</p> : null}
+                <p className="text-xs text-slate-500">
+                  Requested: {formatDate(item.requested_at ?? item.created_at)}
+                  {item.processed_at ? ` · Processed: ${formatDate(item.processed_at)}` : ""}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
