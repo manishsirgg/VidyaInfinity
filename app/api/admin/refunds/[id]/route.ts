@@ -5,30 +5,41 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-const ALLOWED_NEXT_STATUS: Record<string, string[]> = {
-  requested: ["approved", "rejected"],
-  approved: ["processed", "rejected"],
-  rejected: [],
-  processed: [],
+type RefundDbStatus = "requested" | "processing" | "refunded" | "failed" | "cancelled";
+type RefundLegacyStatus = "approved" | "processed" | "rejected" | "reject";
+type RefundStatusInput = RefundDbStatus | RefundLegacyStatus;
+
+const ALLOWED_NEXT_STATUS: Record<RefundDbStatus, RefundDbStatus[]> = {
+  requested: ["processing", "cancelled", "failed"],
+  processing: ["refunded", "cancelled", "failed"],
+  refunded: [],
+  failed: [],
+  cancelled: [],
 };
 
-function normalizeStatus(status: string) {
-  return status === "reject" ? "rejected" : status;
+function toDbStatus(status: RefundStatusInput): RefundDbStatus {
+  if (status === "approved") return "processing";
+  if (status === "processed") return "refunded";
+  if (status === "rejected" || status === "reject") return "cancelled";
+  return status;
 }
 
-function isRefundStatusEnumError(message: string | undefined) {
-  return Boolean(message && message.includes("invalid input value for enum refund_status"));
+function toUiLabel(status: RefundDbStatus) {
+  if (status === "processing") return "Approved";
+  if (status === "refunded") return "Processed";
+  if (status === "cancelled") return "Rejected";
+  if (status === "failed") return "Failed";
+  return "Requested";
 }
-
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
-  const { status, adminNote } = await request.json();
+  const { status, adminNote } = (await request.json()) as { status?: string; adminNote?: string | null };
 
-  if (!["requested", "approved", "rejected", "processed", "reject"].includes(status)) {
+  if (!status || !["requested", "processing", "refunded", "failed", "cancelled", "approved", "processed", "rejected", "reject"].includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
@@ -45,15 +56,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: fetchError?.message ?? "Refund not found" }, { status: 404 });
   }
 
-  const requestedStatus = normalizeStatus(status);
-  const currentStatusNormalized = normalizeStatus(currentRefund.refund_status);
+  const requestedStatus = toDbStatus(status as RefundStatusInput);
+  const currentStatus = toDbStatus(currentRefund.refund_status as RefundStatusInput);
 
-  if (currentStatusNormalized !== requestedStatus && !ALLOWED_NEXT_STATUS[currentStatusNormalized]?.includes(requestedStatus)) {
+  if (currentStatus !== requestedStatus && !ALLOWED_NEXT_STATUS[currentStatus]?.includes(requestedStatus)) {
     return NextResponse.json(
       {
-        error: `Cannot move refund from ${currentStatusNormalized} to ${requestedStatus}. Allowed: ${
-          ALLOWED_NEXT_STATUS[currentStatusNormalized]?.map(normalizeStatus).join(", ") || "none"
-        }`,
+        error: `Cannot move refund from ${currentStatus} to ${requestedStatus}. Allowed: ${ALLOWED_NEXT_STATUS[currentStatus]?.join(", ") || "none"}`,
       },
       { status: 400 },
     );
@@ -62,31 +71,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const refundPatch = {
     refund_status: requestedStatus,
     internal_notes: adminNote ?? null,
-    processed_at: requestedStatus === "processed" ? new Date().toISOString() : null,
+    processed_at: requestedStatus === "refunded" ? new Date().toISOString() : null,
   };
 
-  let { data: refund, error } = await admin.data
+  const { data: refund, error } = await admin.data
     .from("refunds")
     .update(refundPatch)
     .eq("id", id)
     .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
     .single();
 
-  if (!refund && error && requestedStatus === "rejected" && isRefundStatusEnumError(error.message)) {
-    ({ data: refund, error } = await admin.data
-      .from("refunds")
-      .update({
-        ...refundPatch,
-        refund_status: "reject",
-      })
-      .eq("id", id)
-      .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
-      .single());
-  }
-
   if (error || !refund) return NextResponse.json({ error: error?.message ?? "Refund not found" }, { status: 500 });
 
-  if (requestedStatus === "processed") {
+  if (requestedStatus === "refunded") {
     if (refund.course_order_id) {
       const { error: orderError } = await admin.data
         .from("course_orders")
@@ -108,9 +105,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     userId: refund.user_id,
     type: "refund",
     category: "refund",
-    priority: requestedStatus === "processed" ? "high" : "normal",
+    priority: requestedStatus === "refunded" ? "high" : "normal",
     title: "Refund update",
-    message: `Your refund request is now ${requestedStatus}.`,
+    message: `Your refund request is now ${toUiLabel(requestedStatus)}.`,
     targetUrl: "/student/purchases",
     actionLabel: "View purchases",
     entityType: "refund",
