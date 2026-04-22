@@ -18,6 +18,7 @@ type CoursePurchase = {
 type EnrollmentRow = {
   course_id: string | null;
   course_order_id: string | null;
+  enrollment_status?: string | null;
 };
 
 type PsychometricPurchase = {
@@ -50,8 +51,20 @@ type WebinarRegistration = {
   registration_status: string | null;
   access_status: string | null;
   webinars:
-    | { title: string | null; starts_at: string | null; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }
-    | { title: string | null; starts_at: string | null; meeting_provider: string | null; institutes: { name: string | null } | { name: string | null }[] | null }[]
+    | {
+        title: string | null;
+        starts_at: string | null;
+        webinar_mode: string | null;
+        meeting_provider: string | null;
+        institutes: { name: string | null } | { name: string | null }[] | null;
+      }
+    | {
+        title: string | null;
+        starts_at: string | null;
+        webinar_mode: string | null;
+        meeting_provider: string | null;
+        institutes: { name: string | null } | { name: string | null }[] | null;
+      }[]
     | null;
 };
 
@@ -63,14 +76,28 @@ type RefundRecord = {
   webinar_order_id: string | null;
 };
 
+type PurchaseKindFilter = "all" | "course" | "webinar" | "psychometric";
+
+type TabConfig = {
+  label: string;
+  href: string;
+  value: PurchaseKindFilter;
+};
+
 const SUCCESS_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"] as const;
 const SUCCESS_PAYMENT_STATUSES_SET = new Set<string>(SUCCESS_PAYMENT_STATUSES);
 const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
-type PurchaseKindFilter = "all" | "webinar" | "webinar-refunds";
+const PURCHASE_TABS: TabConfig[] = [
+  { label: "All", href: "/student/purchases", value: "all" },
+  { label: "Course Orders", href: "/student/purchases?kind=course", value: "course" },
+  { label: "Webinar Orders", href: "/student/purchases?kind=webinar", value: "webinar" },
+  { label: "Psychometric Orders", href: "/student/purchases?kind=psychometric", value: "psychometric" },
+];
 
 function getPurchaseKindFilter(value: string | string[] | undefined): PurchaseKindFilter {
   const normalized = Array.isArray(value) ? value[0] : value;
-  if (normalized === "webinar" || normalized === "webinar-refunds") return normalized;
+  if (normalized === "course" || normalized === "webinar" || normalized === "psychometric") return normalized;
+  if (normalized === "webinar-refunds") return "webinar";
   return "all";
 }
 
@@ -78,6 +105,43 @@ function isConfirmedPayment(status: string | null | undefined, paidAt?: string |
   const normalized = String(status ?? "").trim().toLowerCase();
   if (SUCCESS_PAYMENT_STATUSES_SET.has(normalized)) return true;
   return Boolean(paidAt);
+}
+
+function formatRupees(value: number | null | undefined, currency: string = "INR") {
+  if (typeof value !== "number") return `${currency} --`;
+  if (currency.toUpperCase() === "INR") {
+    return `₹${value.toLocaleString("en-IN")}`;
+  }
+  return `${currency.toUpperCase()} ${value.toLocaleString("en-IN")}`;
+}
+
+function toTitleCase(value: string | null | undefined, fallback: string) {
+  if (!value) return fallback;
+  return value
+    .split("_")
+    .join(" ")
+    .replace(/\b\w/g, (segment) => segment.toUpperCase());
+}
+
+function RefundStatusBadge({ status }: { status: RefundRecord["refund_status"] }) {
+  const tones: Record<RefundRecord["refund_status"], string> = {
+    requested: "border-amber-200 bg-amber-50 text-amber-700",
+    processing: "border-sky-200 bg-sky-50 text-sky-700",
+    refunded: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    failed: "border-rose-200 bg-rose-50 text-rose-700",
+    cancelled: "border-slate-200 bg-slate-100 text-slate-700",
+  };
+
+  return (
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${tones[status]}`}>
+      Refund {toTitleCase(status, "Requested")}
+    </span>
+  );
+}
+
+function webinarJoin<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
 export default async function Page({
@@ -110,7 +174,6 @@ export default async function Page({
       .order("created_at", { ascending: false }),
   ]);
 
-
   if (courseResult.error || testResult.error || webinarResult.error) {
     console.error("[student/purchases] purchases_page_course_orders_failed", {
       event: "purchases_page_course_orders_failed",
@@ -124,10 +187,11 @@ export default async function Page({
   const courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
   const webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
+
   const [webinarRegistrationsResult, refundsResult] = await Promise.all([
     dataClient
       .from("webinar_registrations")
-      .select("webinar_order_id,webinar_id,registration_status,access_status,webinars(title,starts_at,meeting_provider,institutes(name))")
+      .select("webinar_order_id,webinar_id,registration_status,access_status,webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))")
       .eq("student_id", user.id)
       .returns<WebinarRegistration[]>(),
     dataClient
@@ -139,7 +203,7 @@ export default async function Page({
 
   const enrollmentWithStatus = await dataClient
     .from("course_enrollments")
-    .select("course_id,course_order_id")
+    .select("course_id,course_order_id,enrollment_status")
     .eq("student_id", user.id)
     .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE]);
 
@@ -153,42 +217,16 @@ export default async function Page({
   }
 
   const enrollmentRows = (enrollmentResult.data ?? []) as EnrollmentRow[];
-  const enrolledOrderIds = new Set(
-    enrollmentRows
-      .map((row) => row.course_order_id)
-      .filter((id): id is string => Boolean(id))
+  const enrolledOrderIds = new Set(enrollmentRows.map((row) => row.course_order_id).filter((id): id is string => Boolean(id)));
+  const enrolledCourseIds = new Set(enrollmentRows.map((row) => row.course_id).filter((id): id is string => Boolean(id)));
+  const enrollmentStatusByOrderId = new Map(
+    enrollmentRows.filter((row) => row.course_order_id).map((row) => [row.course_order_id as string, row.enrollment_status ?? null]),
   );
-  const enrolledCourseIds = new Set(
-    enrollmentRows.map((row) => row.course_id).filter((id): id is string => Boolean(id))
-  );
-
-  console.info("[student/purchases] purchases_page_course_orders_loaded", {
-    event: "purchases_page_course_orders_loaded",
-    user_id: user.id,
-    total_course_orders: courseOrders.length,
-    enrollment_rows: enrollmentRows.length,
-  });
-  console.info("[student/purchases] purchases_page_psychometric_orders_loaded", {
-    event: "purchases_page_psychometric_orders_loaded",
-    user_id: user.id,
-    total_psychometric_orders: testOrders.length,
-  });
-  console.info("[student/purchases] purchases_page_webinar_orders_loaded", {
-    event: "purchases_page_webinar_orders_loaded",
-    user_id: user.id,
-    total_webinar_orders: webinarOrders.length,
-  });
 
   const confirmedCourseOrders = courseOrders.filter((order) => {
     if (enrolledOrderIds.has(order.id)) return true;
     if (enrolledCourseIds.has(order.course_id)) return true;
     return isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id);
-  });
-
-  console.info("[student/purchases] normalized course decisions", {
-    user_id: user.id,
-    totalCourseOrders: courseOrders.length,
-    confirmedCourseOrders: confirmedCourseOrders.length,
   });
 
   const courseIds = Array.from(new Set(courseOrders.map((order) => order.course_id).filter(Boolean)));
@@ -205,24 +243,26 @@ export default async function Page({
   }
 
   const webinarIds = Array.from(new Set(webinarOrders.map((order) => order.webinar_id).filter(Boolean)));
-  const webinarTitles = new Map<string, string>();
+  const webinarDetails = new Map<string, { title: string; startsAt: string | null; webinarMode: string | null }>();
   const testIds = Array.from(new Set(testOrders.map((order) => order.test_id).filter(Boolean)));
   const testTitles = new Map<string, string>();
 
   if (webinarIds.length > 0) {
-    const { data: webinars, error: webinarsError } = await dataClient
-      .from("webinars")
-      .select("id,title")
-      .in("id", webinarIds);
+    const { data: webinars, error: webinarsError } = await dataClient.from("webinars").select("id,title,starts_at,webinar_mode").in("id", webinarIds);
 
     if (webinarsError) {
       console.error("[student/purchases] webinar title fetch failed", { user_id: user.id, error: webinarsError.message });
     }
 
     for (const webinar of webinars ?? []) {
-      webinarTitles.set(webinar.id, webinar.title ?? webinar.id);
+      webinarDetails.set(webinar.id, {
+        title: webinar.title ?? webinar.id,
+        startsAt: webinar.starts_at ?? null,
+        webinarMode: webinar.webinar_mode ?? null,
+      });
     }
   }
+
   if (testIds.length > 0) {
     const { data: tests, error: testsError } = await dataClient.from("psychometric_tests").select("id,title").in("id", testIds);
     if (testsError) {
@@ -233,47 +273,44 @@ export default async function Page({
     }
   }
 
-  const criticalLoadErrors = [courseResult.error].filter(Boolean);
   const webinarRegistrations = webinarRegistrationsResult.data ?? [];
+  const refunds = refundsResult.data ?? [];
   const webinarRegistrationByOrderId = new Map(
     webinarRegistrations.filter((item) => item.webinar_order_id).map((item) => [item.webinar_order_id as string, item]),
   );
-  const webinarRefundByOrderId = new Map(
-    (refundsResult.data ?? [])
-      .filter((refund) => refund.webinar_order_id)
-      .map((refund) => [refund.webinar_order_id as string, refund]),
+  const courseRefundByOrderId = new Map(refunds.filter((refund) => refund.course_order_id).map((refund) => [refund.course_order_id as string, refund]));
+  const psychometricRefundByOrderId = new Map(
+    refunds.filter((refund) => refund.psychometric_order_id).map((refund) => [refund.psychometric_order_id as string, refund]),
   );
-  const filteredWebinarOrders =
-    purchaseKind === "webinar-refunds"
-      ? webinarOrders.filter((order) => webinarRefundByOrderId.has(order.id))
-      : purchaseKind === "webinar"
-        ? webinarOrders
-        : webinarOrders;
+  const webinarRefundByOrderId = new Map(refunds.filter((refund) => refund.webinar_order_id).map((refund) => [refund.webinar_order_id as string, refund]));
 
-  const showCourseOrders = purchaseKind === "all";
-  const showPsychometricOrders = purchaseKind === "all";
-  const showWebinarOrders = purchaseKind !== "all";
+  const criticalLoadErrors = [courseResult.error].filter(Boolean);
+
+  const showCourses = purchaseKind === "all" || purchaseKind === "course";
+  const showWebinars = purchaseKind === "all" || purchaseKind === "webinar";
+  const showPsychometrics = purchaseKind === "all" || purchaseKind === "psychometric";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Student Purchases</h1>
-      <p className="mt-2 text-sm text-slate-600">Showing complete transaction history with latest payment state.</p>
-      <div className="mt-3 flex flex-wrap gap-2 text-sm">
-        <Link className={`rounded border px-3 py-1 ${purchaseKind === "all" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-300 text-slate-700"}`} href="/student/purchases">
-          All
-        </Link>
-        <Link
-          className={`rounded border px-3 py-1 ${purchaseKind === "webinar" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-300 text-slate-700"}`}
-          href="/student/purchases?kind=webinar"
-        >
-          Webinar Orders
-        </Link>
-        <Link
-          className={`rounded border px-3 py-1 ${purchaseKind === "webinar-refunds" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-300 text-slate-700"}`}
-          href="/student/purchases?kind=webinar-refunds"
-        >
-          Webinar Refund Requests
-        </Link>
+      <p className="mt-2 text-sm text-slate-600">View your transactions category-wise with refund and access status in one place.</p>
+
+      <div className="mt-4 flex flex-wrap gap-2 text-sm">
+        {PURCHASE_TABS.map((tab) => {
+          const active = purchaseKind === tab.value;
+          return (
+            <Link
+              key={tab.value}
+              href={tab.href}
+              className={`rounded-full border px-4 py-1.5 font-medium transition ${
+                active ? "border-brand-600 bg-brand-50 text-brand-700 shadow-sm" : "border-slate-300 bg-white text-slate-700 hover:border-brand-300"
+              }`}
+              aria-current={active ? "page" : undefined}
+            >
+              {tab.label}
+            </Link>
+          );
+        })}
       </div>
 
       {criticalLoadErrors.length > 0 ? (
@@ -282,95 +319,118 @@ export default async function Page({
         </div>
       ) : null}
 
-      {showCourseOrders ? (
-        <>
-          <h2 className="mt-6 font-medium">Course Orders</h2>
+      {showCourses ? (
+        <section>
+          <h2 className="mt-7 text-base font-semibold">Course Orders</h2>
           <div className="mt-2 space-y-2">
             {courseOrders.length === 0 ? (
-              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No course transactions found yet.</p>
+              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No course orders found for this view.</p>
             ) : (
-              courseOrders.map((order) => (
-                <div key={order.id} className="rounded border bg-white p-3 text-sm">
-                  {courseTitles.get(order.course_id) ?? order.course_id} · ₹{order.gross_amount} · {order.payment_status ?? "created"}
-                  {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
-                  {confirmedCourseOrders.some((confirmed) => confirmed.id === order.id) ? " · Enrollment eligible" : ""}
-                  <div className="text-xs text-slate-500">Order ID: {order.id}</div>
-                  {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
-                  {isConfirmedPayment(order.payment_status, order.paid_at) ? <RefundRequestButton orderType="course" orderId={order.id} /> : null}
-                </div>
-              ))
+              courseOrders.map((order) => {
+                const refund = courseRefundByOrderId.get(order.id);
+                const enrollmentStatus = enrollmentStatusByOrderId.get(order.id);
+                const eligibility = confirmedCourseOrders.some((confirmed) => confirmed.id === order.id);
+
+                return (
+                  <article key={order.id} className="rounded border bg-white p-4 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-900">{courseTitles.get(order.course_id) ?? order.course_id}</p>
+                      {refund ? <RefundStatusBadge status={refund.refund_status} /> : null}
+                    </div>
+                    <p className="mt-1 text-slate-700">
+                      {formatRupees(order.gross_amount)} · Payment: {toTitleCase(order.payment_status, "Created")}
+                      {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
+                    </p>
+                    <p className="mt-1 text-slate-700">Enrollment: {enrollmentStatus ? toTitleCase(enrollmentStatus, "Unknown") : eligibility ? "Eligible" : "Pending"}</p>
+                    <div className="mt-1 text-xs text-slate-500">Order ID: {order.id}</div>
+                    {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Razorpay Payment ID: {order.razorpay_payment_id}</div> : null}
+                    <div className="mt-2">{refund ? null : isConfirmedPayment(order.payment_status, order.paid_at) ? <RefundRequestButton orderType="course" orderId={order.id} /> : null}</div>
+                  </article>
+                );
+              })
             )}
           </div>
-        </>
+        </section>
       ) : null}
 
-      {showPsychometricOrders ? (
-        <>
-          <h2 className="mt-6 font-medium">Psychometric Orders</h2>
+      {showWebinars ? (
+        <section>
+          <h2 className="mt-7 text-base font-semibold">Webinar Orders</h2>
+          <div className="mt-2 space-y-2">
+            {webinarOrders.length === 0 ? (
+              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No webinar orders found for this view.</p>
+            ) : (
+              webinarOrders.map((order) => {
+                const registration = webinarRegistrationByOrderId.get(order.id);
+                const webinar = webinarJoin(registration?.webinars);
+                const institute = webinarJoin(webinar?.institutes);
+                const details = webinarDetails.get(order.webinar_id);
+                const startsAt = webinar?.starts_at ?? details?.startsAt ?? null;
+                const webinarMode = webinar?.webinar_mode ?? details?.webinarMode ?? null;
+                const refund = webinarRefundByOrderId.get(order.id);
+
+                return (
+                  <article key={order.id} className="rounded border bg-white p-4 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-900">{details?.title ?? order.webinar_id}</p>
+                      {refund ? <RefundStatusBadge status={refund.refund_status} /> : null}
+                    </div>
+                    <p className="mt-1 text-slate-700">
+                      {formatRupees(order.amount, order.currency ?? "INR")} · Payment: {toTitleCase(order.payment_status, "Created")} · Registration: {toTitleCase(registration?.registration_status, "Pending")}
+                    </p>
+                    <p className="mt-1 text-slate-700">
+                      Mode: {toTitleCase(webinarMode, "Not specified")} · Access: {toTitleCase(registration?.access_status, "Pending")}
+                    </p>
+                    {startsAt ? <p className="mt-1 text-slate-700">Webinar Date & Time: {new Date(startsAt).toLocaleString()}</p> : null}
+                    {order.order_status ? <p className="mt-1 text-slate-700">Order Status: {toTitleCase(order.order_status, "Created")}</p> : null}
+                    {institute?.name ? <p className="mt-1 text-slate-700">Institute: {institute.name}</p> : null}
+                    <div className="mt-1 text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
+                    {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Razorpay Payment ID: {order.razorpay_payment_id}</div> : null}
+                    <div className="mt-2">
+                      {refund ? null : isConfirmedPayment(order.payment_status, order.paid_at) ? (
+                        <RefundRequestButton orderType="webinar" orderId={order.id} buttonLabel="Request Webinar Refund" />
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {showPsychometrics ? (
+        <section>
+          <h2 className="mt-7 text-base font-semibold">Psychometric Orders</h2>
           <div className="mt-2 space-y-2">
             {testOrders.length === 0 ? (
-              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No confirmed psychometric purchases found yet.</p>
+              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No psychometric orders found for this view.</p>
             ) : (
-              testOrders.map((order) => (
-                <div key={order.id} className="rounded border bg-white p-3 text-sm">
-                  {order.test_id} · ₹{order.final_paid_amount} · {order.payment_status}
-                  {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
-                  <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
-                  {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
-                  <div>{testTitles.get(order.test_id) ?? order.test_id}</div>
-                  <RefundRequestButton orderType="psychometric" orderId={order.id} />
-                </div>
-              ))
+              testOrders.map((order) => {
+                const refund = psychometricRefundByOrderId.get(order.id);
+                const unlocked = isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id);
+
+                return (
+                  <article key={order.id} className="rounded border bg-white p-4 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-900">{testTitles.get(order.test_id) ?? order.test_id}</p>
+                      {refund ? <RefundStatusBadge status={refund.refund_status} /> : null}
+                    </div>
+                    <p className="mt-1 text-slate-700">
+                      {formatRupees(order.final_paid_amount)} · Payment: {toTitleCase(order.payment_status, "Created")}
+                      {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
+                    </p>
+                    <p className="mt-1 text-slate-700">Access: {unlocked ? "Unlocked" : "Locked / Pending"}</p>
+                    <div className="mt-1 text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
+                    {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Razorpay Payment ID: {order.razorpay_payment_id}</div> : null}
+                    <div className="mt-2">{refund ? null : unlocked ? <RefundRequestButton orderType="psychometric" orderId={order.id} /> : null}</div>
+                  </article>
+                );
+              })
             )}
           </div>
-        </>
-      ) : null}
-
-      {showWebinarOrders ? (
-        <>
-          <h2 className="mt-6 font-medium">{purchaseKind === "webinar-refunds" ? "Webinar Refund Requests" : "Webinar Orders"}</h2>
-          <div className="mt-2 space-y-2">
-            {filteredWebinarOrders.length === 0 ? (
-              <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">
-                {purchaseKind === "webinar-refunds" ? "No webinar refund requests found yet." : "No confirmed webinar purchases found yet."}
-              </p>
-            ) : (
-              filteredWebinarOrders.map((order) => (
-                <div key={order.id} className="rounded border bg-white p-3 text-sm">
-                  {webinarTitles.get(order.webinar_id) ?? order.webinar_id} · {order.currency ?? "INR"} {order.amount} · {order.payment_status}
-                  {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
-                  {order.order_status ? ` · ${order.order_status}` : ""}
-                  <div className="text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
-                  {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
-                  {(() => {
-                    const registration = webinarRegistrationByOrderId.get(order.id);
-                    const refund = webinarRefundByOrderId.get(order.id);
-                    const webinar = webinarJoin(registration?.webinars);
-                    const institute = webinarJoin(webinar?.institutes);
-
-                    return (
-                      <div className="mt-1 text-xs text-slate-600">
-                        <div>Registration: {registration?.registration_status ?? "pending"}</div>
-                        {webinar?.starts_at ? <div>Webinar Time: {new Date(webinar.starts_at).toLocaleString()}</div> : null}
-                        {webinar?.meeting_provider ? <div>Provider: {webinar.meeting_provider}</div> : null}
-                        {institute?.name ? <div>Institute: {institute.name}</div> : null}
-                        {refund ? <div className="font-medium">Webinar Refund: {refund.refund_status}</div> : null}
-                        {refund ? null : isConfirmedPayment(order.payment_status, order.paid_at) ? (
-                          <RefundRequestButton orderType="webinar" orderId={order.id} buttonLabel="Request Webinar Refund" />
-                        ) : null}
-                      </div>
-                    );
-                  })()}
-                </div>
-              ))
-            )}
-          </div>
-        </>
+        </section>
       ) : null}
     </div>
   );
-}
-function webinarJoin<T>(value: T | T[] | null | undefined): T | null {
-  if (!value) return null;
-  return Array.isArray(value) ? (value[0] ?? null) : value;
 }
