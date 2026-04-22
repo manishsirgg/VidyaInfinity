@@ -17,12 +17,16 @@ export function CoursePurchaseCard({
   feeAmount,
   enrollmentOpen = true,
   enrollmentBlockedMessage = "This institute is not currently accepting enrollments.",
+  hasActiveEnrollment = false,
+  activeEnrollmentEndsAt = null,
 }: {
   courseId: string;
   courseTitle: string;
   feeAmount: number;
   enrollmentOpen?: boolean;
   enrollmentBlockedMessage?: string;
+  hasActiveEnrollment?: boolean;
+  activeEnrollmentEndsAt?: string | null;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -33,6 +37,12 @@ export function CoursePurchaseCard({
   const [isSaved, setIsSaved] = useState(false);
   const router = useRouter();
   const checkoutResolvedRef = useRef(false);
+  const purchaseDisabled = !enrollmentOpen || hasActiveEnrollment;
+  const enrollmentActiveLabel = hasActiveEnrollment
+    ? activeEnrollmentEndsAt
+      ? `Enrollment active until ${new Date(activeEnrollmentEndsAt).toLocaleDateString()}`
+      : "Already Enrolled"
+    : null;
 
   useEffect(() => {
     let ignore = false;
@@ -62,9 +72,9 @@ export function CoursePurchaseCard({
   }, [courseId]);
 
   async function enrollNow() {
-    if (!enrollmentOpen) {
+    if (purchaseDisabled) {
       setState("error");
-      setMessage(enrollmentBlockedMessage);
+      setMessage(enrollmentActiveLabel ?? enrollmentBlockedMessage);
       return;
     }
 
@@ -175,9 +185,9 @@ export function CoursePurchaseCard({
   }
 
   async function toggleCart() {
-    if (!enrollmentOpen) {
+    if (purchaseDisabled) {
       setState("error");
-      setMessage(enrollmentBlockedMessage);
+      setMessage(enrollmentActiveLabel ?? enrollmentBlockedMessage);
       return;
     }
 
@@ -246,17 +256,17 @@ export function CoursePurchaseCard({
       <button
         type="button"
         onClick={enrollNow}
-        disabled={state === "loading" || !enrollmentOpen}
+        disabled={state === "loading" || purchaseDisabled}
         className="mt-3 w-full rounded bg-brand-600 px-3 py-2 text-sm text-white disabled:opacity-60"
       >
-        {state === "loading" ? "Processing..." : "Pay & Enroll"}
+        {state === "loading" ? "Processing..." : hasActiveEnrollment ? "Already Enrolled" : "Pay & Enroll"}
       </button>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button
           type="button"
           onClick={toggleCart}
-          disabled={cartBusy || !enrollmentOpen}
+          disabled={cartBusy || purchaseDisabled}
           className="rounded border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 disabled:opacity-60"
         >
           {cartBusy ? "Updating..." : inCart ? "Remove from Cart" : "Add to Cart"}
@@ -278,7 +288,8 @@ export function CoursePurchaseCard({
       </div>
 
       {message ? <p className={`mt-2 text-xs ${state === "error" ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
-      {!enrollmentOpen && !message ? <p className="mt-2 text-xs text-rose-700">{enrollmentBlockedMessage}</p> : null}
+      {hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-amber-700">{enrollmentActiveLabel}</p> : null}
+      {!enrollmentOpen && !hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-rose-700">{enrollmentBlockedMessage}</p> : null}
     </div>
   );
 }

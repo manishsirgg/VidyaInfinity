@@ -34,7 +34,7 @@ type InstituteRow = {
   is_deleted: boolean | null;
 };
 
-const ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE = ["pending", "active", "suspended", "completed"] as const;
+const ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 
 function extractUnknownErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -261,10 +261,11 @@ export async function POST(request: Request) {
 
     const { data: existingEnrollment, error: existingEnrollmentError } = await admin.data
       .from("course_enrollments")
-      .select("id")
+      .select("id,access_end_at")
       .eq("student_id", studentId)
       .eq("course_id", ensuredCourse.id)
       .in("enrollment_status", [...ENROLLMENT_STATUSES_BLOCKING_NEW_PURCHASE])
+      .order("created_at", { ascending: false })
       .maybeSingle();
 
     if (existingEnrollmentError) {
@@ -276,13 +277,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unable to validate enrollment status right now." }, { status: 500 });
     }
 
-    if (existingEnrollment) {
+    const hasActiveEnrollment = Boolean(
+      existingEnrollment && (!existingEnrollment.access_end_at || new Date(existingEnrollment.access_end_at).getTime() > Date.now())
+    );
+
+    if (hasActiveEnrollment && existingEnrollment) {
       console.warn("[course/create-order] already enrolled", {
+        event: "course_purchase_disabled_existing_active_enrollment",
         courseId: ensuredCourse.id,
         studentId,
         enrollmentId: existingEnrollment.id,
+        accessEndAt: existingEnrollment.access_end_at,
       });
-      return NextResponse.json({ error: "You are already enrolled in this course." }, { status: 409 });
+      return NextResponse.json(
+        { error: existingEnrollment.access_end_at ? `Enrollment active until ${existingEnrollment.access_end_at}.` : "You are already enrolled in this course." },
+        { status: 409 }
+      );
     }
 
     const { data: commissionRow, error: commissionError } = await admin.data

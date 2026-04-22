@@ -9,6 +9,8 @@ import { siteConfig } from "@/lib/constants/site";
 import { isInstituteEligibleForEnrollment } from "@/lib/institutes/enrollment-eligibility";
 import { createClient } from "@/lib/supabase/server";
 
+const ENROLLMENT_STATUSES_ACTIVE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
+
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const supabase = await createClient();
@@ -31,6 +33,38 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   const isFeaturedCourse = Boolean(featuredRow?.course_id);
   const coursePath = `/courses/${slug}`;
   const shareUrl = `${siteConfig.url}${coursePath}`;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let existingActiveEnrollment = false;
+  let activeEnrollmentEndsAt: string | null = null;
+  if (user?.id) {
+    const { data: existingEnrollment } = await dataClient
+      .from("course_enrollments")
+      .select("id,access_end_at")
+      .eq("student_id", user.id)
+      .eq("course_id", course.id)
+      .in("enrollment_status", [...ENROLLMENT_STATUSES_ACTIVE])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string; access_end_at: string | null }>();
+
+    if (existingEnrollment) {
+      const hasActiveEnrollment = !existingEnrollment.access_end_at || new Date(existingEnrollment.access_end_at).getTime() > Date.now();
+      if (hasActiveEnrollment) {
+        existingActiveEnrollment = true;
+        activeEnrollmentEndsAt = existingEnrollment.access_end_at ?? null;
+        console.info("[courses/details] course_purchase_disabled_existing_active_enrollment", {
+          event: "course_purchase_disabled_existing_active_enrollment",
+          course_id: course.id,
+          student_id: user.id,
+          enrollment_id: existingEnrollment.id,
+          access_end_at: existingEnrollment.access_end_at,
+        });
+      }
+    }
+  }
 
   return (
     <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:py-12 md:grid-cols-[2fr_1fr] md:gap-8">
@@ -92,7 +126,14 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
       </article>
 
       <aside className="space-y-4">
-        <CoursePurchaseCard courseId={course.id} courseTitle={course.title} feeAmount={Number(course.fees ?? 0)} enrollmentOpen={enrollmentOpen} />
+        <CoursePurchaseCard
+          courseId={course.id}
+          courseTitle={course.title}
+          feeAmount={Number(course.fees ?? 0)}
+          enrollmentOpen={enrollmentOpen}
+          hasActiveEnrollment={existingActiveEnrollment}
+          activeEnrollmentEndsAt={activeEnrollmentEndsAt}
+        />
         <div className="rounded-xl border bg-white p-4">
           <p className="mt-2 text-sm text-slate-600">Certificate: {course.certificate_status ?? "-"}</p>
           {course.certificate_details ? <p className="mt-1 text-sm text-slate-600">{course.certificate_details}</p> : null}

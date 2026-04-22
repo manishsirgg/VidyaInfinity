@@ -4,6 +4,8 @@ import { CoursePurchaseCard } from "@/components/courses/course-purchase-card";
 import { requireUser } from "@/lib/auth/get-session";
 import { createClient } from "@/lib/supabase/server";
 
+const ENROLLMENT_STATUSES_ACTIVE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
+
 export default async function StudentCartPage() {
   const { user } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
@@ -13,6 +15,42 @@ export default async function StudentCartPage() {
     .select("id,created_at,course:courses!inner(id,title,summary,fees,status,is_active)")
     .eq("student_id", user.id)
     .order("created_at", { ascending: false });
+
+  const cartCourseIds = Array.from(
+    new Set(
+      (cartItems ?? [])
+        .map((item) => {
+          const course = Array.isArray(item.course) ? item.course[0] : item.course;
+          return course?.id ?? null;
+        })
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const activeEnrollmentMap = new Map<string, { access_end_at: string | null }>();
+  if (cartCourseIds.length > 0) {
+    const { data: enrollments } = await supabase
+      .from("course_enrollments")
+      .select("course_id,access_end_at")
+      .eq("student_id", user.id)
+      .in("course_id", cartCourseIds)
+      .in("enrollment_status", [...ENROLLMENT_STATUSES_ACTIVE])
+      .order("created_at", { ascending: false });
+
+    for (const row of enrollments ?? []) {
+      if (!row.course_id || activeEnrollmentMap.has(row.course_id)) continue;
+      const isActive = !row.access_end_at || new Date(row.access_end_at).getTime() > Date.now();
+      if (isActive) {
+        activeEnrollmentMap.set(row.course_id, { access_end_at: row.access_end_at ?? null });
+        console.info("[student/cart] course_purchase_disabled_existing_active_enrollment", {
+          event: "course_purchase_disabled_existing_active_enrollment",
+          student_id: user.id,
+          course_id: row.course_id,
+          access_end_at: row.access_end_at ?? null,
+        });
+      }
+    }
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -33,6 +71,7 @@ export default async function StudentCartPage() {
 
         {(cartItems ?? []).map((item) => {
           const course = Array.isArray(item.course) ? item.course[0] : item.course;
+          const existingActiveEnrollment = course?.id ? activeEnrollmentMap.get(course.id) : null;
           return (
             <div key={item.id} className="grid gap-4 rounded-xl border bg-white p-4 md:grid-cols-[1.8fr_1fr]">
               <div>
@@ -40,7 +79,13 @@ export default async function StudentCartPage() {
                 <p className="mt-1 text-sm text-slate-700">{course?.summary ?? "No summary available."}</p>
                 <p className="mt-2 text-sm text-slate-600">Fee: ₹{Number(course?.fees ?? 0)}</p>
               </div>
-              <CoursePurchaseCard courseId={course?.id ?? ""} courseTitle={course?.title ?? "Course"} feeAmount={Number(course?.fees ?? 0)} />
+              <CoursePurchaseCard
+                courseId={course?.id ?? ""}
+                courseTitle={course?.title ?? "Course"}
+                feeAmount={Number(course?.fees ?? 0)}
+                hasActiveEnrollment={Boolean(existingActiveEnrollment)}
+                activeEnrollmentEndsAt={existingActiveEnrollment?.access_end_at ?? null}
+              />
             </div>
           );
         })}
