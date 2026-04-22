@@ -5,6 +5,7 @@ import { normalizeWebinarMode } from "@/lib/webinars/utils";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { generateUniqueWebinarSlug } from "@/lib/webinars/slug";
 
 type CreateWebinarPayload = {
   title?: string;
@@ -16,7 +17,6 @@ type CreateWebinarPayload = {
   price?: number;
   currency?: string;
   meetingUrl?: string;
-  registrationUrl?: string;
   facultyName?: string;
   facultyBio?: string;
   thumbnailUrl?: string;
@@ -75,7 +75,7 @@ export async function GET() {
   const { data, error } = await dataClient
     .from("webinars")
     .select(
-      "id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,registration_url,meeting_provider,status,approval_status,rejection_reason,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points,created_at,updated_at"
+      "id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,meeting_provider,status,approval_status,rejection_reason,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points,created_at,updated_at"
     )
     .eq("institute_id", instituteId)
     .order("starts_at", { ascending: true });
@@ -144,12 +144,18 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const dataClient = admin.ok ? admin.data : supabase;
 
+  const slug = await generateUniqueWebinarSlug({
+    client: dataClient,
+    title: body.title,
+  });
+
   const { data, error } = await dataClient
     .from("webinars")
     .insert({
       institute_id: instituteId,
       created_by: auth.user.id,
       title: body.title.trim(),
+      slug,
       description: body.description?.trim() ?? null,
       starts_at: body.startsAt,
       ends_at: body.endsAt || null,
@@ -159,7 +165,6 @@ export async function POST(request: Request) {
       currency: body.currency || "INR",
       meeting_provider: "google_meet",
       meeting_url: body.meetingUrl?.trim() || null,
-      registration_url: body.registrationUrl?.trim() || null,
       faculty_name: body.facultyName?.trim() || null,
       faculty_bio: body.facultyBio?.trim() || null,
       thumbnail_url: body.thumbnailUrl?.trim() || null,

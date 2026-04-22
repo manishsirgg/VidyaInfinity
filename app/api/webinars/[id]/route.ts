@@ -15,7 +15,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   const { data: webinar, error } = await dataClient
     .from("webinars")
-    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_provider,meeting_url,registration_url,status,approval_status,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points,institute_id,institutes(name)")
+    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_provider,meeting_url,status,approval_status,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points,institute_id,institutes(name)")
     .eq("id", id)
     .eq("is_public", true)
     .maybeSingle();

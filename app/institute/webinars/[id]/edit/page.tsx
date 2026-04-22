@@ -17,7 +17,7 @@ export default async function EditWebinarPage({ params }: { params: Promise<{ id
 
   const { data: webinar } = await dataClient
     .from("webinars")
-    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,registration_url,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points")
+    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,faculty_name,faculty_bio,thumbnail_url,banner_url,max_attendees,learning_points")
     .eq("id", id)
     .eq("institute_id", institute.id)
     .maybeSingle();
@@ -44,7 +44,6 @@ export default async function EditWebinarPage({ params }: { params: Promise<{ id
             price: Number(webinar.price ?? 0),
             currency: webinar.currency,
             meetingUrl: webinar.meeting_url ?? "",
-            registrationUrl: webinar.registration_url ?? "",
             facultyName: webinar.faculty_name ?? "",
             facultyBio: webinar.faculty_bio ?? "",
             thumbnailUrl: webinar.thumbnail_url ?? "",

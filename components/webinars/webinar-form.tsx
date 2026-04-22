@@ -1,7 +1,10 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import Image from "next/image";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+
+import { createClient } from "@/lib/supabase/client";
 
 type WebinarFormValues = {
   title: string;
@@ -13,7 +16,6 @@ type WebinarFormValues = {
   price: number;
   currency: string;
   meetingUrl: string;
-  registrationUrl: string;
   facultyName: string;
   facultyBio: string;
   thumbnailUrl: string;
@@ -22,8 +24,18 @@ type WebinarFormValues = {
   learningPoints: string;
 };
 
+type MediaKind = "thumbnail" | "banner";
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
+
+function isValidImageFile(file: File) {
+  if (!file.type.startsWith("image/")) return "Please upload image files only.";
+  if (file.size > MAX_IMAGE_SIZE_BYTES) return "Image must be 10MB or smaller.";
+  return "";
+}
+
 export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create" | "edit"; webinarId?: string; initialValues?: Partial<WebinarFormValues> }) {
   const router = useRouter();
+  const supabase = createClient();
   const [values, setValues] = useState<WebinarFormValues>({
     title: initialValues?.title ?? "",
     description: initialValues?.description ?? "",
@@ -34,7 +46,6 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
     price: initialValues?.price ?? 0,
     currency: initialValues?.currency ?? "INR",
     meetingUrl: initialValues?.meetingUrl ?? "",
-    registrationUrl: initialValues?.registrationUrl ?? "",
     facultyName: initialValues?.facultyName ?? "",
     facultyBio: initialValues?.facultyBio ?? "",
     thumbnailUrl: initialValues?.thumbnailUrl ?? "",
@@ -42,8 +53,24 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
     maxAttendees: initialValues?.maxAttendees ?? 0,
     learningPoints: initialValues?.learningPoints ?? "",
   });
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const thumbnailPreview = useMemo(() => (thumbnailFile ? URL.createObjectURL(thumbnailFile) : values.thumbnailUrl), [thumbnailFile, values.thumbnailUrl]);
+  const bannerPreview = useMemo(() => (bannerFile ? URL.createObjectURL(bannerFile) : values.bannerUrl), [bannerFile, values.bannerUrl]);
+
+
+  useEffect(() => {
+    if (!thumbnailFile) return;
+    return () => URL.revokeObjectURL(thumbnailPreview);
+  }, [thumbnailFile, thumbnailPreview]);
+
+  useEffect(() => {
+    if (!bannerFile) return;
+    return () => URL.revokeObjectURL(bannerPreview);
+  }, [bannerFile, bannerPreview]);
 
   const validationError = useMemo(() => {
     if (!values.title.trim()) return "Title is required.";
@@ -58,8 +85,16 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
         return "Meeting URL must be a valid URL.";
       }
     }
+    if (thumbnailFile) {
+      const mediaError = isValidImageFile(thumbnailFile);
+      if (mediaError) return `Thumbnail: ${mediaError}`;
+    }
+    if (bannerFile) {
+      const mediaError = isValidImageFile(bannerFile);
+      if (mediaError) return `Banner: ${mediaError}`;
+    }
     return "";
-  }, [values]);
+  }, [values, thumbnailFile, bannerFile]);
 
   const durationHint = useMemo(() => {
     if (!values.startsAt || !values.endsAt) return "";
@@ -75,6 +110,26 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
     return `${hours} hr ${minutes} min session`;
   }, [values.endsAt, values.startsAt]);
 
+  async function uploadImage(file: File, kind: MediaKind) {
+    const signedResponse = await fetch("/api/institute/webinars/media/signed-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileName: file.name, fileType: file.type, fileSize: file.size, kind }),
+    });
+
+    const signedBody = (await signedResponse.json().catch(() => null)) as { error?: string; token?: string; path?: string; publicUrl?: string } | null;
+    if (!signedResponse.ok || !signedBody?.token || !signedBody.path) {
+      throw new Error(signedBody?.error ?? `Unable to prepare ${kind} upload.`);
+    }
+
+    const { error: uploadError } = await supabase.storage.from("institute-media").uploadToSignedUrl(signedBody.path, signedBody.token, file, { contentType: file.type });
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+
+    return signedBody.publicUrl ?? "";
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -84,26 +139,35 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
     }
 
     setSubmitting(true);
-    const endpoint = mode === "create" ? "/api/institute/webinars" : `/api/institute/webinars/${webinarId}`;
-    const method = mode === "create" ? "POST" : "PATCH";
 
-    const response = await fetch(endpoint, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
-    });
+    try {
+      const nextThumbnailUrl = thumbnailFile ? await uploadImage(thumbnailFile, "thumbnail") : values.thumbnailUrl;
+      const nextBannerUrl = bannerFile ? await uploadImage(bannerFile, "banner") : values.bannerUrl;
 
-    const body = await response.json().catch(() => null);
-    setSubmitting(false);
+      const endpoint = mode === "create" ? "/api/institute/webinars" : `/api/institute/webinars/${webinarId}`;
+      const method = mode === "create" ? "POST" : "PATCH";
 
-    if (!response.ok) {
-      setError(body?.error ?? "Failed to save webinar");
-      return;
+      const response = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...values, thumbnailUrl: nextThumbnailUrl, bannerUrl: nextBannerUrl }),
+      });
+
+      const body = await response.json().catch(() => null);
+      setSubmitting(false);
+
+      if (!response.ok) {
+        setError(body?.error ?? "Failed to save webinar");
+        return;
+      }
+
+      const id = mode === "create" ? body?.id : webinarId;
+      router.push(id ? `/institute/webinars/${id}` : "/institute/webinars");
+      router.refresh();
+    } catch (uploadError) {
+      setSubmitting(false);
+      setError(uploadError instanceof Error ? uploadError.message : "Image upload failed.");
     }
-
-    const id = mode === "create" ? body?.id : webinarId;
-    router.push(id ? `/institute/webinars/${id}` : "/institute/webinars");
-    router.refresh();
   }
 
   const fieldClass =
@@ -163,10 +227,6 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
             <label className={labelClass}>Google Meet URL</label>
             <input className={fieldClass} placeholder="https://meet.google.com/..." value={values.meetingUrl} onChange={(event) => setValues((prev) => ({ ...prev, meetingUrl: event.target.value }))} />
           </div>
-          <div className="md:col-span-2">
-            <label className={labelClass}>Registration URL (optional)</label>
-            <input className={fieldClass} placeholder="https://..." value={values.registrationUrl} onChange={(event) => setValues((prev) => ({ ...prev, registrationUrl: event.target.value }))} />
-          </div>
         </div>
       </section>
 
@@ -182,13 +242,79 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
             <label className={labelClass}>Faculty bio</label>
             <input className={fieldClass} placeholder="Short faculty bio" value={values.facultyBio} onChange={(event) => setValues((prev) => ({ ...prev, facultyBio: event.target.value }))} />
           </div>
+
           <div>
-            <label className={labelClass}>Thumbnail URL</label>
-            <input className={fieldClass} placeholder="https://..." value={values.thumbnailUrl} onChange={(event) => setValues((prev) => ({ ...prev, thumbnailUrl: event.target.value }))} />
+            <label className={labelClass}>Thumbnail image</label>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className={fieldClass}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (!file) return;
+                const mediaError = isValidImageFile(file);
+                if (mediaError) {
+                  setError(`Thumbnail: ${mediaError}`);
+                  return;
+                }
+                setError("");
+                setThumbnailFile(file);
+              }}
+            />
+            {thumbnailPreview ? (
+              <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
+                <Image src={thumbnailPreview} alt="Thumbnail preview" width={320} height={180} className="h-32 w-full rounded object-cover" unoptimized />
+              </div>
+            ) : null}
+            {values.thumbnailUrl || thumbnailFile ? (
+              <button
+                type="button"
+                className="mt-2 text-xs text-rose-700 underline"
+                onClick={() => {
+                  setThumbnailFile(null);
+                  setValues((prev) => ({ ...prev, thumbnailUrl: "" }));
+                }}
+              >
+                Remove thumbnail
+              </button>
+            ) : null}
           </div>
+
           <div>
-            <label className={labelClass}>Banner URL</label>
-            <input className={fieldClass} placeholder="https://..." value={values.bannerUrl} onChange={(event) => setValues((prev) => ({ ...prev, bannerUrl: event.target.value }))} />
+            <label className={labelClass}>Banner image</label>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className={fieldClass}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (!file) return;
+                const mediaError = isValidImageFile(file);
+                if (mediaError) {
+                  setError(`Banner: ${mediaError}`);
+                  return;
+                }
+                setError("");
+                setBannerFile(file);
+              }}
+            />
+            {bannerPreview ? (
+              <div className="mt-2 overflow-hidden rounded-lg border border-slate-200 bg-white p-2">
+                <Image src={bannerPreview} alt="Banner preview" width={320} height={180} className="h-32 w-full rounded object-cover" unoptimized />
+              </div>
+            ) : null}
+            {values.bannerUrl || bannerFile ? (
+              <button
+                type="button"
+                className="mt-2 text-xs text-rose-700 underline"
+                onClick={() => {
+                  setBannerFile(null);
+                  setValues((prev) => ({ ...prev, bannerUrl: "" }));
+                }}
+              >
+                Remove banner
+              </button>
+            ) : null}
           </div>
         </div>
       </section>
