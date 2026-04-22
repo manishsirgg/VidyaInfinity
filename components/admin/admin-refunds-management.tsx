@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type RefundDbStatus = "requested" | "processing" | "refunded" | "failed" | "cancelled";
 
@@ -59,10 +60,12 @@ function formatAmount(amount: number | null, currency: string | null) {
 }
 
 export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: RefundRow[] }) {
+  const router = useRouter();
   const [refunds, setRefunds] = useState(initialRefunds);
   const [statusFilter, setStatusFilter] = useState<RefundDbStatus | "all">("all");
-  const [message, setMessage] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [pendingActionByRefundId, setPendingActionByRefundId] = useState<Record<string, RefundDbStatus | null>>({});
+  const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>(() =>
     Object.fromEntries(initialRefunds.map((refund) => [refund.id, refund.internal_notes ?? ""])),
   );
@@ -83,44 +86,61 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
   }, [refunds, statusFilter]);
 
   async function updateRefund(refundId: string, nextStatus: RefundDbStatus) {
+    if (loadingId) return;
     setLoadingId(refundId);
-    setMessage("");
+    setPendingActionByRefundId((prev) => ({ ...prev, [refundId]: nextStatus }));
+    setToast(null);
 
-    const response = await fetch(`/api/admin/refunds/${refundId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextStatus, adminNote: draftNotes[refundId]?.trim() || null }),
-    });
+    try {
+      const response = await fetch(`/api/admin/refunds/${refundId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus, adminNote: draftNotes[refundId]?.trim() || null }),
+      });
 
-    const body = await response.json();
-    setLoadingId(null);
+      const body = await response.json();
+      if (!response.ok) {
+        setToast({ type: "error", text: body?.error ?? "Unable to update refund." });
+        return;
+      }
 
-    if (!response.ok) {
-      setMessage(body.error ?? "Unable to update refund");
-      return;
+      setRefunds((prev) =>
+        prev.map((refund) =>
+          refund.id === refundId
+            ? {
+                ...refund,
+                refund_status: (body.refund?.refund_status as RefundDbStatus) ?? nextStatus,
+                internal_notes: draftNotes[refundId]?.trim() || null,
+                processed_at:
+                  body.refund?.refund_status === "refunded" || body.refund?.refund_status === "processing"
+                    ? new Date().toISOString()
+                    : refund.processed_at,
+                order:
+                  body.refund?.refund_status === "refunded" && refund.order
+                    ? {
+                        ...refund.order,
+                        payment_status: "refunded",
+                      }
+                    : refund.order,
+              }
+            : refund,
+        ),
+      );
+
+      setToast({
+        type: "success",
+        text: body?.message ?? `Refund ${refundId.slice(0, 8)} updated to ${UI_STATUS_META[nextStatus].label}.`,
+      });
+      router.refresh();
+    } catch (error) {
+      setToast({
+        type: "error",
+        text: error instanceof Error ? error.message : "Unexpected error while updating refund.",
+      });
+    } finally {
+      setLoadingId(null);
+      setPendingActionByRefundId((prev) => ({ ...prev, [refundId]: null }));
     }
-
-    setRefunds((prev) =>
-      prev.map((refund) =>
-        refund.id === refundId
-          ? {
-              ...refund,
-              refund_status: (body.refund.refund_status as RefundDbStatus) ?? nextStatus,
-              internal_notes: draftNotes[refundId]?.trim() || null,
-              processed_at: body.refund.refund_status === "refunded" ? new Date().toISOString() : refund.processed_at,
-              order:
-                body.refund.refund_status === "refunded" && refund.order
-                  ? {
-                      ...refund.order,
-                      payment_status: "refunded",
-                    }
-                  : refund.order,
-            }
-          : refund,
-      ),
-    );
-
-    setMessage(`Refund ${refundId.slice(0, 8)} updated to ${UI_STATUS_META[nextStatus].label}.`);
   }
 
   return (
@@ -227,12 +247,17 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
                       <button
                         key={nextStatus}
                         type="button"
-                        disabled={loadingId === refund.id}
+                        disabled={loadingId !== null}
                         onClick={() => updateRefund(refund.id, nextStatus)}
                         className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
                       >
-                        {nextStatus === "processing" && "Approve"}
-                        {nextStatus === "cancelled" && "Reject"}
+                        {loadingId === refund.id && pendingActionByRefundId[refund.id] === nextStatus
+                          ? nextStatus === "processing"
+                            ? "Approving..."
+                            : "Rejecting..."
+                          : nextStatus === "processing"
+                            ? "Approve"
+                            : "Reject"}
                       </button>
                     ))
                   ) : (
@@ -245,7 +270,15 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
         </div>
       )}
 
-      {message && <p className="text-sm text-slate-700">{message}</p>}
+      {toast ? (
+        <div
+          className={`fixed bottom-6 right-6 z-50 max-w-md rounded border px-4 py-3 text-sm shadow-lg ${
+            toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800"
+          }`}
+        >
+          {toast.text}
+        </div>
+      ) : null}
     </div>
   );
 }
