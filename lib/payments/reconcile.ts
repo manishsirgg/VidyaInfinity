@@ -101,13 +101,16 @@ export async function reconcileCourseOrderPaid({
     });
   }
 
-  const { data: existingEnrollment } = await supabase
-    .from("course_enrollments")
-    .select("id,course_order_id,enrollment_status,access_end_at")
-    .eq("student_id", order.student_id)
-    .eq("course_id", order.course_id)
-    .limit(1)
-    .maybeSingle<{ id: string; course_order_id: string | null; enrollment_status: string | null; access_end_at: string | null }>();
+  const findEnrollmentByStudentCourse = async () =>
+    supabase
+      .from("course_enrollments")
+      .select("id,course_order_id,enrollment_status,access_end_at")
+      .eq("student_id", order.student_id)
+      .eq("course_id", order.course_id)
+      .limit(1)
+      .maybeSingle<{ id: string; course_order_id: string | null; enrollment_status: string | null; access_end_at: string | null }>();
+
+  const { data: existingEnrollment } = await findEnrollmentByStudentCourse();
 
   const { data: courseForDuration } = await supabase
     .from("courses")
@@ -231,128 +234,55 @@ export async function reconcileCourseOrderPaid({
     metadata: { source, reconciled: true },
   };
 
-  if (existingEnrollment) {
-    console.info("[payments/reconcile] enrollment_row_found", {
-      event: "enrollment_row_found",
-      orderId: canonicalPaidOrderId,
-      enrollmentId: existingEnrollment.id,
-      enrollmentCourseOrderId: existingEnrollment.course_order_id,
-      enrollmentStatus: existingEnrollment.enrollment_status,
-      studentId: order.student_id,
-      courseId: order.course_id,
-      source,
-    });
-
-    const { error: updateEnrollmentError } = await supabase
-      .from("course_enrollments")
-      .update(enrollmentPayload)
-      .eq("id", existingEnrollment.id);
-
-    if (updateEnrollmentError) {
-      console.error("[payments/reconcile] enrollment_upsert_failed", {
-        event: "enrollment_upsert_failed",
-        operation: "update",
+  const reconcileEnrollmentRow = async (seedEnrollment: { id: string; course_order_id: string | null; enrollment_status: string | null } | null) => {
+    if (seedEnrollment) {
+      console.info("[payments/reconcile] enrollment_row_found", {
+        event: "enrollment_row_found",
         orderId: canonicalPaidOrderId,
-        course_order_id: canonicalPaidOrderId,
-        razorpayOrderId,
-        razorpayPaymentId,
-        enrollmentId: existingEnrollment.id,
-        error: updateEnrollmentError.message,
+        enrollmentId: seedEnrollment.id,
+        enrollmentCourseOrderId: seedEnrollment.course_order_id,
+        enrollmentStatus: seedEnrollment.enrollment_status,
+        studentId: order.student_id,
+        courseId: order.course_id,
         source,
       });
-      return { error: updateEnrollmentError.message };
-    }
 
-    console.info("[payments/reconcile] enrollment_row_updated", {
-      event: "enrollment_row_updated",
-      orderId: canonicalPaidOrderId,
-      course_order_id: canonicalPaidOrderId,
-      razorpayOrderId,
-      razorpayPaymentId,
-      enrollmentId: existingEnrollment.id,
-      source,
-    });
-  } else {
-    const { error: insertEnrollmentError } = await supabase.from("course_enrollments").insert(enrollmentPayload);
+      const { error: updateEnrollmentError } = await supabase
+        .from("course_enrollments")
+        .update(enrollmentPayload)
+        .eq("id", seedEnrollment.id);
 
-    if (insertEnrollmentError) {
-      if (isUniqueViolation(insertEnrollmentError)) {
-        const { data: conflictingEnrollment } = await supabase
-          .from("course_enrollments")
-          .select("id,course_order_id,enrollment_status")
-          .eq("student_id", order.student_id)
-          .eq("course_id", order.course_id)
-          .limit(1)
-          .maybeSingle<{ id: string; course_order_id: string | null; enrollment_status: string | null }>();
-
-        if (conflictingEnrollment) {
-          console.info("[payments/reconcile] enrollment_row_found", {
-            event: "enrollment_row_found",
-            orderId: canonicalPaidOrderId,
-            enrollmentId: conflictingEnrollment.id,
-            enrollmentCourseOrderId: conflictingEnrollment.course_order_id,
-            enrollmentStatus: conflictingEnrollment.enrollment_status,
-            studentId: order.student_id,
-            courseId: order.course_id,
-            source,
-          });
-
-          const { error: fallbackUpdateError } = await supabase
-            .from("course_enrollments")
-            .update(enrollmentPayload)
-            .eq("id", conflictingEnrollment.id);
-
-          if (fallbackUpdateError) {
-            console.error("[payments/reconcile] enrollment_upsert_failed", {
-              event: "enrollment_upsert_failed",
-              operation: "insert_conflict_update",
-              orderId: canonicalPaidOrderId,
-              course_order_id: canonicalPaidOrderId,
-              razorpayOrderId,
-              razorpayPaymentId,
-              enrollmentId: conflictingEnrollment.id,
-              error: fallbackUpdateError.message,
-              source,
-            });
-            return { error: fallbackUpdateError.message };
-          }
-
-          console.info("[payments/reconcile] enrollment_row_updated", {
-            event: "enrollment_row_updated",
-            orderId: canonicalPaidOrderId,
-            course_order_id: canonicalPaidOrderId,
-            razorpayOrderId,
-            razorpayPaymentId,
-            enrollmentId: conflictingEnrollment.id,
-            source,
-          });
-        } else {
-          console.error("[payments/reconcile] enrollment_upsert_failed", {
-            event: "enrollment_upsert_failed",
-            operation: "insert_conflict_missing_row",
-            orderId: canonicalPaidOrderId,
-            course_order_id: canonicalPaidOrderId,
-            razorpayOrderId,
-            razorpayPaymentId,
-            error: insertEnrollmentError.message,
-            source,
-          });
-          return { error: insertEnrollmentError.message };
-        }
-      } else {
+      if (updateEnrollmentError) {
         console.error("[payments/reconcile] enrollment_upsert_failed", {
           event: "enrollment_upsert_failed",
-          operation: "insert",
+          operation: "update",
           orderId: canonicalPaidOrderId,
           course_order_id: canonicalPaidOrderId,
           razorpayOrderId,
           razorpayPaymentId,
-          error: insertEnrollmentError.message,
+          enrollmentId: seedEnrollment.id,
+          error: updateEnrollmentError.message,
           source,
         });
-        return { error: insertEnrollmentError.message };
+        return { error: updateEnrollmentError.message };
       }
-    } else {
+
+      console.info("[payments/reconcile] enrollment_row_updated", {
+        event: "enrollment_row_updated",
+        orderId: canonicalPaidOrderId,
+        course_order_id: canonicalPaidOrderId,
+        razorpayOrderId,
+        razorpayPaymentId,
+        enrollmentId: seedEnrollment.id,
+        source,
+      });
+
+      return { error: null };
+    }
+
+    const { error: insertEnrollmentError } = await supabase.from("course_enrollments").insert(enrollmentPayload);
+
+    if (!insertEnrollmentError) {
       console.info("[payments/reconcile] enrollment_row_created", {
         event: "enrollment_row_created",
         orderId: canonicalPaidOrderId,
@@ -361,7 +291,99 @@ export async function reconcileCourseOrderPaid({
         razorpayPaymentId,
         source,
       });
+      return { error: null };
     }
+
+    if (!isUniqueViolation(insertEnrollmentError)) {
+      console.error("[payments/reconcile] enrollment_upsert_failed", {
+        event: "enrollment_upsert_failed",
+        operation: "insert",
+        orderId: canonicalPaidOrderId,
+        course_order_id: canonicalPaidOrderId,
+        razorpayOrderId,
+        razorpayPaymentId,
+        error: insertEnrollmentError.message,
+        source,
+      });
+      return { error: insertEnrollmentError.message };
+    }
+
+    const { data: conflictingEnrollment } = await findEnrollmentByStudentCourse();
+
+    if (!conflictingEnrollment) {
+      console.error("[payments/reconcile] enrollment_upsert_failed", {
+        event: "enrollment_upsert_failed",
+        operation: "insert_conflict_missing_row",
+        orderId: canonicalPaidOrderId,
+        course_order_id: canonicalPaidOrderId,
+        razorpayOrderId,
+        razorpayPaymentId,
+        error: insertEnrollmentError.message,
+        source,
+      });
+      return { error: insertEnrollmentError.message };
+    }
+
+    console.info("[payments/reconcile] enrollment_row_found", {
+      event: "enrollment_row_found",
+      orderId: canonicalPaidOrderId,
+      enrollmentId: conflictingEnrollment.id,
+      enrollmentCourseOrderId: conflictingEnrollment.course_order_id,
+      enrollmentStatus: conflictingEnrollment.enrollment_status,
+      studentId: order.student_id,
+      courseId: order.course_id,
+      source,
+    });
+
+    const { error: fallbackUpdateError } = await supabase
+      .from("course_enrollments")
+      .update(enrollmentPayload)
+      .eq("id", conflictingEnrollment.id);
+
+    if (fallbackUpdateError) {
+      console.error("[payments/reconcile] enrollment_upsert_failed", {
+        event: "enrollment_upsert_failed",
+        operation: "insert_conflict_update",
+        orderId: canonicalPaidOrderId,
+        course_order_id: canonicalPaidOrderId,
+        razorpayOrderId,
+        razorpayPaymentId,
+        enrollmentId: conflictingEnrollment.id,
+        error: fallbackUpdateError.message,
+        source,
+      });
+      return { error: fallbackUpdateError.message };
+    }
+
+    console.info("[payments/reconcile] enrollment_row_updated", {
+      event: "enrollment_row_updated",
+      orderId: canonicalPaidOrderId,
+      course_order_id: canonicalPaidOrderId,
+      razorpayOrderId,
+      razorpayPaymentId,
+      enrollmentId: conflictingEnrollment.id,
+      source,
+    });
+
+    return { error: null };
+  };
+
+  const enrollmentMutation = await reconcileEnrollmentRow(existingEnrollment ?? null);
+  if (enrollmentMutation.error) return enrollmentMutation;
+
+  const { data: convergedEnrollment, error: convergedEnrollmentError } = await findEnrollmentByStudentCourse();
+  if (convergedEnrollmentError || !convergedEnrollment) {
+    const errorMessage = convergedEnrollmentError?.message ?? "Enrollment convergence failed: paid order has no enrollment row.";
+    console.error("[payments/reconcile] enrollment_convergence_failed", {
+      event: "enrollment_convergence_failed",
+      orderId: canonicalPaidOrderId,
+      course_order_id: canonicalPaidOrderId,
+      razorpayOrderId,
+      razorpayPaymentId,
+      error: errorMessage,
+      source,
+    });
+    return { error: errorMessage };
   }
 
   const { data: existingPayout } = await supabase
