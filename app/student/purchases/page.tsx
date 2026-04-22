@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { RefundRequestButton } from "@/components/student/refund-request-button";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -64,6 +66,13 @@ type RefundRecord = {
 const SUCCESS_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"] as const;
 const SUCCESS_PAYMENT_STATUSES_SET = new Set<string>(SUCCESS_PAYMENT_STATUSES);
 const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
+type PurchaseKindFilter = "all" | "webinar" | "webinar-refunds";
+
+function getPurchaseKindFilter(value: string | string[] | undefined): PurchaseKindFilter {
+  const normalized = Array.isArray(value) ? value[0] : value;
+  if (normalized === "webinar" || normalized === "webinar-refunds") return normalized;
+  return "all";
+}
 
 function isConfirmedPayment(status: string | null | undefined, paidAt?: string | null) {
   const normalized = String(status ?? "").trim().toLowerCase();
@@ -71,11 +80,17 @@ function isConfirmedPayment(status: string | null | undefined, paidAt?: string |
   return Boolean(paidAt);
 }
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams?: Promise<{ kind?: string | string[] }>;
+}) {
   const { user } = await requireUser("student");
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
+  const resolvedParams = searchParams ? await searchParams : undefined;
+  const purchaseKind = getPurchaseKindFilter(resolvedParams?.kind);
 
   const [courseResult, testResult, webinarResult] = await Promise.all([
     dataClient
@@ -228,11 +243,34 @@ export default async function Page() {
       .filter((refund) => refund.webinar_order_id)
       .map((refund) => [refund.webinar_order_id as string, refund]),
   );
+  const filteredWebinarOrders =
+    purchaseKind === "webinar-refunds"
+      ? webinarOrders.filter((order) => webinarRefundByOrderId.has(order.id))
+      : purchaseKind === "webinar"
+        ? webinarOrders
+        : webinarOrders;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Student Purchases</h1>
       <p className="mt-2 text-sm text-slate-600">Showing complete transaction history with latest payment state.</p>
+      <div className="mt-3 flex flex-wrap gap-2 text-sm">
+        <Link className={`rounded border px-3 py-1 ${purchaseKind === "all" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-300 text-slate-700"}`} href="/student/purchases">
+          All
+        </Link>
+        <Link
+          className={`rounded border px-3 py-1 ${purchaseKind === "webinar" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-300 text-slate-700"}`}
+          href="/student/purchases?kind=webinar"
+        >
+          Webinar Orders
+        </Link>
+        <Link
+          className={`rounded border px-3 py-1 ${purchaseKind === "webinar-refunds" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-300 text-slate-700"}`}
+          href="/student/purchases?kind=webinar-refunds"
+        >
+          Webinar Refund Requests
+        </Link>
+      </div>
 
       {criticalLoadErrors.length > 0 ? (
         <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -276,12 +314,14 @@ export default async function Page() {
         )}
       </div>
 
-      <h2 className="mt-6 font-medium">Webinar Orders</h2>
+      <h2 className="mt-6 font-medium">{purchaseKind === "webinar-refunds" ? "Webinar Refund Requests" : "Webinar Orders"}</h2>
       <div className="mt-2 space-y-2">
-        {webinarOrders.length === 0 ? (
-          <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No confirmed webinar purchases found yet.</p>
+        {filteredWebinarOrders.length === 0 ? (
+          <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">
+            {purchaseKind === "webinar-refunds" ? "No webinar refund requests found yet." : "No confirmed webinar purchases found yet."}
+          </p>
         ) : (
-          webinarOrders.map((order) => (
+          filteredWebinarOrders.map((order) => (
             <div key={order.id} className="rounded border bg-white p-3 text-sm">
               {webinarTitles.get(order.webinar_id) ?? order.webinar_id} · {order.currency ?? "INR"} {order.amount} · {order.payment_status}
               {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
