@@ -22,6 +22,11 @@ type StatusRow = {
   razorpay_payment_id: string | null;
   paid_at: string | null;
 };
+type EnrollmentStatusRow = {
+  id: string;
+  enrollment_status: string;
+  course_order_id: string | null;
+};
 
 function normalizeStatus(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
@@ -90,13 +95,13 @@ export async function GET(request: Request) {
       payment_id: paymentId ?? order.razorpay_payment_id ?? null,
     };
 
-    const [{ data: enrollment, error: enrollmentError }, { data: transaction, error: transactionError }] = await Promise.all([
+    const [{ data: enrollmentByOrderId, error: enrollmentError }, { data: transaction, error: transactionError }] = await Promise.all([
       admin.data
         .from("course_enrollments")
-        .select("id,enrollment_status")
+        .select("id,enrollment_status,course_order_id")
         .eq("course_order_id", order.id)
         .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
-        .maybeSingle<{ id: string; enrollment_status: string }>(),
+        .maybeSingle<EnrollmentStatusRow>(),
       admin.data
         .from("razorpay_transactions")
         .select("id")
@@ -115,8 +120,65 @@ export async function GET(request: Request) {
       });
     }
 
-    let resolvedEnrollment = enrollment;
+    let resolvedEnrollment = enrollmentByOrderId;
     let resolvedOrder = { ...order };
+
+    if (!resolvedEnrollment) {
+      const { data: enrollmentByStudentCourse, error: enrollmentByStudentCourseError } = await admin.data
+        .from("course_enrollments")
+        .select("id,enrollment_status,course_order_id")
+        .eq("student_id", resolvedOrder.student_id)
+        .eq("course_id", resolvedOrder.course_id)
+        .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
+        .limit(1)
+        .maybeSingle<EnrollmentStatusRow>();
+
+      if (enrollmentByStudentCourseError) {
+        console.error("[course/status] enrollment-by-student-course lookup failed", {
+          ...orderLogCtx,
+          db_error: enrollmentByStudentCourseError.message,
+        });
+      } else if (enrollmentByStudentCourse) {
+        resolvedEnrollment = enrollmentByStudentCourse;
+        console.info("[course/status] existing_enrollment_found", {
+          event: "existing_enrollment_found",
+          ...orderLogCtx,
+          enrollment_id: enrollmentByStudentCourse.id,
+          enrollment_course_order_id: enrollmentByStudentCourse.course_order_id,
+        });
+      }
+    }
+
+    if (normalizeStatus(resolvedOrder.payment_status) !== "paid") {
+      const { data: paidSiblingOrder, error: paidSiblingOrderError } = await admin.data
+        .from("course_orders")
+        .select("id,payment_status,paid_at,razorpay_order_id,razorpay_payment_id")
+        .eq("student_id", resolvedOrder.student_id)
+        .eq("course_id", resolvedOrder.course_id)
+        .eq("payment_status", "paid")
+        .limit(1)
+        .maybeSingle<Pick<StatusRow, "id" | "payment_status" | "paid_at" | "razorpay_order_id" | "razorpay_payment_id">>();
+
+      if (paidSiblingOrderError) {
+        console.error("[course/status] paid-sibling lookup failed", {
+          ...orderLogCtx,
+          db_error: paidSiblingOrderError.message,
+        });
+      } else if (paidSiblingOrder) {
+        console.info("[course/status] already_paid_order_found", {
+          event: "already_paid_order_found",
+          ...orderLogCtx,
+          existing_paid_order_id: paidSiblingOrder.id,
+        });
+        resolvedOrder = {
+          ...resolvedOrder,
+          payment_status: "paid",
+          paid_at: paidSiblingOrder.paid_at ?? resolvedOrder.paid_at,
+          razorpay_payment_id: paidSiblingOrder.razorpay_payment_id ?? resolvedOrder.razorpay_payment_id,
+          razorpay_order_id: paidSiblingOrder.razorpay_order_id ?? resolvedOrder.razorpay_order_id,
+        };
+      }
+    }
 
     const normalizedOrderStatus = normalizeStatus(resolvedOrder.payment_status);
     const hasPaidMarker = normalizedOrderStatus === "paid" || Boolean(resolvedOrder.paid_at);
@@ -175,10 +237,10 @@ export async function GET(request: Request) {
         } else {
           const { data: refreshedEnrollment } = await admin.data
             .from("course_enrollments")
-            .select("id,enrollment_status")
+            .select("id,enrollment_status,course_order_id")
             .eq("course_order_id", resolvedOrder.id)
             .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
-            .maybeSingle<{ id: string; enrollment_status: string }>();
+            .maybeSingle<EnrollmentStatusRow>();
 
           resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;
           resolvedOrder = {
@@ -235,10 +297,10 @@ export async function GET(request: Request) {
             } else {
               const { data: refreshedEnrollment } = await admin.data
                 .from("course_enrollments")
-                .select("id,enrollment_status")
+                .select("id,enrollment_status,course_order_id")
                 .eq("course_order_id", resolvedOrder.id)
                 .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
-                .maybeSingle<{ id: string; enrollment_status: string }>();
+                .maybeSingle<EnrollmentStatusRow>();
 
               resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;
               resolvedOrder = {

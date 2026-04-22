@@ -7,6 +7,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
 
+function isUniqueViolation(error: { code?: string | null; message?: string | null; details?: string | null } | null | undefined) {
+  if (!error) return false;
+  if (String(error.code ?? "") === "23505") return true;
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return text.includes("duplicate key value violates unique constraint");
+}
+
+function isOnePaidPerStudentCourseViolation(error: { message?: string | null; details?: string | null } | null | undefined) {
+  if (!error) return false;
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return text.includes("idx_course_orders_one_paid_per_student_course");
+}
+
 export async function reconcileCourseOrderPaid({
   supabase,
   order,
@@ -38,15 +51,44 @@ export async function reconcileCourseOrderPaid({
   const now = new Date().toISOString();
   console.info("[payments/reconcile] reconcileCourseOrderPaid:start", { orderId: order.id, razorpayOrderId, razorpayPaymentId, source });
 
+  let canonicalPaidOrderId = order.id;
+
+  const { data: existingPaidOrder } = await supabase
+    .from("course_orders")
+    .select("id,payment_status,paid_at,razorpay_payment_id")
+    .eq("student_id", order.student_id)
+    .eq("course_id", order.course_id)
+    .eq("payment_status", "paid")
+    .limit(1)
+    .maybeSingle<{
+      id: string;
+      payment_status: string | null;
+      paid_at: string | null;
+      razorpay_payment_id: string | null;
+    }>();
+
+  if (existingPaidOrder) {
+    canonicalPaidOrderId = existingPaidOrder.id;
+    console.info("[payments/reconcile] already_paid_order_found", {
+      event: "already_paid_order_found",
+      orderId: order.id,
+      existingPaidOrderId: existingPaidOrder.id,
+      studentId: order.student_id,
+      courseId: order.course_id,
+      source,
+    });
+  }
+
   const { data: existingEnrollment } = await supabase
     .from("course_enrollments")
-    .select("id")
+    .select("id,course_order_id")
     .eq("student_id", order.student_id)
     .eq("course_id", order.course_id)
     .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
+    .limit(1)
     .maybeSingle();
 
-  if (order.payment_status !== "paid") {
+  if (canonicalPaidOrderId === order.id && order.payment_status !== "paid") {
     const { error: updateError } = await supabase
       .from("course_orders")
       .update({
@@ -58,15 +100,55 @@ export async function reconcileCourseOrderPaid({
       .eq("id", order.id)
       .neq("payment_status", "paid");
 
-    if (updateError) return { error: updateError.message };
+    if (updateError) {
+      if (isUniqueViolation(updateError) && isOnePaidPerStudentCourseViolation(updateError)) {
+        const { data: paidOrderAfterConflict } = await supabase
+          .from("course_orders")
+          .select("id,payment_status,paid_at,razorpay_payment_id")
+          .eq("student_id", order.student_id)
+          .eq("course_id", order.course_id)
+          .eq("payment_status", "paid")
+          .limit(1)
+          .maybeSingle<{
+            id: string;
+            payment_status: string | null;
+            paid_at: string | null;
+            razorpay_payment_id: string | null;
+          }>();
+
+        if (paidOrderAfterConflict) {
+          canonicalPaidOrderId = paidOrderAfterConflict.id;
+          console.info("[payments/reconcile] duplicate_paid_order_treated_as_success", {
+            event: "duplicate_paid_order_treated_as_success",
+            orderId: order.id,
+            existingPaidOrderId: paidOrderAfterConflict.id,
+            studentId: order.student_id,
+            courseId: order.course_id,
+            source,
+          });
+        } else {
+          return { error: updateError.message };
+        }
+      } else {
+        return { error: updateError.message };
+      }
+    }
+  } else if (canonicalPaidOrderId === order.id && order.payment_status === "paid") {
+    console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
+      event: "reconciliation_skipped_already_finalized",
+      orderId: order.id,
+      studentId: order.student_id,
+      courseId: order.course_id,
+      source,
+    });
   }
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
       order_type: "course",
-      order_id: order.id,
+      order_id: canonicalPaidOrderId,
       order_kind: "course_enrollment",
-      course_order_id: order.id,
+      course_order_id: canonicalPaidOrderId,
       user_id: order.student_id,
       institute_id: order.institute_id,
       razorpay_order_id: razorpayOrderId,
@@ -98,18 +180,28 @@ export async function reconcileCourseOrderPaid({
   }
 
   console.info("[payments/reconcile] transaction upsert success", {
-    orderId: order.id,
-    course_order_id: order.id,
+    orderId: canonicalPaidOrderId,
+    course_order_id: canonicalPaidOrderId,
     razorpayOrderId,
     razorpayPaymentId,
     source,
   });
 
   if (existingEnrollment) {
+    console.info("[payments/reconcile] existing_enrollment_found", {
+      event: "existing_enrollment_found",
+      orderId: canonicalPaidOrderId,
+      enrollmentId: existingEnrollment.id,
+      enrollmentCourseOrderId: existingEnrollment.course_order_id,
+      studentId: order.student_id,
+      courseId: order.course_id,
+      source,
+    });
+
     const { error: updateEnrollmentError } = await supabase
       .from("course_enrollments")
       .update({
-        course_order_id: order.id,
+        course_order_id: canonicalPaidOrderId,
         access_start_at: now,
         metadata: { source, reconciled: true },
       })
@@ -140,9 +232,9 @@ export async function reconcileCourseOrderPaid({
   if (!existingEnrollment) {
     const { error: enrollError } = await supabase.from("course_enrollments").upsert(
       {
-        order_id: order.id,
+        order_id: canonicalPaidOrderId,
         user_id: order.student_id,
-        course_order_id: order.id,
+        course_order_id: canonicalPaidOrderId,
         student_id: order.student_id,
         course_id: order.course_id,
         institute_id: order.institute_id,
@@ -178,13 +270,13 @@ export async function reconcileCourseOrderPaid({
   const { data: existingPayout } = await supabase
     .from("institute_payouts")
     .select("id")
-    .eq("course_order_id", order.id)
+    .eq("course_order_id", canonicalPaidOrderId)
     .maybeSingle();
 
   if (!existingPayout) {
     const { error: payoutError } = await supabase.from("institute_payouts").insert({
       institute_id: order.institute_id,
-      course_order_id: order.id,
+      course_order_id: canonicalPaidOrderId,
       gross_amount: order.gross_amount,
       platform_fee_amount: order.gross_amount - order.institute_receivable_amount,
       payout_amount: order.institute_receivable_amount,
@@ -241,12 +333,13 @@ export async function reconcileCourseOrderPaid({
   }
 
   console.info("[payments/reconcile] reconcileCourseOrderPaid:completed", {
-    orderId: order.id,
-    course_order_id: order.id,
+    orderId: canonicalPaidOrderId,
+    course_order_id: canonicalPaidOrderId,
     razorpayOrderId,
     razorpayPaymentId,
     payment_id: razorpayPaymentId,
     final_decision: "paid_reconciled",
+    event: "reconciliation_completed",
     source,
   });
 
