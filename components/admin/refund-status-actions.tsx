@@ -5,8 +5,6 @@ import { useState } from "react";
 const ACTIONS = [
   { key: "processing", label: "Approve" },
   { key: "cancelled", label: "Reject" },
-  { key: "refunded", label: "Mark Processed" },
-  { key: "failed", label: "Mark Failed" },
 ] as const;
 
 export function RefundStatusActions({ refundId, currentStatus }: { refundId: string; currentStatus: string }) {
@@ -26,7 +24,7 @@ export function RefundStatusActions({ refundId, currentStatus }: { refundId: str
       return;
     }
 
-    setStatus(nextStatus);
+    setStatus(body?.refund?.refund_status ?? nextStatus);
     setMsg("Updated");
   }
 

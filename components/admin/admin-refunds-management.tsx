@@ -3,9 +3,6 @@
 import { useMemo, useState } from "react";
 
 type RefundDbStatus = "requested" | "processing" | "refunded" | "failed" | "cancelled";
-type RefundLegacyStatus = "approved" | "processed" | "rejected" | "reject";
-type RefundStatusRaw = RefundDbStatus | RefundLegacyStatus;
-type RefundUiStatus = "requested" | "approved" | "processed" | "rejected" | "failed";
 
 type RefundRow = {
   id: string;
@@ -15,7 +12,7 @@ type RefundRow = {
   psychometric_order_id: string | null;
   reason: string | null;
   internal_notes: string | null;
-  refund_status: RefundStatusRaw;
+  refund_status: RefundDbStatus;
   requested_at: string;
   processed_at: string | null;
   created_at: string;
@@ -34,36 +31,21 @@ type RefundRow = {
   } | null;
 };
 
-const STATUS_TRANSITIONS: Record<RefundUiStatus, RefundUiStatus[]> = {
-  requested: ["approved", "rejected", "failed"],
-  approved: ["processed", "rejected", "failed"],
-  processed: [],
-  rejected: [],
+const STATUS_TRANSITIONS: Record<RefundDbStatus, RefundDbStatus[]> = {
+  requested: ["processing", "cancelled"],
+  processing: [],
+  refunded: [],
   failed: [],
+  cancelled: [],
 };
 
-const UI_STATUS_META: Record<RefundUiStatus, { label: string; badgeClass: string }> = {
+const UI_STATUS_META: Record<RefundDbStatus, { label: string; badgeClass: string }> = {
   requested: { label: "Requested", badgeClass: "bg-amber-100 text-amber-800" },
-  approved: { label: "Approved", badgeClass: "bg-blue-100 text-blue-800" },
-  processed: { label: "Processed", badgeClass: "bg-emerald-100 text-emerald-800" },
-  rejected: { label: "Rejected", badgeClass: "bg-rose-100 text-rose-800" },
+  processing: { label: "Processing", badgeClass: "bg-blue-100 text-blue-800" },
+  refunded: { label: "Refunded", badgeClass: "bg-emerald-100 text-emerald-800" },
+  cancelled: { label: "Cancelled", badgeClass: "bg-rose-100 text-rose-800" },
   failed: { label: "Failed", badgeClass: "bg-orange-100 text-orange-800" },
 };
-
-function dbStatusToUiStatus(status: RefundStatusRaw): RefundUiStatus {
-  if (status === "processing" || status === "approved") return "approved";
-  if (status === "refunded" || status === "processed") return "processed";
-  if (status === "cancelled" || status === "rejected" || status === "reject") return "rejected";
-  if (status === "failed") return "failed";
-  return "requested";
-}
-
-function uiStatusToDbStatus(status: RefundUiStatus): RefundDbStatus {
-  if (status === "approved") return "processing";
-  if (status === "processed") return "refunded";
-  if (status === "rejected") return "cancelled";
-  return status;
-}
 
 function formatAmount(amount: number | null, currency: string | null) {
   if (amount === null) return "-";
@@ -78,7 +60,7 @@ function formatAmount(amount: number | null, currency: string | null) {
 
 export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: RefundRow[] }) {
   const [refunds, setRefunds] = useState(initialRefunds);
-  const [statusFilter, setStatusFilter] = useState<RefundUiStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<RefundDbStatus | "all">("all");
   const [message, setMessage] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>(() =>
@@ -88,28 +70,26 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
   const counts = useMemo(() => {
     return refunds.reduce(
       (acc, refund) => {
-        acc[dbStatusToUiStatus(refund.refund_status)] += 1;
+        acc[refund.refund_status] += 1;
         return acc;
       },
-      { requested: 0, approved: 0, rejected: 0, processed: 0, failed: 0 },
+      { requested: 0, processing: 0, cancelled: 0, refunded: 0, failed: 0 },
     );
   }, [refunds]);
 
   const visibleRefunds = useMemo(() => {
     if (statusFilter === "all") return refunds;
-    return refunds.filter((refund) => dbStatusToUiStatus(refund.refund_status) === statusFilter);
+    return refunds.filter((refund) => refund.refund_status === statusFilter);
   }, [refunds, statusFilter]);
 
-  async function updateRefund(refundId: string, nextStatus: RefundUiStatus) {
+  async function updateRefund(refundId: string, nextStatus: RefundDbStatus) {
     setLoadingId(refundId);
     setMessage("");
-
-    const nextDbStatus = uiStatusToDbStatus(nextStatus);
 
     const response = await fetch(`/api/admin/refunds/${refundId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextDbStatus, adminNote: draftNotes[refundId]?.trim() || null }),
+      body: JSON.stringify({ status: nextStatus, adminNote: draftNotes[refundId]?.trim() || null }),
     });
 
     const body = await response.json();
@@ -125,11 +105,11 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
         refund.id === refundId
           ? {
               ...refund,
-              refund_status: (body.refund.refund_status as RefundStatusRaw) ?? nextDbStatus,
+              refund_status: (body.refund.refund_status as RefundDbStatus) ?? nextStatus,
               internal_notes: draftNotes[refundId]?.trim() || null,
-              processed_at: nextDbStatus === "refunded" ? new Date().toISOString() : refund.processed_at,
+              processed_at: body.refund.refund_status === "refunded" ? new Date().toISOString() : refund.processed_at,
               order:
-                nextDbStatus === "refunded" && refund.order
+                body.refund.refund_status === "refunded" && refund.order
                   ? {
                       ...refund.order,
                       payment_status: "refunded",
@@ -155,16 +135,16 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
           <p className="text-lg font-semibold text-amber-700">{counts.requested}</p>
         </div>
         <div className="rounded border p-3">
-          <p className="text-slate-500">Approved</p>
-          <p className="text-lg font-semibold text-blue-700">{counts.approved}</p>
+          <p className="text-slate-500">Processing</p>
+          <p className="text-lg font-semibold text-blue-700">{counts.processing}</p>
         </div>
         <div className="rounded border p-3">
-          <p className="text-slate-500">Processed</p>
-          <p className="text-lg font-semibold text-emerald-700">{counts.processed}</p>
+          <p className="text-slate-500">Refunded</p>
+          <p className="text-lg font-semibold text-emerald-700">{counts.refunded}</p>
         </div>
         <div className="rounded border p-3">
-          <p className="text-slate-500">Rejected</p>
-          <p className="text-lg font-semibold text-rose-700">{counts.rejected}</p>
+          <p className="text-slate-500">Cancelled</p>
+          <p className="text-lg font-semibold text-rose-700">{counts.cancelled}</p>
         </div>
         <div className="rounded border p-3">
           <p className="text-slate-500">Failed</p>
@@ -174,12 +154,12 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
 
       <div className="flex flex-wrap items-center gap-2 rounded border bg-white p-3 text-sm">
         <span className="font-medium text-slate-700">Filter:</span>
-        {(["all", "requested", "approved", "processed", "rejected", "failed"] as const).map((item) => (
+        {(["all", "requested", "processing", "refunded", "cancelled", "failed"] as const).map((item) => (
           <button
             key={item}
             type="button"
             className={`rounded px-3 py-1 ${statusFilter === item ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700"}`}
-            onClick={() => setStatusFilter(item as RefundUiStatus | "all")}
+            onClick={() => setStatusFilter(item as RefundDbStatus | "all")}
           >
             {item[0]?.toUpperCase()}
             {item.slice(1)}
@@ -194,8 +174,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
       ) : (
         <div className="space-y-3">
           {visibleRefunds.map((refund) => {
-            const uiStatus = dbStatusToUiStatus(refund.refund_status);
-            const availableTransitions = STATUS_TRANSITIONS[uiStatus];
+            const availableTransitions = STATUS_TRANSITIONS[refund.refund_status];
             const orderId = refund.order_kind === "course_enrollment" ? refund.course_order_id : refund.psychometric_order_id;
 
             return (
@@ -207,8 +186,8 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
                     </p>
                     <p className="text-xs text-slate-500">Requested {new Date(refund.requested_at).toLocaleString()}</p>
                   </div>
-                  <span className={`rounded px-2 py-1 text-xs font-medium ${UI_STATUS_META[uiStatus].badgeClass}`}>
-                    Status: {UI_STATUS_META[uiStatus].label}
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${UI_STATUS_META[refund.refund_status].badgeClass}`}>
+                    Status: {UI_STATUS_META[refund.refund_status].label}
                   </span>
                 </div>
 
@@ -252,10 +231,8 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
                         onClick={() => updateRefund(refund.id, nextStatus)}
                         className="rounded bg-brand-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
                       >
-                        {nextStatus === "approved" && "Approve"}
-                        {nextStatus === "rejected" && "Reject"}
-                        {nextStatus === "processed" && "Mark Processed"}
-                        {nextStatus === "failed" && "Mark Failed"}
+                        {nextStatus === "processing" && "Approve"}
+                        {nextStatus === "cancelled" && "Reject"}
                       </button>
                     ))
                   ) : (
