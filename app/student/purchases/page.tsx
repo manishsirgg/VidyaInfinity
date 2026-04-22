@@ -87,7 +87,7 @@ export default async function Page() {
       .from("course_enrollments")
       .select("course_order_id")
       .eq("student_id", user.id)
-      .in("enrollment_status", ["pending", "active", "suspended", "completed", "enrolled"]),
+      .in("enrollment_status", ["pending", "active", "suspended", "completed"]),
   ]);
 
   if (enrollmentResult.error) {
