@@ -7,7 +7,7 @@ import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["pending", "active", "suspended", "completed"] as const;
+const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 
 type StatusRow = {
   id: string;

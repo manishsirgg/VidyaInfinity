@@ -10,7 +10,6 @@ type CoursePurchase = {
   course_id: string;
   created_at: string | null;
   razorpay_payment_id: string | null;
-  razorpay_signature: string | null;
 };
 
 type EnrollmentRow = {
@@ -53,7 +52,7 @@ export default async function Page() {
   const [courseResult, testResult, webinarResult] = await Promise.all([
     supabase
       .from("course_orders")
-      .select("id,gross_amount,payment_status,paid_at,created_at,course_id,razorpay_payment_id,razorpay_signature")
+      .select("id,gross_amount,payment_status,paid_at,created_at,course_id,razorpay_payment_id")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false }),
     supabase
@@ -73,7 +72,8 @@ export default async function Page() {
 
 
   if (courseResult.error || testResult.error || webinarResult.error) {
-    console.error("[student/purchases] order fetch failed", {
+    console.error("[student/purchases] purchases_page_course_orders_failed", {
+      event: "purchases_page_course_orders_failed",
       user_id: user.id,
       courseError: courseResult.error?.message ?? null,
       psychometricError: testResult.error?.message ?? null,
@@ -116,7 +116,7 @@ export default async function Page() {
   const confirmedCourseOrders = courseOrders.filter((order) => {
     if (enrolledOrderIds.has(order.id)) return true;
     if (enrolledCourseIds.has(order.course_id)) return true;
-    return isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id && order.razorpay_signature);
+    return isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id);
   });
 
   console.info("[student/purchases] normalized course decisions", {

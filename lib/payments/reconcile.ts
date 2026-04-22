@@ -5,8 +5,6 @@ import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["enrolled", "pending", "active", "suspended", "completed"] as const;
-
 function resolveAccessEndAt(startAtIso: string, durationValue: number | null, durationUnit: string | null) {
   if (!durationValue || durationValue <= 0) return null;
 
@@ -105,12 +103,11 @@ export async function reconcileCourseOrderPaid({
 
   const { data: existingEnrollment } = await supabase
     .from("course_enrollments")
-    .select("id,course_order_id,access_end_at")
+    .select("id,course_order_id,enrollment_status,access_end_at")
     .eq("student_id", order.student_id)
     .eq("course_id", order.course_id)
-    .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
     .limit(1)
-    .maybeSingle<{ id: string; course_order_id: string | null; access_end_at: string | null }>();
+    .maybeSingle<{ id: string; course_order_id: string | null; enrollment_status: string | null; access_end_at: string | null }>();
 
   const { data: courseForDuration } = await supabase
     .from("courses")
@@ -220,12 +217,27 @@ export async function reconcileCourseOrderPaid({
     source,
   });
 
+  const enrollmentPayload = {
+    order_id: canonicalPaidOrderId,
+    user_id: order.student_id,
+    course_order_id: canonicalPaidOrderId,
+    student_id: order.student_id,
+    course_id: order.course_id,
+    institute_id: order.institute_id,
+    enrollment_status: "enrolled",
+    enrolled_at: now,
+    access_start_at: now,
+    access_end_at: resolvedAccessEndAt,
+    metadata: { source, reconciled: true },
+  };
+
   if (existingEnrollment) {
-    console.info("[payments/reconcile] existing_enrollment_found", {
+    console.info("[payments/reconcile] enrollment_row_found", {
       event: "enrollment_row_found",
       orderId: canonicalPaidOrderId,
       enrollmentId: existingEnrollment.id,
       enrollmentCourseOrderId: existingEnrollment.course_order_id,
+      enrollmentStatus: existingEnrollment.enrollment_status,
       studentId: order.student_id,
       courseId: order.course_id,
       source,
@@ -233,21 +245,15 @@ export async function reconcileCourseOrderPaid({
 
     const { error: updateEnrollmentError } = await supabase
       .from("course_enrollments")
-      .update({
-        course_order_id: canonicalPaidOrderId,
-        order_id: canonicalPaidOrderId,
-        user_id: order.student_id,
-        enrollment_status: "enrolled",
-        enrolled_at: now,
-        access_start_at: now,
-        access_end_at: resolvedAccessEndAt,
-        metadata: { source, reconciled: true },
-      })
+      .update(enrollmentPayload)
       .eq("id", existingEnrollment.id);
+
     if (updateEnrollmentError) {
-      console.error("[payments/reconcile] enrollment update failed", {
-        orderId: order.id,
-        course_order_id: order.id,
+      console.error("[payments/reconcile] enrollment_upsert_failed", {
+        event: "enrollment_upsert_failed",
+        operation: "update",
+        orderId: canonicalPaidOrderId,
+        course_order_id: canonicalPaidOrderId,
         razorpayOrderId,
         razorpayPaymentId,
         enrollmentId: existingEnrollment.id,
@@ -266,46 +272,96 @@ export async function reconcileCourseOrderPaid({
       enrollmentId: existingEnrollment.id,
       source,
     });
-  }
+  } else {
+    const { error: insertEnrollmentError } = await supabase.from("course_enrollments").insert(enrollmentPayload);
 
-  if (!existingEnrollment) {
-    const { error: enrollError } = await supabase.from("course_enrollments").upsert(
-      {
-        order_id: canonicalPaidOrderId,
-        user_id: order.student_id,
+    if (insertEnrollmentError) {
+      if (isUniqueViolation(insertEnrollmentError)) {
+        const { data: conflictingEnrollment } = await supabase
+          .from("course_enrollments")
+          .select("id,course_order_id,enrollment_status")
+          .eq("student_id", order.student_id)
+          .eq("course_id", order.course_id)
+          .limit(1)
+          .maybeSingle<{ id: string; course_order_id: string | null; enrollment_status: string | null }>();
+
+        if (conflictingEnrollment) {
+          console.info("[payments/reconcile] enrollment_row_found", {
+            event: "enrollment_row_found",
+            orderId: canonicalPaidOrderId,
+            enrollmentId: conflictingEnrollment.id,
+            enrollmentCourseOrderId: conflictingEnrollment.course_order_id,
+            enrollmentStatus: conflictingEnrollment.enrollment_status,
+            studentId: order.student_id,
+            courseId: order.course_id,
+            source,
+          });
+
+          const { error: fallbackUpdateError } = await supabase
+            .from("course_enrollments")
+            .update(enrollmentPayload)
+            .eq("id", conflictingEnrollment.id);
+
+          if (fallbackUpdateError) {
+            console.error("[payments/reconcile] enrollment_upsert_failed", {
+              event: "enrollment_upsert_failed",
+              operation: "insert_conflict_update",
+              orderId: canonicalPaidOrderId,
+              course_order_id: canonicalPaidOrderId,
+              razorpayOrderId,
+              razorpayPaymentId,
+              enrollmentId: conflictingEnrollment.id,
+              error: fallbackUpdateError.message,
+              source,
+            });
+            return { error: fallbackUpdateError.message };
+          }
+
+          console.info("[payments/reconcile] enrollment_row_updated", {
+            event: "enrollment_row_updated",
+            orderId: canonicalPaidOrderId,
+            course_order_id: canonicalPaidOrderId,
+            razorpayOrderId,
+            razorpayPaymentId,
+            enrollmentId: conflictingEnrollment.id,
+            source,
+          });
+        } else {
+          console.error("[payments/reconcile] enrollment_upsert_failed", {
+            event: "enrollment_upsert_failed",
+            operation: "insert_conflict_missing_row",
+            orderId: canonicalPaidOrderId,
+            course_order_id: canonicalPaidOrderId,
+            razorpayOrderId,
+            razorpayPaymentId,
+            error: insertEnrollmentError.message,
+            source,
+          });
+          return { error: insertEnrollmentError.message };
+        }
+      } else {
+        console.error("[payments/reconcile] enrollment_upsert_failed", {
+          event: "enrollment_upsert_failed",
+          operation: "insert",
+          orderId: canonicalPaidOrderId,
+          course_order_id: canonicalPaidOrderId,
+          razorpayOrderId,
+          razorpayPaymentId,
+          error: insertEnrollmentError.message,
+          source,
+        });
+        return { error: insertEnrollmentError.message };
+      }
+    } else {
+      console.info("[payments/reconcile] enrollment_row_created", {
+        event: "enrollment_row_created",
+        orderId: canonicalPaidOrderId,
         course_order_id: canonicalPaidOrderId,
-        student_id: order.student_id,
-        course_id: order.course_id,
-        institute_id: order.institute_id,
-        enrollment_status: "enrolled",
-        enrolled_at: now,
-        access_start_at: now,
-        access_end_at: resolvedAccessEndAt,
-        metadata: { source },
-      },
-      { onConflict: "course_order_id" }
-    );
-
-    if (enrollError) {
-      console.error("[payments/reconcile] enrollment upsert failed", {
-        orderId: order.id,
-        course_order_id: order.id,
         razorpayOrderId,
         razorpayPaymentId,
-        error: enrollError.message,
         source,
       });
-      return { error: enrollError.message };
     }
-
-    console.info("[payments/reconcile] enrollment_row_created", {
-      event: "enrollment_row_created",
-      orderId: canonicalPaidOrderId,
-      course_order_id: canonicalPaidOrderId,
-      razorpayOrderId,
-      razorpayPaymentId,
-      source,
-    });
   }
 
   const { data: existingPayout } = await supabase
