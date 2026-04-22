@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 
-type RefundStatus = "requested" | "approved" | "rejected" | "processed";
-type RefundStatusRaw = RefundStatus | "reject";
+type RefundDbStatus = "requested" | "processing" | "refunded" | "failed" | "cancelled";
+type RefundLegacyStatus = "approved" | "processed" | "rejected" | "reject";
+type RefundStatusRaw = RefundDbStatus | RefundLegacyStatus;
+type RefundUiStatus = "requested" | "approved" | "processed" | "rejected" | "failed";
 
 type RefundRow = {
   id: string;
@@ -32,15 +34,35 @@ type RefundRow = {
   } | null;
 };
 
-const STATUS_TRANSITIONS: Record<RefundStatus, RefundStatus[]> = {
-  requested: ["approved", "rejected"],
-  approved: ["processed", "rejected"],
-  rejected: [],
+const STATUS_TRANSITIONS: Record<RefundUiStatus, RefundUiStatus[]> = {
+  requested: ["approved", "rejected", "failed"],
+  approved: ["processed", "rejected", "failed"],
   processed: [],
+  rejected: [],
+  failed: [],
 };
 
-function normalizeRefundStatus(status: RefundStatusRaw): RefundStatus {
-  return status === "reject" ? "rejected" : status;
+const UI_STATUS_META: Record<RefundUiStatus, { label: string; badgeClass: string }> = {
+  requested: { label: "Requested", badgeClass: "bg-amber-100 text-amber-800" },
+  approved: { label: "Approved", badgeClass: "bg-blue-100 text-blue-800" },
+  processed: { label: "Processed", badgeClass: "bg-emerald-100 text-emerald-800" },
+  rejected: { label: "Rejected", badgeClass: "bg-rose-100 text-rose-800" },
+  failed: { label: "Failed", badgeClass: "bg-orange-100 text-orange-800" },
+};
+
+function dbStatusToUiStatus(status: RefundStatusRaw): RefundUiStatus {
+  if (status === "processing" || status === "approved") return "approved";
+  if (status === "refunded" || status === "processed") return "processed";
+  if (status === "cancelled" || status === "rejected" || status === "reject") return "rejected";
+  if (status === "failed") return "failed";
+  return "requested";
+}
+
+function uiStatusToDbStatus(status: RefundUiStatus): RefundDbStatus {
+  if (status === "approved") return "processing";
+  if (status === "processed") return "refunded";
+  if (status === "rejected") return "cancelled";
+  return status;
 }
 
 function formatAmount(amount: number | null, currency: string | null) {
@@ -56,7 +78,7 @@ function formatAmount(amount: number | null, currency: string | null) {
 
 export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: RefundRow[] }) {
   const [refunds, setRefunds] = useState(initialRefunds);
-  const [statusFilter, setStatusFilter] = useState<RefundStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<RefundUiStatus | "all">("all");
   const [message, setMessage] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>(() =>
@@ -66,26 +88,28 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
   const counts = useMemo(() => {
     return refunds.reduce(
       (acc, refund) => {
-        acc[normalizeRefundStatus(refund.refund_status)] += 1;
+        acc[dbStatusToUiStatus(refund.refund_status)] += 1;
         return acc;
       },
-      { requested: 0, approved: 0, rejected: 0, processed: 0 },
+      { requested: 0, approved: 0, rejected: 0, processed: 0, failed: 0 },
     );
   }, [refunds]);
 
   const visibleRefunds = useMemo(() => {
     if (statusFilter === "all") return refunds;
-    return refunds.filter((refund) => normalizeRefundStatus(refund.refund_status) === statusFilter);
+    return refunds.filter((refund) => dbStatusToUiStatus(refund.refund_status) === statusFilter);
   }, [refunds, statusFilter]);
 
-  async function updateRefund(refundId: string, nextStatus: RefundStatus) {
+  async function updateRefund(refundId: string, nextStatus: RefundUiStatus) {
     setLoadingId(refundId);
     setMessage("");
+
+    const nextDbStatus = uiStatusToDbStatus(nextStatus);
 
     const response = await fetch(`/api/admin/refunds/${refundId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextStatus, adminNote: draftNotes[refundId]?.trim() || null }),
+      body: JSON.stringify({ status: nextDbStatus, adminNote: draftNotes[refundId]?.trim() || null }),
     });
 
     const body = await response.json();
@@ -101,11 +125,11 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
         refund.id === refundId
           ? {
               ...refund,
-              refund_status: (body.refund.refund_status as RefundStatusRaw) ?? nextStatus,
+              refund_status: (body.refund.refund_status as RefundStatusRaw) ?? nextDbStatus,
               internal_notes: draftNotes[refundId]?.trim() || null,
-              processed_at: nextStatus === "processed" ? new Date().toISOString() : refund.processed_at,
+              processed_at: nextDbStatus === "refunded" ? new Date().toISOString() : refund.processed_at,
               order:
-                nextStatus === "processed" && refund.order
+                nextDbStatus === "refunded" && refund.order
                   ? {
                       ...refund.order,
                       payment_status: "refunded",
@@ -116,12 +140,12 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
       ),
     );
 
-    setMessage(`Refund ${refundId.slice(0, 8)} updated to ${nextStatus}.`);
+    setMessage(`Refund ${refundId.slice(0, 8)} updated to ${UI_STATUS_META[nextStatus].label}.`);
   }
 
   return (
     <div className="mt-6 space-y-4">
-      <div className="grid gap-3 rounded border bg-white p-4 text-sm sm:grid-cols-5">
+      <div className="grid gap-3 rounded border bg-white p-4 text-sm sm:grid-cols-6">
         <div className="rounded border p-3">
           <p className="text-slate-500">Total</p>
           <p className="text-lg font-semibold">{refunds.length}</p>
@@ -142,16 +166,20 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
           <p className="text-slate-500">Rejected</p>
           <p className="text-lg font-semibold text-rose-700">{counts.rejected}</p>
         </div>
+        <div className="rounded border p-3">
+          <p className="text-slate-500">Failed</p>
+          <p className="text-lg font-semibold text-orange-700">{counts.failed}</p>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded border bg-white p-3 text-sm">
         <span className="font-medium text-slate-700">Filter:</span>
-        {["all", "requested", "approved", "processed", "rejected"].map((item) => (
+        {(["all", "requested", "approved", "processed", "rejected", "failed"] as const).map((item) => (
           <button
             key={item}
             type="button"
             className={`rounded px-3 py-1 ${statusFilter === item ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700"}`}
-            onClick={() => setStatusFilter(item as RefundStatus | "all")}
+            onClick={() => setStatusFilter(item as RefundUiStatus | "all")}
           >
             {item[0]?.toUpperCase()}
             {item.slice(1)}
@@ -166,8 +194,8 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
       ) : (
         <div className="space-y-3">
           {visibleRefunds.map((refund) => {
-            const normalizedStatus = normalizeRefundStatus(refund.refund_status);
-            const availableTransitions = STATUS_TRANSITIONS[normalizedStatus];
+            const uiStatus = dbStatusToUiStatus(refund.refund_status);
+            const availableTransitions = STATUS_TRANSITIONS[uiStatus];
             const orderId = refund.order_kind === "course_enrollment" ? refund.course_order_id : refund.psychometric_order_id;
 
             return (
@@ -179,7 +207,9 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
                     </p>
                     <p className="text-xs text-slate-500">Requested {new Date(refund.requested_at).toLocaleString()}</p>
                   </div>
-                  <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium">Status: {normalizedStatus}</span>
+                  <span className={`rounded px-2 py-1 text-xs font-medium ${UI_STATUS_META[uiStatus].badgeClass}`}>
+                    Status: {UI_STATUS_META[uiStatus].label}
+                  </span>
                 </div>
 
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -225,6 +255,7 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
                         {nextStatus === "approved" && "Approve"}
                         {nextStatus === "rejected" && "Reject"}
                         {nextStatus === "processed" && "Mark Processed"}
+                        {nextStatus === "failed" && "Mark Failed"}
                       </button>
                     ))
                   ) : (

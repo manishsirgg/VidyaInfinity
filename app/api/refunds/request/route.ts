@@ -4,7 +4,7 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const REFUND_ELIGIBLE_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"] as const;
-const REFUND_OPEN_STATUSES = ["requested", "approved"] as const;
+const REFUND_OPEN_STATUSES = ["requested", "processing"] as const;
 
 export async function POST(request: Request) {
   const auth = await requireApiUser("student");
