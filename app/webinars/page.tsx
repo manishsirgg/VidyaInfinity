@@ -112,7 +112,11 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
         {rankedWebinars.map((item) => {
           const imageUrl = item.thumbnail_url ?? item.banner_url;
           return (
-            <article key={item.id} className="overflow-hidden rounded-xl border bg-white">
+            <Link
+              key={item.id}
+              href={`/webinars/${item.id}`}
+              className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
+            >
               {imageUrl ? <img src={imageUrl} alt={item.title} className="h-40 w-full object-cover" /> : null}
               <div className="p-4">
                 <div className="flex items-center gap-2">
@@ -126,9 +130,9 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
                 <p className="mt-1 text-sm text-slate-700">{item.webinar_mode === "paid" ? toCurrency(Number(item.price ?? 0), item.currency ?? "INR") : "Free"}</p>
                 {item.faculty_name ? <p className="mt-1 text-xs text-slate-500">Faculty: {item.faculty_name}</p> : null}
                 <p className="mt-2 text-sm text-slate-600">{trimText(item.description)}</p>
-                <Link href={`/webinars/${item.id}`} className="mt-3 inline-flex rounded border px-3 py-1.5 text-sm">View details</Link>
+                <p className="mt-3 text-sm text-brand-700 group-hover:underline">View details</p>
               </div>
-            </article>
+            </Link>
           );
         })}
       </div>

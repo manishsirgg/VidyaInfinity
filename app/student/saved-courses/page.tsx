@@ -2,21 +2,30 @@ import Link from "next/link";
 
 import { SavedCourseActions } from "@/components/student/saved-course-actions";
 import { requireUser } from "@/lib/auth/get-session";
-import { createClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export default async function SavedCoursesPage() {
   const { user } = await requireUser("student", { requireApproved: false });
-  const supabase = await createClient();
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-12">
+        <div className="rounded-xl border bg-white p-4 text-sm text-red-700">
+          Unable to load saved items right now. Please try again in a moment.
+        </div>
+      </div>
+    );
+  }
 
   const [{ data: savedCourseItems }, { data: savedWebinarItems }] = await Promise.all([
-    supabase
-    .from("student_saved_courses")
-    .select("id,created_at,course:courses!inner(id,title,summary,fees,status,is_active)")
-    .eq("student_id", user.id)
+    admin.data
+      .from("student_saved_courses")
+      .select("id,created_at,course:courses!inner(id,title,summary,fees,status,is_active)")
+      .eq("student_id", user.id)
       .order("created_at", { ascending: false }),
-    supabase
+    admin.data
       .from("student_saved_webinars")
-      .select("id,created_at,webinar:webinars!inner(id,title,description,starts_at,webinar_mode,price,currency,approval_status,status,is_public)")
+      .select("id,created_at,webinar:webinars(id,title,description,starts_at,webinar_mode,price,currency,approval_status,status,is_public)")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false }),
   ]);
