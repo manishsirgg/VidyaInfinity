@@ -151,10 +151,8 @@ export default async function StudentDashboardPage() {
     { data: recentInquiries },
     { data: recentEnrollments },
     { data: recentTestAttempts },
-    { count: webinarRegistrationsCount },
-    { count: paidWebinarOrdersCount },
-    { count: freeWebinarRegistrationsCount },
     { data: webinarMetricRows },
+    { data: paidWebinarMetricOrders },
     { count: webinarRefundRequestsCount },
     { data: recentWebinarRegistrations },
     { data: recentWebinarTransactions },
@@ -210,15 +208,26 @@ export default async function StudentDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<TestAttemptItem[]>(),
-    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("student_id", user.id),
-    dataClient.from("webinar_orders").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "paid"),
-    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("student_id", user.id).eq("payment_status", "not_required"),
     dataClient
       .from("webinar_registrations")
-      .select("id,registration_status,webinars(starts_at,webinar_mode)")
+      .select("id,registration_status,payment_status,webinar_id,webinars(starts_at,webinar_mode)")
       .eq("student_id", user.id)
       .returns<
-        { id: string; registration_status: string; webinars: { starts_at: string | null; webinar_mode: string | null } | { starts_at: string | null; webinar_mode: string | null }[] | null }[]
+        {
+          id: string;
+          registration_status: string;
+          payment_status: string;
+          webinar_id: string;
+          webinars: { starts_at: string | null; webinar_mode: string | null } | { starts_at: string | null; webinar_mode: string | null }[] | null;
+        }[]
+      >(),
+    dataClient
+      .from("webinar_orders")
+      .select("id,webinar_id,payment_status,webinars(starts_at,webinar_mode)")
+      .eq("student_id", user.id)
+      .eq("payment_status", "paid")
+      .returns<
+        { id: string; webinar_id: string; payment_status: string; webinars: { starts_at: string | null; webinar_mode: string | null } | { starts_at: string | null; webinar_mode: string | null }[] | null }[]
       >(),
     dataClient.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("order_kind", "webinar"),
     dataClient
@@ -267,8 +276,16 @@ export default async function StudentDashboardPage() {
     }));
   const mergedRecentEnrollments = [...((recentEnrollments ?? []) as EnrollmentItem[]), ...fallbackRecentEnrollments].slice(0, 3);
   const normalizedActiveEnrollments = Math.max(activeEnrollmentCount ?? enrollmentRows.length, confirmedCourseOrders.length);
-  const normalizedActiveWebinarRegistrations = Math.max(webinarRegistrationsCount ?? 0, paidWebinarOrdersCount ?? 0);
   const webinarMetricItems = webinarMetricRows ?? [];
+  const paidWebinarOrders = paidWebinarMetricOrders ?? [];
+  const registeredWebinarIds = new Set(webinarMetricItems.map((item) => item.webinar_id).filter(Boolean));
+  const paidOrderFallbackCount = paidWebinarOrders.filter((order) => !registeredWebinarIds.has(order.webinar_id)).length;
+  const paidWebinarOrdersCount = paidWebinarOrders.length;
+  const normalizedActiveWebinarRegistrations = webinarMetricItems.length + paidOrderFallbackCount;
+  const freeWebinarRegistrationsCount = webinarMetricItems.filter((item) => {
+    const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
+    return item.payment_status === "not_required" || webinar?.webinar_mode === "free";
+  }).length;
   const upcomingWebinarsCount = webinarMetricItems.filter((item) => {
     const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
     if (!webinar?.starts_at) return false;
@@ -352,11 +369,11 @@ export default async function StudentDashboardPage() {
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></Link>
           <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{normalizedActiveEnrollments}</span></Link>
-          <Link href="/student/dashboard" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Webinar Registrations: <span className="font-semibold">{normalizedActiveWebinarRegistrations}</span></Link>
-          <Link href="/student/dashboard" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Upcoming Webinars: <span className="font-semibold">{upcomingWebinarsCount}</span></Link>
-          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Webinar Orders: <span className="font-semibold">{paidWebinarOrdersCount ?? 0}</span></Link>
-          <Link href="/student/dashboard" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Free Webinar Registrations: <span className="font-semibold">{freeWebinarRegistrationsCount ?? 0}</span></Link>
-          <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Webinar Refund Requests: <span className="font-semibold">{webinarRefundRequestsCount ?? 0}</span></Link>
+          <Link href="/student/webinar-registrations?filter=all" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Webinar Registrations: <span className="font-semibold">{normalizedActiveWebinarRegistrations}</span></Link>
+          <Link href="/student/webinar-registrations?filter=upcoming" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Upcoming Webinars: <span className="font-semibold">{upcomingWebinarsCount}</span></Link>
+          <Link href="/student/purchases?kind=webinar" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Webinar Orders: <span className="font-semibold">{paidWebinarOrdersCount}</span></Link>
+          <Link href="/student/webinar-registrations?filter=free" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Free Webinar Registrations: <span className="font-semibold">{freeWebinarRegistrationsCount}</span></Link>
+          <Link href="/student/purchases?kind=webinar-refunds" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Webinar Refund Requests: <span className="font-semibold">{webinarRefundRequestsCount ?? 0}</span></Link>
           <Link href="/student/leads" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">My Inquiries: <span className="font-semibold">{inquiryCount ?? 0}</span></Link>
           <Link href="/student/notifications" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Unread Notifications: <span className="font-semibold">{unreadNotificationCount ?? 0}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Open Refund Requests: <span className="font-semibold">{openRefundRequestsCount ?? 0}</span></Link>
