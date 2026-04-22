@@ -6,11 +6,20 @@ import { createAccountNotification } from "@/lib/notifications/account-notificat
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const ALLOWED_NEXT_STATUS: Record<string, string[]> = {
-  requested: ["approved", "rejected"],
-  approved: ["processed", "rejected"],
+  requested: ["approved", "rejected", "reject"],
+  approved: ["processed", "rejected", "reject"],
   rejected: [],
+  reject: [],
   processed: [],
 };
+
+function normalizeStatus(status: string) {
+  return status === "reject" ? "rejected" : status;
+}
+
+function persistedStatus(status: string) {
+  return status === "rejected" ? "reject" : status;
+}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
@@ -19,7 +28,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params;
   const { status, adminNote } = await request.json();
 
-  if (!["requested", "approved", "rejected", "processed"].includes(status)) {
+  if (!["requested", "approved", "rejected", "reject", "processed"].includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
@@ -36,23 +45,27 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: fetchError?.message ?? "Refund not found" }, { status: 404 });
   }
 
-  if (currentRefund.refund_status !== status && !ALLOWED_NEXT_STATUS[currentRefund.refund_status]?.includes(status)) {
+  const requestedStatus = normalizeStatus(status);
+  const currentStatusNormalized = normalizeStatus(currentRefund.refund_status);
+
+  if (currentStatusNormalized !== requestedStatus && !ALLOWED_NEXT_STATUS[currentStatusNormalized]?.includes(requestedStatus)) {
     return NextResponse.json(
       {
-        error: `Cannot move refund from ${currentRefund.refund_status} to ${status}. Allowed: ${
-          ALLOWED_NEXT_STATUS[currentRefund.refund_status]?.join(", ") || "none"
+        error: `Cannot move refund from ${currentStatusNormalized} to ${requestedStatus}. Allowed: ${
+          ALLOWED_NEXT_STATUS[currentStatusNormalized]?.map(normalizeStatus).join(", ") || "none"
         }`,
       },
       { status: 400 },
     );
   }
 
+  const nextPersistedStatus = persistedStatus(requestedStatus);
   const { data: refund, error } = await admin.data
     .from("refunds")
     .update({
-      refund_status: status,
+      refund_status: nextPersistedStatus,
       internal_notes: adminNote ?? null,
-      processed_at: status === "processed" ? new Date().toISOString() : null,
+      processed_at: requestedStatus === "processed" ? new Date().toISOString() : null,
     })
     .eq("id", id)
     .select("id,refund_status,course_order_id,psychometric_order_id,user_id")
@@ -60,7 +73,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (error || !refund) return NextResponse.json({ error: error?.message ?? "Refund not found" }, { status: 500 });
 
-  if (status === "processed") {
+  if (requestedStatus === "processed") {
     if (refund.course_order_id) {
       const { error: orderError } = await admin.data
         .from("course_orders")
@@ -82,15 +95,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     userId: refund.user_id,
     type: "refund",
     category: "refund",
-    priority: status === "processed" ? "high" : "normal",
+    priority: requestedStatus === "processed" ? "high" : "normal",
     title: "Refund update",
-    message: `Your refund request is now ${status}.`,
+    message: `Your refund request is now ${requestedStatus}.`,
     targetUrl: "/student/purchases",
     actionLabel: "View purchases",
     entityType: "refund",
     entityId: refund.id,
-    dedupeKey: `refund:${refund.id}:${status}`,
-    metadata: { refundStatus: status, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
+    dedupeKey: `refund:${refund.id}:${requestedStatus}`,
+    metadata: { refundStatus: requestedStatus, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
   }).catch(() => undefined);
 
   await writeAdminAuditLog({
@@ -98,7 +111,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     action: "REFUND_STATUS_UPDATED",
     targetTable: "refunds",
     targetId: refund.id,
-    metadata: { refundStatus: status, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
+    metadata: { refundStatus: requestedStatus, courseOrderId: refund.course_order_id, psychometricOrderId: refund.psychometric_order_id },
   });
 
   return NextResponse.json({ ok: true, refund });

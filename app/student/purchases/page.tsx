@@ -87,13 +87,16 @@ export default async function Page() {
   const courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
   const webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
-  const [enrollmentResult] = await Promise.all([
-    dataClient
-      .from("course_enrollments")
-      .select("course_id,course_order_id")
-      .eq("student_id", user.id)
-      .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE]),
-  ]);
+  const enrollmentWithStatus = await dataClient
+    .from("course_enrollments")
+    .select("course_id,course_order_id")
+    .eq("student_id", user.id)
+    .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE]);
+
+  const enrollmentResult =
+    enrollmentWithStatus.error && enrollmentWithStatus.error.message.toLowerCase().includes("enrollment_status")
+      ? await dataClient.from("course_enrollments").select("course_id,course_order_id").eq("student_id", user.id)
+      : enrollmentWithStatus;
 
   if (enrollmentResult.error) {
     console.error("[student/purchases] enrollment fetch failed", { user_id: user.id, error: enrollmentResult.error.message });
@@ -159,7 +162,7 @@ export default async function Page() {
     }
   }
 
-  const criticalLoadErrors = [courseResult.error, enrollmentResult.error].filter(Boolean);
+  const criticalLoadErrors = [courseResult.error].filter(Boolean);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -184,7 +187,7 @@ export default async function Page() {
               {confirmedCourseOrders.some((confirmed) => confirmed.id === order.id) ? " · Enrollment eligible" : ""}
               <div className="text-xs text-slate-500">Order ID: {order.id}</div>
               {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Payment ID: {order.razorpay_payment_id}</div> : null}
-              <RefundRequestButton orderType="course" orderId={order.id} />
+              {isConfirmedPayment(order.payment_status, order.paid_at) ? <RefundRequestButton orderType="course" orderId={order.id} /> : null}
             </div>
           ))
         )}
