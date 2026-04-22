@@ -24,11 +24,13 @@ export function PendingPaymentClient({
   razorpayOrderId,
   paymentId,
   initialReason,
+  paymentKind,
 }: {
   orderId: string;
   razorpayOrderId: string;
   paymentId: string;
   initialReason: string;
+  paymentKind: "course" | "webinar" | "psychometric";
 }) {
   const router = useRouter();
   const [status, setStatus] = useState<"checking" | "waiting" | "timeout" | "error">("checking");
@@ -42,8 +44,10 @@ export function PendingPaymentClient({
     if (orderId) params.set("order_id", orderId);
     if (razorpayOrderId) params.set("razorpay_order_id", razorpayOrderId);
     if (paymentId) params.set("payment_id", paymentId);
+    if (paymentKind === "webinar") return `/api/payments/webinar/status?${params.toString()}`;
+    if (paymentKind === "psychometric") return `/api/payments/test/status?${params.toString()}`;
     return `/api/payments/course/status?${params.toString()}`;
-  }, [orderId, razorpayOrderId, paymentId]);
+  }, [orderId, razorpayOrderId, paymentId, paymentKind]);
 
   const hasAnyIdentifier = Boolean(orderId || razorpayOrderId || paymentId);
 
@@ -58,14 +62,14 @@ export function PendingPaymentClient({
     (nextState: PollState, redirectTo?: string) => {
       setLastResolvedState(nextState);
       if (nextState === "paid" || nextState === "enrolled") {
-        router.replace(redirectTo || `/student/payments/success?order_id=${encodeURIComponent(orderId)}`);
+        router.replace(redirectTo || `/student/payments/success?kind=${encodeURIComponent(paymentKind)}&order_id=${encodeURIComponent(orderId)}`);
         return;
       }
       if (nextState === "failed") {
-        router.replace(redirectTo || `/student/payments/failed?order_id=${encodeURIComponent(orderId)}`);
+        router.replace(redirectTo || `/student/payments/failed?kind=${encodeURIComponent(paymentKind)}&order_id=${encodeURIComponent(orderId)}`);
       }
     },
-    [orderId, router]
+    [orderId, paymentKind, router]
   );
 
   const pollOnce = useCallback(async () => {

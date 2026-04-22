@@ -44,7 +44,7 @@ export async function POST(request: Request) {
 
   const { data: existingPaid } = await admin.data
     .from("webinar_orders")
-    .select("id")
+    .select("id,paid_at")
     .eq("webinar_id", webinar.id)
     .eq("student_id", auth.user.id)
     .eq("payment_status", "paid")
@@ -54,13 +54,23 @@ export async function POST(request: Request) {
 
   const { data: existingRegistration } = await admin.data
     .from("webinar_registrations")
-    .select("id")
+    .select("id,access_end_at")
     .eq("webinar_id", webinar.id)
     .eq("student_id", auth.user.id)
     .eq("access_status", "granted")
+    .or("access_end_at.is.null,access_end_at.gte.now()")
     .maybeSingle();
 
-  if (existingRegistration) return NextResponse.json({ error: "Already enrolled" }, { status: 409 });
+  if (existingRegistration) {
+    console.info("[payments/webinar/create-order] webinar_purchase_disabled_existing_active_registration", {
+      event: "webinar_purchase_disabled_existing_active_registration",
+      webinarId: webinar.id,
+      studentId: auth.user.id,
+      registrationId: existingRegistration.id,
+      accessEndAt: existingRegistration.access_end_at,
+    });
+    return NextResponse.json({ error: "Already enrolled with active access." }, { status: 409 });
+  }
 
   const { data: webinarCommission, error: webinarCommissionError } = await admin.data
     .from("webinar_commission_settings")

@@ -514,6 +514,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, reconciled: "psychometric_order" });
     }
 
+    if (psychometricOrder && isPaidEvent && !razorpayPaymentId) {
+      const razorpay = getRazorpayClient();
+      if (razorpay.ok) {
+        try {
+          const paymentList = (await razorpay.data.orders.fetchPayments(razorpayOrderId)) as { items?: Array<{ id?: string; status?: string }> };
+          const capturedPayment = (paymentList.items ?? []).find((item) => String(item.status ?? "").toLowerCase() === "captured" && item.id);
+          razorpayPaymentId = capturedPayment?.id ?? null;
+        } catch (error) {
+          console.warn("[razorpay/webhook] unable to fetch psychometric payment id", {
+            razorpayOrderId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
     const { data: webinarOrder, error: webinarOrderError } = await admin.data
       .from("webinar_orders")
       .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,order_status,access_status")
@@ -528,6 +544,22 @@ export async function POST(request: Request) {
         payment_id: razorpayPaymentId,
         db_error: webinarOrderError.message,
       });
+    }
+
+    if (webinarOrder && isPaidEvent && !razorpayPaymentId) {
+      const razorpay = getRazorpayClient();
+      if (razorpay.ok) {
+        try {
+          const paymentList = (await razorpay.data.orders.fetchPayments(razorpayOrderId)) as { items?: Array<{ id?: string; status?: string }> };
+          const capturedPayment = (paymentList.items ?? []).find((item) => String(item.status ?? "").toLowerCase() === "captured" && item.id);
+          razorpayPaymentId = capturedPayment?.id ?? null;
+        } catch (error) {
+          console.warn("[razorpay/webhook] unable to fetch webinar payment id", {
+            razorpayOrderId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     }
 
     if (webinarOrder && isPaidEvent && razorpayPaymentId) {
