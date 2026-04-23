@@ -290,7 +290,6 @@ export async function POST(request: Request) {
             .from("webinar_registrations")
             .update({
               payment_status: "refunded",
-              registration_status: "cancelled",
               access_status: "revoked",
               access_end_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
