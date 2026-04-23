@@ -79,8 +79,8 @@ export default async function InstituteDashboardPage() {
       .order("created_at", { ascending: false }),
     dataClient
       .from("leads")
-      .select("id,name,email,phone,created_at,course_id,courses!inner(title,institute_id)")
-      .eq("courses.institute_id", institute.id)
+      .select("id,name,email,phone,created_at,course_id,webinar_id,lead_type,lead_target")
+      .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
     dataClient.from("course_enrollments").select("id", { count: "exact", head: true }).eq("institute_id", institute.id),
     dataClient
