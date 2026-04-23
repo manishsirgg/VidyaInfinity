@@ -67,14 +67,12 @@ export default async function WebinarAttendeesPage({ params }: { params: Promise
     webinar_id: id,
     institute_id: institute.id,
     source: "webinar_registrations",
-    registration_status: "registered",
   });
 
   const attendeesQuery = dataClient
     .from("webinar_registrations")
-    .select("id,webinar_order_id,student_id,registration_status,payment_status,access_status,registered_at,created_at,profiles!webinar_registrations_student_id_fkey(full_name,email,phone)")
+    .select("id,webinar_order_id,student_id,registration_status,payment_status,access_status,registered_at,created_at,profiles(full_name,email,phone)")
     .eq("webinar_id", id)
-    .eq("registration_status", "registered")
     .order("registered_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
 
@@ -118,9 +116,8 @@ export default async function WebinarAttendeesPage({ params }: { params: Promise
     console.info("[institute/webinars/attendees] attendees_empty_reason", {
       event: "attendees_empty_reason",
       webinar_id: id,
-      reason: attendeesError ? "query_error" : "no_registered_rows",
+      reason: attendeesError ? "query_error" : "no_rows",
       source: "webinar_registrations",
-      registration_status: "registered",
     });
   }
 
