@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { FormFeedback } from "@/components/shared/form-feedback";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
 import { getInstituteCourseById } from "@/lib/institute/course-data";
 
 type Props = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ submitted?: string }>;
 };
 
-export default async function InstituteCourseDetailsPage({ params }: Props) {
+export default async function InstituteCourseDetailsPage({ params, searchParams }: Props) {
   const { user } = await requireUser("institute", { requireApproved: false });
   const { id } = await params;
+  const { submitted } = await searchParams;
 
   const detail = await getInstituteCourseById(user.id, id);
   if (!detail) notFound();
@@ -29,11 +32,13 @@ export default async function InstituteCourseDetailsPage({ params }: Props) {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
+        <Link href="/institute/courses/new" className="rounded border border-brand-300 bg-brand-50 px-3 py-1.5 text-brand-700 hover:bg-brand-100">Add new course</Link>
         <Link href={`/institute/courses/${course.id}/edit`} className="rounded border px-3 py-1.5 hover:bg-slate-50">Edit</Link>
         {course.status === "rejected" ? <Link href={`/institute/courses/${course.id}/resubmit`} className="rounded border border-rose-300 px-3 py-1.5 text-rose-700 hover:bg-rose-50">Resubmit</Link> : null}
         <Link href="/institute/courses/manage" className="rounded border px-3 py-1.5 hover:bg-slate-50">Back to manage</Link>
       </div>
 
+      {submitted === "1" ? <FormFeedback tone="success">Course submitted for admin approval.</FormFeedback> : null}
       {course.rejection_reason ? <p className="mt-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">Rejection reason: {course.rejection_reason}</p> : null}
 
       <dl className="mt-6 grid gap-3 rounded border bg-white p-4 text-sm md:grid-cols-2">

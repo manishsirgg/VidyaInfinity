@@ -231,7 +231,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           {course.certificate_details ? <p className="mt-1 text-sm text-slate-600">{course.certificate_details}</p> : null}
           {course.faculty_qualification ? <p className="mt-2 text-sm text-slate-600">Faculty qualification: {course.faculty_qualification}</p> : null}
         </div>
-        <LeadForm courseId={course.id} />
+        <LeadForm courseId={course.id} instituteId={institute?.id} />
       </aside>
     </div>
   );

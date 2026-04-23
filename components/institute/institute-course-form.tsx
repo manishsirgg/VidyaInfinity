@@ -381,15 +381,8 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     }
 
     if (mode === "create") {
-      form.reset();
-      setDescription("");
-      setDurationValue("");
-      setDurationUnit("");
-      setNewMedia([]);
-      setSavedMedia([]);
-      setRemovedMediaIds([]);
-      setReplacementMedia({});
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      router.push(`/institute/courses/${courseId}?submitted=1`);
+      router.refresh();
       return;
     }
 
