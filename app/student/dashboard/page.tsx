@@ -221,7 +221,7 @@ export default async function StudentDashboardPage() {
           webinars: { starts_at: string | null; webinar_mode: string | null } | { starts_at: string | null; webinar_mode: string | null }[] | null;
         }[]
       >(),
-    dataClient.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("order_kind", "webinar"),
+    dataClient.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).in("order_kind", ["webinar", "webinar_registration"]),
     dataClient
       .from("webinar_registrations")
       .select("id,webinar_id,created_at,payment_status,access_status,registration_status,webinars(title,starts_at,ends_at,status,webinar_mode,meeting_provider,meeting_url,institutes(name))")

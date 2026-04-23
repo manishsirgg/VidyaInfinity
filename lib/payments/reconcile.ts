@@ -888,7 +888,7 @@ export async function reconcileWebinarOrderPaid({
     {
       order_type: "course",
       order_id: canonicalPaidOrderId,
-      order_kind: "webinar",
+      order_kind: "webinar_registration",
       webinar_order_id: canonicalPaidOrderId,
       user_id: order.student_id,
       institute_id: order.institute_id,
@@ -939,8 +939,11 @@ export async function reconcileWebinarOrderPaid({
       payment_status: "paid",
       access_status: "granted",
       registered_at: now,
+      access_granted_at: now,
       access_start_at: webinar.starts_at ?? now,
       access_end_at: webinar.ends_at ?? null,
+      updated_at: now,
+      metadata: { source, reconciled: true, paymentEventType: paymentEventType ?? null },
     },
     { onConflict: "webinar_id,student_id" }
   );

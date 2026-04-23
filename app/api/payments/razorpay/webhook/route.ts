@@ -87,6 +87,25 @@ async function updateWebhookLogBestEffort({
   }
 }
 
+async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
+  let lastError: string | null = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const reconciled = await reconcileWebinarOrderPaid(payload);
+    if (!reconciled.error) return { error: null };
+    lastError = reconciled.error;
+    console.warn("[razorpay/webhook] webinar_reconcile_retry", {
+      event: "webinar_reconcile_retry",
+      order_id: payload.order.id,
+      razorpay_order_id: payload.razorpayOrderId,
+      razorpay_payment_id: payload.razorpayPaymentId,
+      attempt,
+      attempts,
+      error: reconciled.error,
+    });
+  }
+  return { error: lastError ?? "Unable to reconcile webinar payment" };
+}
+
 export async function POST(request: Request) {
   const headerMap = await headers();
   const signature = headerMap.get("x-razorpay-signature") ?? "";
@@ -579,7 +598,7 @@ export async function POST(request: Request) {
     }
 
     if (webinarOrder && isPaidEvent && razorpayPaymentId) {
-      const reconciled = await reconcileWebinarOrderPaid({
+      const reconciled = await reconcileWebinarWithRetry({
         supabase: admin.data,
         order: webinarOrder,
         razorpayOrderId,

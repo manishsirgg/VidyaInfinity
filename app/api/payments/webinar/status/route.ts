@@ -10,6 +10,25 @@ function normalize(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
+  let lastError: string | null = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const reconciled = await reconcileWebinarOrderPaid(payload);
+    if (!reconciled.error) return { error: null };
+    lastError = reconciled.error;
+    console.warn("[payments/webinar/status] webinar_reconcile_retry", {
+      event: "webinar_reconcile_retry",
+      order_id: payload.order.id,
+      razorpay_order_id: payload.razorpayOrderId,
+      razorpay_payment_id: payload.razorpayPaymentId,
+      attempt,
+      attempts,
+      error: reconciled.error,
+    });
+  }
+  return { error: lastError ?? "Unable to reconcile webinar payment" };
+}
+
 export async function GET(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "webinar"]);
   if (schemaErrorResponse) return schemaErrorResponse;
@@ -59,8 +78,6 @@ export async function GET(request: Request) {
     .select("id,access_status,payment_status")
     .eq("webinar_id", order.webinar_id)
     .eq("student_id", auth.user.id)
-    .in("access_status", ["granted"])
-    .in("payment_status", ["paid", "not_required"])
     .maybeSingle<{ id: string; access_status: string; payment_status: string }>();
 
   let effectivePaymentId = paymentId ?? order.razorpay_payment_id ?? null;
@@ -83,8 +100,12 @@ export async function GET(request: Request) {
     }
   }
 
-  if (!registration && effectivePaymentId && (normalize(order.payment_status) === "paid" || Boolean(order.paid_at))) {
-    await reconcileWebinarOrderPaid({
+  const isPaid = normalize(order.payment_status) === "paid" || Boolean(order.paid_at);
+  const isGrantedRegistration = normalize(registration?.access_status) === "granted" && ["paid", "not_required"].includes(normalize(registration?.payment_status));
+  const needsSync = isPaid && !isGrantedRegistration;
+
+  if (needsSync && effectivePaymentId) {
+    const reconcileResult = await reconcileWebinarWithRetry({
       supabase: admin.data,
       order,
       razorpayOrderId: order.razorpay_order_id ?? orderId ?? "",
@@ -92,6 +113,15 @@ export async function GET(request: Request) {
       source: "verify_api",
       paymentEventType: "payment.status",
     });
+    if (reconcileResult.error) {
+      console.warn("[payments/webinar/status] webinar_reconcile_failed_non_blocking", {
+        event: "webinar_reconcile_failed_non_blocking",
+        order_id: order.id,
+        webinar_id: order.webinar_id,
+        student_id: auth.user.id,
+        error: reconcileResult.error,
+      });
+    }
   }
 
   const { data: finalRegistration } = await admin.data
@@ -103,11 +133,11 @@ export async function GET(request: Request) {
     .limit(1)
     .maybeSingle<{ id: string }>();
 
-  const isPaid = normalize(order.payment_status) === "paid" || Boolean(order.paid_at);
   if (isPaid || finalRegistration) {
     return NextResponse.json({
       ok: true,
       state: "paid",
+      syncPending: isPaid && !finalRegistration,
       redirectTo: `/student/payments/success?kind=webinar&order_id=${encodeURIComponent(order.razorpay_order_id ?? order.id)}&payment_id=${encodeURIComponent(effectivePaymentId ?? "")}`,
     });
   }

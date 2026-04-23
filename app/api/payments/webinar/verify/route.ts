@@ -6,6 +6,25 @@ import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razor
 import { reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
+  let lastError: string | null = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const reconciled = await reconcileWebinarOrderPaid(payload);
+    if (!reconciled.error) return { error: null };
+    lastError = reconciled.error;
+    console.warn("[payments/webinar/verify] webinar_reconcile_retry", {
+      event: "webinar_reconcile_retry",
+      order_id: payload.order.id,
+      razorpay_order_id: payload.razorpayOrderId,
+      razorpay_payment_id: payload.razorpayPaymentId,
+      attempt,
+      attempts,
+      error: reconciled.error,
+    });
+  }
+  return { error: lastError ?? "Unable to reconcile webinar payment" };
+}
+
 export async function POST(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "webinar"]);
   if (schemaErrorResponse) return schemaErrorResponse;
@@ -54,7 +73,6 @@ export async function POST(request: Request) {
     }>();
 
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  if (order.payment_status === "paid") return NextResponse.json({ ok: true, idempotent: true });
   if (order.order_status === "cancelled") return NextResponse.json({ error: "Order is cancelled" }, { status: 409 });
 
   const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
@@ -95,7 +113,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
   }
 
-  const reconciled = await reconcileWebinarOrderPaid({
+  const reconciled = await reconcileWebinarWithRetry({
     supabase: admin.data,
     order,
     razorpayOrderId: orderId,
