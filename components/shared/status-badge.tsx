@@ -24,7 +24,7 @@ const statusClassMap: Record<string, string> = {
   created: "border-slate-200 bg-slate-100 text-slate-700",
 };
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, label }: { status: string; label?: string }) {
   return (
     <span
       className={cn(
@@ -32,7 +32,7 @@ export function StatusBadge({ status }: { status: string }) {
         statusClassMap[status] ?? "border-slate-200 bg-slate-100 text-slate-700"
       )}
     >
-      {status.replaceAll("_", " ")}
+      {label ?? status.replaceAll("_", " ")}
     </span>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import type { Route } from "next";
-import { Facebook, Instagram, Linkedin, Youtube } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -38,17 +37,7 @@ const links: Array<{ href: Route; label: string }> = [
   { href: "/webinars", label: "Webinars" },
   { href: "/institutes", label: "Institutes" },
   { href: "/psychometric-tests", label: "Psychometric Tests" },
-  { href: "/blogs", label: "Blogs" },
-  { href: "/contact", label: "Contact" },
 ];
-
-const socialLinks = [
-  { href: siteConfig.socialLinks.facebook, label: "Facebook", Icon: Facebook },
-  { href: siteConfig.socialLinks.instagram, label: "Instagram", Icon: Instagram },
-  { href: siteConfig.socialLinks.linkedin, label: "LinkedIn", Icon: Linkedin },
-  { href: siteConfig.socialLinks.youtube, label: "YouTube", Icon: Youtube },
-] as const;
-
 
 function initials(name: string) {
   return name
@@ -186,21 +175,6 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="hidden shrink-0 items-center gap-1 md:flex" aria-label="Social links">
-          {socialLinks.map(({ href, label, Icon }) => (
-            <Link
-              key={label}
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={label}
-              className="rounded-md p-2 text-slate-600 transition hover:bg-slate-100 hover:text-brand-700"
-            >
-              <Icon className="h-4 w-4" />
-            </Link>
-          ))}
-        </div>
-
         <div className="hidden flex-1 justify-end md:flex" ref={searchRef}>
           <div className="relative w-full max-w-sm">
             <form onSubmit={onSearchSubmit}>
@@ -218,23 +192,22 @@ export function SiteHeader() {
                 {searchLoading ? (
                   <p className="px-2 py-2 text-xs text-slate-500">Searching...</p>
                 ) : searchResults.length > 0 ? (
-                  <ul className="max-h-72 overflow-y-auto">
-                    {searchResults.map((item) => (
-                      <li key={`${item.kind}-${item.id}`}>
-                        <Link
-                          href={item.href as Route}
-                          className="block rounded-md px-2 py-2 text-sm transition hover:bg-slate-100"
-                          onClick={() => {
-                            setSearchOpen(false);
-                            setQuery("");
-                          }}
-                        >
-                          <p className="font-medium text-slate-900">{item.title}</p>
-                          <p className="text-xs text-slate-500">{item.subtitle}</p>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
+                  searchResults.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        router.push(item.href as Route);
+                        setSearchOpen(false);
+                        setMenuOpen(false);
+                        setQuery("");
+                      }}
+                      className="flex w-full flex-col rounded-lg px-2 py-2 text-left transition hover:bg-slate-100"
+                    >
+                      <span className="text-sm font-medium text-slate-800">{item.title}</span>
+                      <span className="text-xs text-slate-500">{item.subtitle}</span>
+                    </button>
+                  ))
                 ) : (
                   <p className="px-2 py-2 text-xs text-slate-500">No results found.</p>
                 )}
@@ -243,218 +216,114 @@ export function SiteHeader() {
           </div>
         </div>
 
-        <div className="hidden shrink-0 items-center gap-3 text-sm md:flex">
+        <div className="flex items-center gap-2" ref={accountRef}>
           {!loadingUser && authUser ? (
-            <div className="relative" ref={accountRef}>
+            <div className="relative">
               <button
                 type="button"
-                onClick={() => setAccountOpen((open) => !open)}
-                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-300 bg-slate-100 shadow-sm transition hover:border-brand-200"
+                onClick={() => setAccountOpen((current) => !current)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700"
                 aria-haspopup="menu"
                 aria-expanded={accountOpen}
-                aria-label="Open account menu"
               >
-                {authUser.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={authUser.avatarUrl} alt={authUser.fullName} className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-xs font-semibold text-slate-700">{initials(authUser.fullName)}</span>
-                )}
+                {initials(authUser.fullName)}
               </button>
-
-              {accountOpen ? (
-                <div className="absolute right-0 top-12 z-50 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-                  <p className="px-2 pb-2 text-xs text-slate-500">{authUser.fullName}</p>
-                  <Link
-                    href={profilePath}
-                    className="block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100"
-                    onClick={() => setAccountOpen(false)}
-                  >
-                    Profile
-                  </Link>
+              {accountOpen && (
+                <div className="absolute right-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-xl">
+                  <p className="px-2 py-1.5 text-xs text-slate-500">Signed in as</p>
+                  <p className="truncate px-2 pb-2 text-sm font-medium text-slate-700">{authUser.fullName}</p>
                   <Link
                     href={dashboardPath}
-                    className="block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100"
-                    onClick={() => setAccountOpen(false)}
+                    onClick={() => {
+                      setAccountOpen(false);
+                      setMenuOpen(false);
+                    }}
+                    className="block rounded-lg px-2 py-2 text-slate-700 transition hover:bg-slate-100"
                   >
                     Dashboard
                   </Link>
-                  {authUser.role === "student" ? (
-                    <>
-                      <Link
-                        href="/student/cart"
-                        className="block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100"
-                        onClick={() => setAccountOpen(false)}
-                      >
-                        Cart
-                      </Link>
-                      <Link
-                        href="/student/saved-courses"
-                        className="block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100"
-                        onClick={() => setAccountOpen(false)}
-                      >
-                        Saved
-                      </Link>
-                    </>
-                  ) : null}
+                  <Link
+                    href={profilePath}
+                    onClick={() => {
+                      setAccountOpen(false);
+                      setMenuOpen(false);
+                    }}
+                    className="block rounded-lg px-2 py-2 text-slate-700 transition hover:bg-slate-100"
+                  >
+                    Profile
+                  </Link>
                   {notificationsPath ? (
                     <Link
                       href={notificationsPath}
-                      className="flex items-center justify-between rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-100"
-                      onClick={() => setAccountOpen(false)}
+                      onClick={() => {
+                        setAccountOpen(false);
+                        setMenuOpen(false);
+                      }}
+                      className="flex items-center justify-between rounded-lg px-2 py-2 text-slate-700 transition hover:bg-slate-100"
                     >
                       <span>Notifications</span>
-                      {(authUser.unreadNotifications ?? 0) > 0 ? (
-                        <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs text-brand-700">{authUser.unreadNotifications}</span>
+                      {typeof authUser.unreadNotifications === "number" && authUser.unreadNotifications > 0 ? (
+                        <span className="rounded-full bg-brand-600 px-2 py-0.5 text-[10px] font-semibold text-white">{authUser.unreadNotifications}</span>
                       ) : null}
                     </Link>
                   ) : null}
                   <button
                     type="button"
                     onClick={onLogout}
-                    className="mt-1 w-full rounded-md px-2 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+                    className="mt-1 w-full rounded-lg px-2 py-2 text-left text-rose-600 transition hover:bg-rose-50"
                   >
                     Logout
                   </button>
                 </div>
-              ) : null}
+              )}
             </div>
           ) : (
-            <>
-              <Link href="/auth/login" className="text-slate-700 transition hover:text-brand-700">
-                Login
+            <div className="hidden items-center gap-2 sm:flex">
+              <Link href="/auth/login" className="rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-100">
+                Log in
               </Link>
-              <Link href="/auth/register" className="vi-btn-primary px-3 py-2">
-                Apply Now
+              <Link href="/auth/register" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-700">
+                Register
               </Link>
-            </>
+            </div>
           )}
-        </div>
 
-        <button
-          type="button"
-          onClick={() => setMenuOpen((value) => !value)}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm md:hidden"
-          aria-expanded={menuOpen}
-          aria-label="Toggle navigation"
-        >
-          {menuOpen ? "Close" : "Menu"}
-        </button>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((current) => !current)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 md:hidden"
+            aria-label="Toggle menu"
+            aria-expanded={menuOpen}
+          >
+            Menu
+          </button>
+        </div>
       </div>
 
       {menuOpen ? (
-        <div className="border-t border-slate-200 bg-white px-4 py-3 md:hidden">
-          <form onSubmit={onSearchSubmit} className="mb-3">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search everything"
-              className="vi-input py-2 text-sm"
-              aria-label="Global search"
-            />
-          </form>
-
-          {searchOpen && (
-            <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-2">
-              {searchLoading ? (
-                <p className="text-xs text-slate-500">Searching...</p>
-              ) : searchResults.length > 0 ? (
-                <ul className="space-y-1">
-                  {searchResults.map((item) => (
-                    <li key={`mobile-${item.kind}-${item.id}`}>
-                      <Link
-                        href={item.href as Route}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setSearchOpen(false);
-                          setQuery("");
-                        }}
-                        className="block rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-white"
-                      >
-                        {item.title}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-slate-500">No results found.</p>
-              )}
-            </div>
-          )}
-
-          <nav className="grid gap-1 text-sm">
+        <div className="border-t border-slate-200 bg-white px-4 py-4 md:hidden">
+          <nav className="grid gap-2 text-sm">
             {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 onClick={() => setMenuOpen(false)}
-                className="rounded-md px-2 py-2 text-slate-700 hover:bg-slate-100"
+                className="rounded-lg px-3 py-2 text-slate-700 transition hover:bg-slate-100"
               >
                 {link.label}
               </Link>
             ))}
-          </nav>
-
-          <div className="mt-3 flex items-center gap-2 border-t border-slate-200 pt-3">
-            {socialLinks.map(({ href, label, Icon }) => (
-              <Link
-                key={`mobile-${label}`}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={label}
-                className="rounded-md border border-slate-300 p-2 text-slate-600 transition hover:bg-slate-100 hover:text-brand-700"
-              >
-                <Icon className="h-4 w-4" />
-              </Link>
-            ))}
-          </div>
-
-          {!loadingUser && authUser ? (
-            <div className="mt-3 grid gap-2 text-sm">
-              <Link href={profilePath} onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
-                Profile
-              </Link>
-              <Link href={dashboardPath} onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
-                Dashboard
-              </Link>
-              {authUser.role === "student" ? (
-                <>
-                  <Link href="/student/cart" onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
-                    Cart
-                  </Link>
-                  <Link href="/student/saved-courses" onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
-                    Saved
-                  </Link>
-                </>
-              ) : null}
-              {notificationsPath ? (
-                <Link href={notificationsPath} onClick={() => setMenuOpen(false)} className="rounded-md border border-slate-300 px-3 py-2 text-slate-700">
-                  Notifications{(authUser.unreadNotifications ?? 0) > 0 ? ` (${authUser.unreadNotifications})` : ""}
+            {!authUser ? (
+              <>
+                <Link href="/auth/login" onClick={() => setMenuOpen(false)} className="rounded-lg px-3 py-2 text-slate-700 transition hover:bg-slate-100">
+                  Log in
                 </Link>
-              ) : null}
-              <button onClick={onLogout} className="rounded-md bg-rose-600 px-3 py-2 text-white" type="button">
-                Logout
-              </button>
-            </div>
-          ) : (
-            <div className="mt-3 grid grid-cols-2 gap-2.5 text-sm">
-              <Link
-                href="/auth/login"
-                onClick={() => setMenuOpen(false)}
-                className="vi-btn-secondary px-3 py-2 text-center"
-              >
-                Login
-              </Link>
-              <Link
-                href="/auth/register"
-                onClick={() => setMenuOpen(false)}
-                className="vi-btn-primary px-3 py-2 text-center"
-              >
-                Apply Now
-              </Link>
-            </div>
-          )}
+                <Link href="/auth/register" onClick={() => setMenuOpen(false)} className="rounded-lg bg-brand-600 px-3 py-2 text-center font-medium text-white transition hover:bg-brand-700">
+                  Register
+                </Link>
+              </>
+            ) : null}
+          </nav>
         </div>
       ) : null}
     </header>
