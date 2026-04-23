@@ -174,7 +174,7 @@ export function LeadForm({ courseId, instituteId }: { courseId: string; institut
         {submitting ? "Submitting..." : "Submit Lead"}
       </button>
 
-      {done ? <FormFeedback tone="success">Lead submitted. The institute will contact you soon.</FormFeedback> : null}
+      {done ? <FormFeedback tone="success">Your inquiry has been submitted successfully. Our team will contact you shortly.</FormFeedback> : null}
       {error ? <FormFeedback tone="error">{error}</FormFeedback> : null}
     </form>
   );

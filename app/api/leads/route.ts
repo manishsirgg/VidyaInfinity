@@ -83,7 +83,12 @@ export async function POST(request: Request) {
   });
 
   if (crmError) {
-    return NextResponse.json({ error: "Your inquiry was captured, but CRM sync failed. Please contact support if needed." }, { status: 500 });
+    console.error("Course lead CRM sync failed", {
+      error: crmError.message,
+      courseId: payload.data.courseId,
+      instituteId: payload.data.instituteId ?? course.institute_id,
+      source,
+    });
   }
 
   const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
@@ -137,5 +142,14 @@ export async function POST(request: Request) {
     contactPreference: payload.data.contactPreference,
   });
 
-  return NextResponse.json({ ok: true, integrations });
+  const failedIntegrations = integrations.filter((integration) => !integration.ok);
+  if (failedIntegrations.length > 0) {
+    console.error("Course lead automation sync failed", {
+      courseId: payload.data.courseId,
+      source,
+      failures: failedIntegrations,
+    });
+  }
+
+  return NextResponse.json({ ok: true });
 }
