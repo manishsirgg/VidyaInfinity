@@ -29,7 +29,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   const { data, error } = await dataClient
     .from("webinar_registrations")
-    .select("id,student_id,registration_status,payment_status,access_status,attended_at,joined_at,left_at,created_at,profiles!webinar_registrations_student_id_fkey(full_name,email,phone)")
+    .select("id,student_id,registration_status,payment_status,access_status,attended_at,joined_at,left_at,created_at,profiles(full_name,email,phone)")
     .eq("webinar_id", id)
     .order("created_at", { ascending: false });
 
