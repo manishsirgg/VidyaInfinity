@@ -380,6 +380,19 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       setError(mediaFailures[0] ?? "Some media actions failed.");
     }
 
+    if (mode === "create") {
+      form.reset();
+      setDescription("");
+      setDurationValue("");
+      setDurationUnit("");
+      setNewMedia([]);
+      setSavedMedia([]);
+      setRemovedMediaIds([]);
+      setReplacementMedia({});
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     router.push(`/institute/courses/${courseId}`);
     router.refresh();
   }
