@@ -49,6 +49,8 @@ type WebinarRegistration = {
   id: string;
   webinar_order_id: string | null;
   webinar_id: string;
+  created_at?: string | null;
+  registered_at?: string | null;
   registration_status: string | null;
   payment_status: string | null;
   access_status: string | null;
@@ -156,6 +158,35 @@ function webinarJoin<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
+function registrationScore(item: WebinarRegistration) {
+  const registrationStatus = String(item.registration_status ?? "").toLowerCase();
+  const paymentStatus = String(item.payment_status ?? "").toLowerCase();
+  const accessStatus = String(item.access_status ?? "").toLowerCase();
+  let score = 0;
+  if (registrationStatus === "registered") score += 4;
+  else if (registrationStatus === "pending") score += 1;
+  if (paymentStatus === "paid") score += 3;
+  if (accessStatus === "granted") score += 5;
+  return score;
+}
+
+function toRegistrationTimestamp(value: WebinarRegistration) {
+  const source = value.registered_at ?? value.created_at;
+  const parsed = source ? new Date(source).getTime() : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function pickBestRegistrationForOrder(orderId: string, scoped: WebinarRegistration[]) {
+  if (scoped.length === 0) return null;
+  const exact = scoped.find((item) => item.webinar_order_id === orderId);
+  if (exact) return exact;
+  return [...scoped].sort((a, b) => {
+    const scoreDiff = registrationScore(b) - registrationScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    return toRegistrationTimestamp(b) - toRegistrationTimestamp(a);
+  })[0] ?? null;
+}
+
 export default async function Page({
   searchParams,
 }: {
@@ -203,7 +234,9 @@ export default async function Page({
   const [webinarRegistrationsResult, refundsResult] = await Promise.all([
     dataClient
       .from("webinar_registrations")
-      .select("id,webinar_order_id,webinar_id,registration_status,payment_status,access_status,access_start_at,access_end_at,webinars(title,starts_at,meeting_url,webinar_mode,meeting_provider,institutes(name))")
+      .select(
+        "id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_start_at,access_end_at,webinars(title,starts_at,meeting_url,webinar_mode,meeting_provider,institutes(name))",
+      )
       .eq("student_id", user.id)
       .returns<WebinarRegistration[]>(),
     dataClient
@@ -387,14 +420,9 @@ export default async function Page({
               <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No webinar orders found for this view.</p>
             ) : (
               webinarOrders.map((order) => {
-                const directRegistration = webinarRegistrationByOrderId.get(order.id);
                 const webinarScopedRegistrations = webinarRegistrationsByWebinarId.get(order.webinar_id) ?? [];
-                const orderMatchedRegistration =
-                  directRegistration ??
-                  webinarScopedRegistrations.find((item) => item.webinar_order_id === order.id) ??
-                  webinarScopedRegistrations.find((item) => !item.webinar_order_id) ??
-                  null;
-                const registration = orderMatchedRegistration;
+                const directRegistration = webinarRegistrationByOrderId.get(order.id) ?? null;
+                const registration = directRegistration ?? pickBestRegistrationForOrder(order.id, webinarScopedRegistrations);
                 const webinar = webinarJoin(registration?.webinars);
                 const institute = webinarJoin(webinar?.institutes);
                 const details = webinarDetails.get(order.webinar_id);
