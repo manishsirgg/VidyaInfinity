@@ -173,6 +173,7 @@ export function InstituteWebinarFeaturedPageClient() {
     setMessage(null);
 
     try {
+      console.info("[webinar-featured/purchase] create_order_payload", { webinarId, planId });
       const createResponse = await fetch("/api/institute/webinar-featured/create-order", {
         method: "POST",
         headers: { "content-type": "application/json" },
