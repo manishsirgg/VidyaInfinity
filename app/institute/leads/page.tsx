@@ -27,9 +27,28 @@ export default async function InstituteLeadsPage() {
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
     : { data: [], error: null };
+  const legacyLeadsResult =
+    institute && leadsResult.error?.message?.includes("webinar_id")
+      ? await dataClient
+          .from("leads")
+          .select("id,name,email,phone,message,created_at,course_id,lead_target,source")
+          .eq("institute_id", institute.id)
+          .order("created_at", { ascending: false })
+      : null;
 
-  const leads = leadsResult.data ?? [];
-  const leadsError = leadsResult.error;
+  const leads = (legacyLeadsResult?.data ?? leadsResult.data ?? []) as Array<{
+    id: string;
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+    message: string | null;
+    created_at: string;
+    course_id: string | null;
+    webinar_id?: string | null;
+    lead_target?: string | null;
+    source?: string | null;
+  }>;
+  const leadsError = legacyLeadsResult?.error ?? (legacyLeadsResult ? null : leadsResult.error);
 
   const courseIds = [...new Set(leads.map((lead) => lead.course_id).filter(Boolean))];
   const webinarIds = [...new Set(leads.map((lead) => lead.webinar_id).filter(Boolean))];
