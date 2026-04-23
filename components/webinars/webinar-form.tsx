@@ -57,6 +57,8 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [step, setStep] = useState(0);
+  const steps = ["Basics", "Schedule", "Faculty & branding", "Pricing"];
 
   const thumbnailPreview = useMemo(() => (thumbnailFile ? URL.createObjectURL(thumbnailFile) : values.thumbnailUrl), [thumbnailFile, values.thumbnailUrl]);
   const bannerPreview = useMemo(() => (bannerFile ? URL.createObjectURL(bannerFile) : values.bannerUrl), [bannerFile, values.bannerUrl]);
@@ -176,7 +178,18 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
-      <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5">
+      <div className="rounded-xl border border-brand-100 bg-brand-50/70 p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-700">Step {step + 1} of {steps.length}</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {steps.map((item, index) => (
+            <button key={item} type="button" onClick={() => setStep(index)} className={`rounded-full border px-3 py-1 text-xs ${step === index ? "border-brand-300 bg-white text-brand-800" : "border-brand-100 bg-transparent text-slate-600"}`}>
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <section className={`rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5 ${step === 0 ? "block" : "hidden"}`}>
         <h2 className="text-base font-semibold text-slate-900">Basic details</h2>
         <p className="mt-1 text-xs text-slate-500">Start with the essentials your learners see first.</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -206,7 +219,7 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5">
+      <section className={`rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5 ${step === 1 ? "block" : "hidden"}`}>
         <h2 className="text-base font-semibold text-slate-900">Schedule & delivery</h2>
         <p className="mt-1 text-xs text-slate-500">Set time, meeting details, and timezone clearly.</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -230,7 +243,7 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5">
+      <section className={`rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5 ${step === 2 ? "block" : "hidden"}`}>
         <h2 className="text-base font-semibold text-slate-900">Faculty & branding</h2>
         <p className="mt-1 text-xs text-slate-500">Add presenter and image details for a polished listing.</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -319,7 +332,7 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5">
+      <section className={`rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5 ${step === 3 ? "block" : "hidden"}`}>
         <h2 className="text-base font-semibold text-slate-900">Pricing</h2>
         <p className="mt-1 text-xs text-slate-500">Price is only required for paid webinars.</p>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -335,6 +348,10 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
       </section>
 
       {error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => setStep((prev) => Math.max(0, prev - 1))} disabled={step === 0} className="rounded-lg border px-4 py-2 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-50">Back</button>
+        {step < steps.length - 1 ? <button type="button" onClick={() => setStep((prev) => Math.min(steps.length - 1, prev + 1))} className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-2 text-sm text-brand-700">Next step</button> : null}
+      </div>
       <button type="submit" disabled={submitting} className="w-full rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60">
         {submitting ? "Saving..." : mode === "create" ? "Schedule webinar" : "Save webinar"}
       </button>

@@ -23,7 +23,7 @@ export default async function InstituteLeadsPage() {
   const leadsResult = institute
     ? await dataClient
         .from("leads")
-        .select("id,name,email,phone,message,created_at,course_id")
+        .select("id,name,email,phone,message,created_at,course_id,webinar_id,lead_target,source")
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
     : { data: [], error: null };
@@ -32,10 +32,18 @@ export default async function InstituteLeadsPage() {
   const leadsError = leadsResult.error;
 
   const courseIds = [...new Set(leads.map((lead) => lead.course_id).filter(Boolean))];
+  const webinarIds = [...new Set(leads.map((lead) => lead.webinar_id).filter(Boolean))];
   const courseResult = courseIds.length
     ? await dataClient.from("courses").select("id,title").in("id", courseIds)
     : { data: [], error: null };
+  const webinarResult = webinarIds.length
+    ? await dataClient.from("webinars").select("id,title,starts_at").in("id", webinarIds)
+    : { data: [], error: null };
   const courseById = new Map((courseResult.data ?? []).map((course) => [course.id, course]));
+  const webinarById = new Map((webinarResult.data ?? []).map((webinar) => [webinar.id, webinar]));
+  const courseLeads = leads.filter((lead) => (lead.lead_target ?? "course") === "course").length;
+  const webinarLeads = leads.filter((lead) => lead.lead_target === "webinar").length;
+  const recentLeads = leads.filter((lead) => Date.now() - new Date(lead.created_at).getTime() <= 1000 * 60 * 60 * 24 * 7).length;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -66,9 +74,27 @@ export default async function InstituteLeadsPage() {
         </p>
       ) : null}
 
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total leads</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{leads.length}</p>
+        </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Course / webinar</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{courseLeads} / {webinarLeads}</p>
+        </div>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Last 7 days</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{recentLeads}</p>
+        </div>
+      </div>
+
       <div className="mt-6 space-y-3">
         {leads.map((lead) => {
           const course = lead.course_id ? courseById.get(lead.course_id) : null;
+          const webinar = lead.webinar_id ? webinarById.get(lead.webinar_id) : null;
+          const isWebinarLead = lead.lead_target === "webinar";
+          const targetTitle = isWebinarLead ? webinar?.title : course?.title;
 
           return (
           <article key={lead.id} className="rounded-xl border bg-white p-4 shadow-sm">
@@ -80,15 +106,24 @@ export default async function InstituteLeadsPage() {
                 </p>
                 <p className="mt-1 text-xs text-slate-500">Created: {formatDate(lead.created_at)}</p>
               </div>
-              <div className="rounded border bg-slate-50 px-2 py-1 text-xs text-slate-700">{course?.title || "General inquiry"}</div>
+              <div className="rounded border bg-slate-50 px-2 py-1 text-xs text-slate-700">
+                {isWebinarLead ? "Webinar" : "Course"} · {targetTitle || "General inquiry"}
+              </div>
             </div>
+            {webinar?.starts_at ? <p className="mt-2 text-xs text-slate-500">Webinar starts: {formatDate(webinar.starts_at)}</p> : null}
             {lead.message ? <p className="mt-3 rounded border bg-slate-50 px-3 py-2 text-sm text-slate-700">{lead.message}</p> : null}
+            {lead.source ? <p className="mt-2 text-xs text-slate-500">Source: {lead.source}</p> : null}
           </article>
           );
         })}
         {courseResult.error ? (
           <p className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Some course titles could not be loaded: {courseResult.error.message}
+          </p>
+        ) : null}
+        {webinarResult.error ? (
+          <p className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some webinar titles could not be loaded: {webinarResult.error.message}
           </p>
         ) : null}
         {institute && leads.length === 0 && !leadsError ? (

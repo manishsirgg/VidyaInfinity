@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 
 import { InstituteMediaGallery } from "@/components/institutes/institute-media-gallery";
 import { ShareActions } from "@/components/shared/share-actions";
@@ -161,13 +162,41 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
     fileName: item.file_name,
   }));
 
+  const instituteId = "id" in institute ? institute.id : null;
+  const [courses, webinars] = instituteId
+    ? await Promise.all([
+        admin.data
+          .from("courses")
+          .select("id,title,summary,fees,duration,slug")
+          .eq("institute_id", instituteId)
+          .eq("status", "approved")
+          .order("created_at", { ascending: false })
+          .limit(6),
+        admin.data
+          .from("webinars")
+          .select("id,title,description,starts_at,webinar_mode,price,currency")
+          .eq("institute_id", instituteId)
+          .eq("approval_status", "approved")
+          .order("starts_at", { ascending: true })
+          .limit(6),
+      ])
+    : [{ data: [] }, { data: [] }];
+
   return (
-    <div className="mx-auto max-w-5xl px-4 py-12">
-      <article className="rounded-xl border bg-white p-8">
-        <h1 className="text-3xl font-semibold">{instituteName}</h1>
+    <div className="mx-auto max-w-6xl px-4 py-10">
+      <article className="overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-sm">
+        <div className="bg-gradient-to-r from-brand-50 via-white to-brand-50 p-8">
+          <h1 className="text-3xl font-semibold">{instituteName}</h1>
+          <p className="mt-2 max-w-3xl text-sm text-slate-600">{instituteDescription ?? "No description available."}</p>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full border border-brand-200 bg-white px-3 py-1 text-brand-700">{instituteType ?? "Institute"}</span>
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700">{location || "Location unavailable"}</span>
+            {instituteVerified ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">Verified institute</span> : null}
+          </div>
+        </div>
+        <div className="p-8">
         <ShareActions title={instituteName} text={instituteDescription ?? undefined} url={shareUrl} className="mt-3" />
         <InstituteMediaGallery mediaItems={mediaItems} instituteName={instituteName} />
-        <p className="mt-6 text-slate-700">{instituteDescription ?? "No description available."}</p>
         <div className="mt-6 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
           <p>
             <span className="font-medium">Type:</span> {instituteType ?? "-"}
@@ -209,6 +238,38 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
             <span className="font-medium">Accreditation #:</span> {instituteAccreditation ?? "-"}
           </p>
         </div>
+        <section className="mt-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-900">Courses</h2>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {(courses.data ?? []).map((course) => (
+              <Link key={course.id} href={`/courses/${course.slug ?? course.id}`} className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm">
+                <p className="line-clamp-2 font-semibold text-slate-900">{course.title}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-600">{course.summary ?? "Explore this course for detailed curriculum and outcomes."}</p>
+                <p className="mt-3 text-xs text-slate-500">₹{Number(course.fees ?? 0)} · {course.duration ?? "Flexible duration"}</p>
+              </Link>
+            ))}
+            {(courses.data ?? []).length === 0 ? <p className="text-sm text-slate-500">No published courses yet.</p> : null}
+          </div>
+        </section>
+        <section className="mt-8">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-slate-900">Webinars</h2>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {(webinars.data ?? []).map((webinar) => (
+              <Link key={webinar.id} href={`/webinars/${webinar.id}`} className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm">
+                <p className="line-clamp-2 font-semibold text-slate-900">{webinar.title}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-600">{webinar.description ?? "Join this webinar to get live expert guidance."}</p>
+                <p className="mt-3 text-xs text-slate-500">
+                  {webinar.starts_at ? new Date(webinar.starts_at).toLocaleString("en-IN") : "Schedule TBD"} · {webinar.webinar_mode === "paid" ? `${webinar.currency ?? "INR"} ${Number(webinar.price ?? 0)}` : "Free"}
+                </p>
+              </Link>
+            ))}
+            {(webinars.data ?? []).length === 0 ? <p className="text-sm text-slate-500">No upcoming webinars yet.</p> : null}
+          </div>
+        </section>
         {mapsEmbedUrl ? (
           <section className="mt-6">
             <h2 className="text-lg font-semibold">Find on Google Maps</h2>
@@ -222,6 +283,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
             ) : null}
           </section>
         ) : null}
+        </div>
       </article>
     </div>
   );
