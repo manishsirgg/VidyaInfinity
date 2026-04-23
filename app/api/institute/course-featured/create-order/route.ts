@@ -89,7 +89,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Only approved active courses can be featured" }, { status: 400 });
   }
 
-  if (!plan || plan.is_active === false) return NextResponse.json({ error: "Featured plan not found" }, { status: 404 });
+  if (!plan || plan.is_active === false) {
+    const availablePlanTokens = ((planRows ?? []) as PlanRow[])
+      .map((candidate) => [candidate.id, candidate.plan_code, candidate.code].map((token) => normalizePlanToken(token)).filter(Boolean).join("|"))
+      .filter(Boolean);
+    return NextResponse.json(
+      {
+        error: `Featured plan not found for token "${normalizePlanToken(body.planId)}" in /api/institute/course-featured/create-order`,
+        details: { availablePlanTokens },
+      },
+      { status: 404 },
+    );
+  }
 
   const durationDays = toNumber(plan.duration_days);
   const amount = toNumber(plan.amount ?? plan.price);

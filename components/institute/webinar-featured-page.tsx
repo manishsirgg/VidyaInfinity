@@ -182,7 +182,7 @@ export function InstituteWebinarFeaturedPageClient() {
       const createBody = await createResponse.json().catch(() => null);
       if (!createResponse.ok || !createBody?.order?.id) {
         setMessageType("error");
-        setMessage(createBody?.error ?? "Unable to start payment.");
+        setMessage(createBody?.error ?? `Unable to start payment via /api/institute/webinar-featured/create-order (status ${createResponse.status}).`);
         setBusyWebinarId(null);
         return;
       }

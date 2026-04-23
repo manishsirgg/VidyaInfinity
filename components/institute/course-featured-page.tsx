@@ -179,7 +179,7 @@ export function InstituteCourseFeaturedPageClient() {
       const createBody = await createResponse.json().catch(() => null);
       if (!createResponse.ok || !createBody?.order?.id) {
         setMessageType("error");
-        setMessage(createBody?.error ?? "Unable to start payment.");
+        setMessage(createBody?.error ?? `Unable to start payment via /api/institute/course-featured/create-order (status ${createResponse.status}).`);
         setBusyCourseId(null);
         return;
       }
