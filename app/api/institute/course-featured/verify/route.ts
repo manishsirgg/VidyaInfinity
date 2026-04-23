@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser, getNextCourseFeaturedWindow } from "@/lib/course-featured";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
-import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
+import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type VerifyBody = {
@@ -26,20 +27,23 @@ type ExistingOrder = {
 };
 
 type PlanRow = {
-  id: string;
+  id: string | number;
   plan_code: string | null;
   code: string | null;
   tier_rank: number | null;
 };
 
-function normalizePlanToken(value: string) {
-  return value.trim().toLowerCase();
+function normalizePlanToken(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value).trim().toLowerCase();
+  if (typeof value === "string") return value.trim().toLowerCase();
+  return "";
 }
 
 function resolvePlanByToken(plans: PlanRow[], token: string) {
   const normalized = normalizePlanToken(token);
+  if (!normalized) return null;
   return plans.find((plan) => {
-    const tokens = [plan.id, plan.plan_code, plan.code].filter((item): item is string => typeof item === "string" && item.length > 0);
+    const tokens = [plan.id, plan.plan_code, plan.code];
     return tokens.some((item) => normalizePlanToken(item) === normalized);
   }) ?? null;
 }
@@ -110,7 +114,58 @@ export async function POST(request: Request) {
       .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
       .eq("id", existingOrder.id)
       .in("payment_status", ["pending", "failed"]);
+    await notifyInstituteAndAdmins({
+      admin: admin.data,
+      instituteUserId: auth.user.id,
+      title: "Course featuring payment failed",
+      message: "Course featured payment signature verification failed.",
+      metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "invalid_signature" },
+    });
     return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
+  }
+
+  const razorpay = getRazorpayClient();
+  if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
+
+  type RazorpayPayment = {
+    id?: string;
+    order_id?: string;
+    status?: string;
+    amount?: number;
+    currency?: string;
+  };
+
+  let payment: RazorpayPayment;
+  try {
+    payment = (await razorpay.data.payments.fetch(paymentId)) as RazorpayPayment;
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to validate payment details" },
+      { status: 502 },
+    );
+  }
+
+  const expectedAmountInPaise = Math.round(Number(existingOrder.amount) * 100);
+  if (
+    payment.id !== paymentId ||
+    payment.order_id !== orderId ||
+    payment.status !== "captured" ||
+    Number(payment.amount ?? 0) !== expectedAmountInPaise ||
+    (payment.currency ?? "").toUpperCase() !== existingOrder.currency.toUpperCase()
+  ) {
+    await admin.data
+      .from("course_featured_orders")
+      .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", existingOrder.id)
+      .in("payment_status", ["pending", "failed"]);
+    await notifyInstituteAndAdmins({
+      admin: admin.data,
+      instituteUserId: auth.user.id,
+      title: "Course featuring payment failed",
+      message: "Course featured payment did not pass Razorpay capture validation.",
+      metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "payment_validation_failed" },
+    });
+    return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
   }
 
   const nowIso = new Date().toISOString();
@@ -235,6 +290,16 @@ export async function POST(request: Request) {
         ? `${course.title ?? "Course"} is now live in featured listings.`
         : `${course.title ?? "Course"} featured extension is confirmed and scheduled.`,
   }).catch(() => undefined);
+  await notifyInstituteAndAdmins({
+    admin: admin.data,
+    instituteUserId: auth.user.id,
+    title: status === "active" ? "Course featuring activated" : "Course featuring scheduled",
+    message:
+      status === "active"
+        ? `${course.title ?? "Course"} is now live in featured listings.`
+        : `${course.title ?? "Course"} featured extension is confirmed and scheduled.`,
+    metadata: { courseId: existingOrder.course_id, orderId: existingOrder.id, status },
+  });
 
   return NextResponse.json({
     ok: true,
