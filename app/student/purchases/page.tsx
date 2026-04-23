@@ -316,13 +316,26 @@ export default async function Page({
   const showPsychometrics = purchaseKind === "all" || purchaseKind === "psychometric";
 
   const webinarAccessResolutionByOrderId = new Map(
-    (
-      await Promise.all(
-        webinarOrders.map(async (order) => [
-          order.id,
-          await resolveWebinarAccessState(dataClient, order.webinar_id, user.id),
-        ] as const),
-      )
+    await Promise.all(
+      webinarOrders.map(async (order) => {
+        if (!order.webinar_id) {
+          return [order.id, null] as const;
+        }
+
+        try {
+          const resolvedAccess = await resolveWebinarAccessState(dataClient, order.webinar_id, user.id);
+          return [order.id, resolvedAccess] as const;
+        } catch (error) {
+          console.error("[student/purchases] webinar access resolution failed", {
+            user_id: user.id,
+            webinar_order_id: order.id,
+            webinar_id: order.webinar_id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+
+          return [order.id, null] as const;
+        }
+      }),
     ),
   );
 
