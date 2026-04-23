@@ -4,6 +4,7 @@ import { RefundRequestButton } from "@/components/student/refund-request-button"
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { resolveWebinarAccessState } from "@/lib/webinars/access-state";
 
 type CoursePurchase = {
   id: string;
@@ -56,6 +57,7 @@ type WebinarPurchase = {
         access_start_at: string | null;
         access_end_at: string | null;
         access_granted_at: string | null;
+        reveal_started_at: string | null;
         email_sent_at: string | null;
         whatsapp_sent_at: string | null;
       }
@@ -71,6 +73,7 @@ type WebinarPurchase = {
         access_start_at: string | null;
         access_end_at: string | null;
         access_granted_at: string | null;
+        reveal_started_at: string | null;
         email_sent_at: string | null;
         whatsapp_sent_at: string | null;
       }[]
@@ -201,7 +204,7 @@ export default async function Page({
     dataClient
       .from("webinar_orders")
       .select(
-        "id,webinar_id,amount,currency,payment_status,paid_at,order_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_start_at,access_end_at,access_granted_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))",
+        "id,webinar_id,amount,currency,payment_status,paid_at,order_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_start_at,access_end_at,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))",
       )
       .eq("student_id", user.id)
       .order("created_at", { ascending: false }),
@@ -312,6 +315,17 @@ export default async function Page({
   const showWebinars = purchaseKind === "all" || purchaseKind === "webinar" || purchaseKind === "webinar-refunds";
   const showPsychometrics = purchaseKind === "all" || purchaseKind === "psychometric";
 
+  const webinarAccessResolutionByOrderId = new Map(
+    (
+      await Promise.all(
+        webinarOrders.map(async (order) => [
+          order.id,
+          await resolveWebinarAccessState(dataClient, order.webinar_id, user.id),
+        ] as const),
+      )
+    ),
+  );
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -398,12 +412,11 @@ export default async function Page({
                 const refund = webinarRefundByOrderId.get(order.id);
                 if (purchaseKind === "webinar-refunds" && !refund) return null;
 
+                const resolvedAccess = webinarAccessResolutionByOrderId.get(order.id);
                 const hasPaidOrder = String(order.payment_status ?? "").toLowerCase() === "paid";
-                const registrationStatus = registration?.registration_status ?? (hasPaidOrder ? "pending_sync" : "not_registered");
-                const accessStatus = registration?.access_status === "granted" ? "granted" : hasPaidOrder ? "processing" : "locked";
-                const revealWindowAt = startsAt ? new Date(startsAt).getTime() - 15 * 60 * 1000 : Number.NaN;
-                const revealWindowReached = Number.isFinite(revealWindowAt) ? Date.now() >= revealWindowAt : false;
-                const canJoin = accessStatus === "granted" && revealWindowReached;
+                const registrationStatus = registration?.registration_status ?? (hasPaidOrder ? "registered" : "not_registered");
+                const accessStatus = resolvedAccess?.state ?? "no_access";
+                const canJoin = ["granted", "revealed"].includes(accessStatus);
                 const refundBlockedByExistingState = refund ? ["requested", "processing", "refunded"].includes(refund.refund_status) : false;
                 const isRefundBlockedByOrder = !isConfirmedPayment(order.payment_status, order.paid_at) || String(order.order_status ?? "").toLowerCase() !== "confirmed";
                 const isRefundBlockedByRegistration = registration
@@ -413,11 +426,11 @@ export default async function Page({
                 const webinarStartsAtMs = startsAt ? new Date(startsAt).getTime() : Number.NaN;
                 const isStarted = Number.isFinite(webinarStartsAtMs) ? Date.now() >= webinarStartsAtMs : false;
                 const isInsideRefundWindow = Number.isFinite(webinarStartsAtMs) ? Date.now() < webinarStartsAtMs - 30 * 60 * 1000 : true;
-                const hasDeliveryEvidence = Boolean(registration?.access_granted_at || registration?.email_sent_at || registration?.whatsapp_sent_at);
+                const hasDeliveryEvidence = Boolean(registration?.access_granted_at || registration?.reveal_started_at || registration?.email_sent_at || registration?.whatsapp_sent_at);
                 const canRequestRefund = !refundBlockedByExistingState && !isRefundBlockedByOrder && !isRefundBlockedByRegistration;
-                const refundAllowedForWebinar = canRequestRefund && isInsideRefundWindow && !hasDeliveryEvidence && !isStarted;
-                const accessRevoked = String(registration?.access_status ?? "").toLowerCase() === "revoked" || String(order.payment_status ?? "").toLowerCase() === "refunded";
-                const syncPending = hasPaidOrder && (!registration || String(registration.payment_status ?? "").toLowerCase() !== "paid" || String(registration.access_status ?? "").toLowerCase() !== "granted");
+                const refundAllowedForWebinar = canRequestRefund && isInsideRefundWindow && !hasDeliveryEvidence && !isStarted && Boolean(resolvedAccess?.refundAllowed);
+                const accessRevoked = ["revoked", "refunded"].includes(accessStatus);
+                const syncPending = hasPaidOrder && accessStatus === "registered_confirmed" && !registration;
 
                 return (
                   <article key={order.id} className="rounded border bg-white p-4 text-sm">
@@ -429,7 +442,7 @@ export default async function Page({
                       {formatRupees(order.amount, order.currency ?? "INR")} · Payment: {toTitleCase(order.payment_status, "Created")} · Registration: {toTitleCase(registrationStatus, "Pending")}
                     </p>
                     <p className="mt-1 text-slate-700">
-                      Mode: {toTitleCase(webinarMode, "Not specified")} · Access: {toTitleCase(accessStatus, "Pending")}
+                      Mode: {toTitleCase(webinarMode, "Not specified")} · Access: {toTitleCase(accessStatus, "No Access")}
                     </p>
                     {syncPending ? <p className="mt-1 text-xs text-amber-700">Processing, please refresh.</p> : null}
                     {registration?.access_start_at ? <p className="mt-1 text-slate-700">Access Starts: {new Date(registration.access_start_at).toLocaleString()}</p> : null}
@@ -447,8 +460,8 @@ export default async function Page({
                         </a>
                       </div>
                     ) : null}
-                    {accessStatus === "granted" && !revealWindowReached ? (
-                      <p className="mt-2 text-xs text-slate-600">Access will be unlocked 15 minutes before webinar starts</p>
+                    {["registered_confirmed", "locked_until_window"].includes(accessStatus) ? (
+                      <p className="mt-2 text-xs text-slate-600">Registration Confirmed. Access unlocks 15 minutes before webinar starts{resolvedAccess?.revealAt ? ` (${new Date(resolvedAccess.revealAt).toLocaleString()})` : ""}.</p>
                     ) : null}
                     <div className="mt-2">
                       {refundAllowedForWebinar ? (
@@ -462,6 +475,7 @@ export default async function Page({
                         />
                       ) : null}
                     </div>
+                    {!refund && !refundAllowedForWebinar && order.payment_status === "paid" ? (<p className="mt-2 text-xs text-amber-700">{resolvedAccess?.refundBlockedReason ?? "Refund eligibility window has closed."}</p>) : null}
                     {refund ? (
                       <div className="mt-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
                         Refund Status: {toTitleCase(refund.refund_status, "Requested")} · Amount: {formatRupees(refund.amount, order.currency ?? "INR")} · Requested:{" "}

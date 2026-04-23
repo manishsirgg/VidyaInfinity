@@ -20,7 +20,7 @@ export async function resolveWebinarJoinAccess(supabase: SupabaseClient, student
     student_id: studentId,
   });
 
-  const [{ data: webinar, error: webinarError }, { data: registration, error: registrationError }] = await Promise.all([
+  const [{ data: webinar, error: webinarError }, { data: registration, error: registrationError }, { data: paidOrderFallback }] = await Promise.all([
     supabase
       .from("webinars")
       .select("id,title,starts_at,ends_at,meeting_url,webinar_mode,status")
@@ -49,25 +49,41 @@ export async function resolveWebinarJoinAccess(supabase: SupabaseClient, student
         email_sent_at: string | null;
         whatsapp_sent_at: string | null;
       }>(),
+    supabase
+      .from("webinar_orders")
+      .select("id,payment_status,order_status")
+      .eq("webinar_id", webinarId)
+      .eq("student_id", studentId)
+      .eq("payment_status", "paid")
+      .in("order_status", ["confirmed", "completed"])
+      .order("paid_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle<{ id: string; payment_status: string | null; order_status: string | null }>(),
   ]);
 
   if (webinarError) throw new Error(webinarError.message);
   if (registrationError) throw new Error(registrationError.message);
 
-  if (!webinar || !registration) {
+  if (!webinar) {
     console.info("[webinars/join] webinar_join_access_denied_not_registered", { event: "webinar_join_access_denied_not_registered", webinar_id: webinarId, student_id: studentId });
-    return { decision: "denied_not_registered" as const, webinar: webinar ?? null, registration: registration ?? null, revealAt: null, phase: "pending" as WebinarAccessPhase };
+    return { decision: "denied_not_registered" as const, webinar: null, registration: registration ?? null, revealAt: null, phase: "pending" as WebinarAccessPhase };
   }
 
-  const paymentStatus = String(registration.payment_status ?? "").toLowerCase();
-  const accessStatus = String(registration.access_status ?? "").toLowerCase();
+  if (!registration && !paidOrderFallback) {
+    console.info("[webinars/join] webinar_join_access_denied_not_registered", { event: "webinar_join_access_denied_not_registered", webinar_id: webinarId, student_id: studentId });
+    return { decision: "denied_not_registered" as const, webinar, registration: null, revealAt: resolveRevealAt(webinar.starts_at), phase: "pending" as WebinarAccessPhase };
+  }
+
+  const paymentStatus = String(registration?.payment_status ?? paidOrderFallback?.payment_status ?? "").toLowerCase();
+  const accessStatus = String(registration?.access_status ?? "granted").toLowerCase();
   if (paymentStatus === "refunded") {
-    console.info("[webinars/join] webinar_join_access_denied_refunded", { event: "webinar_join_access_denied_refunded", webinar_id: webinarId, student_id: studentId, registration_id: registration.id });
+    console.info("[webinars/join] webinar_join_access_denied_refunded", { event: "webinar_join_access_denied_refunded", webinar_id: webinarId, student_id: studentId, registration_id: registration?.id ?? null });
     return { decision: "denied_refunded" as const, webinar, registration, revealAt: resolveRevealAt(webinar.starts_at), phase: "refunded" as WebinarAccessPhase };
   }
 
   if (accessStatus === "revoked") {
-    console.info("[webinars/join] webinar_join_access_denied_revoked", { event: "webinar_join_access_denied_revoked", webinar_id: webinarId, student_id: studentId, registration_id: registration.id });
+    console.info("[webinars/join] webinar_join_access_denied_revoked", { event: "webinar_join_access_denied_revoked", webinar_id: webinarId, student_id: studentId, registration_id: registration?.id ?? null });
     return { decision: "denied_revoked" as const, webinar, registration, revealAt: resolveRevealAt(webinar.starts_at), phase: "revoked" as WebinarAccessPhase };
   }
 
@@ -86,29 +102,31 @@ export async function resolveWebinarJoinAccess(supabase: SupabaseClient, student
       event: "webinar_join_access_denied_not_registered",
       webinar_id: webinarId,
       student_id: studentId,
-      registration_id: registration.id,
+      registration_id: registration?.id ?? null,
       access_status: accessStatus,
       payment_status: paymentStatus,
     });
     return { decision: "denied_not_registered" as const, webinar, registration, revealAt, phase: "pending" as WebinarAccessPhase };
   }
 
-  if (!registration.reveal_started_at) {
+  if (registration && !registration.reveal_started_at) {
     await supabase
       .from("webinar_registrations")
       .update({ reveal_started_at: new Date().toISOString(), access_delivery_status: "revealed" })
       .eq("id", registration.id)
       .eq("student_id", studentId);
-    console.info("[webinars/join] webinar_reveal_window_opened", { event: "webinar_reveal_window_opened", webinar_id: webinarId, student_id: studentId, registration_id: registration.id });
+    console.info("[webinars/join] webinar_reveal_window_opened", { event: "webinar_reveal_window_opened", webinar_id: webinarId, student_id: studentId, registration_id: registration?.id ?? null });
   }
 
-  await supabase
-    .from("webinar_registrations")
-    .update({ joined_at: new Date().toISOString(), access_granted_at: registration.access_granted_at ?? new Date().toISOString() })
-    .eq("id", registration.id)
-    .eq("student_id", studentId);
+  if (registration) {
+    await supabase
+      .from("webinar_registrations")
+      .update({ joined_at: new Date().toISOString(), access_granted_at: registration.access_granted_at ?? new Date().toISOString() })
+      .eq("id", registration.id)
+      .eq("student_id", studentId);
+  }
 
-  console.info("[webinars/join] webinar_join_access_allowed", { event: "webinar_join_access_allowed", webinar_id: webinarId, student_id: studentId, registration_id: registration.id });
+  console.info("[webinars/join] webinar_join_access_allowed", { event: "webinar_join_access_allowed", webinar_id: webinarId, student_id: studentId, registration_id: registration?.id ?? null, order_fallback_id: paidOrderFallback?.id ?? null });
 
   return { decision: "allowed" as const, webinar, registration, revealAt, phase: "granted" as WebinarAccessPhase, meetingUrl: effectiveMeetingUrl };
 }

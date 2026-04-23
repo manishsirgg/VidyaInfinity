@@ -60,7 +60,7 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
   let activeAccessEndAt: string | null = null;
   let registrationAccessStatus: string | null = null;
   let registrationPaymentStatus: string | null = null;
-  let webinarAccessState: "granted" | "pending_reconciliation" | "none" | "revoked" | "refunded" | "locked_until_window" = "none";
+  let webinarAccessState: "no_access" | "registered_confirmed" | "locked_until_window" | "revealed" | "granted" | "refunded" | "revoked" = "no_access";
   let isSaved = false;
   if (viewer?.user.id) {
     const [{ data: registration }, accessState, { data: savedWebinar }] = await Promise.all([
@@ -83,7 +83,7 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
       registration?.access_status === "granted" &&
       (!registration.access_end_at || new Date(registration.access_end_at).getTime() >= Date.now());
     webinarAccessState = accessState;
-    hasAccess = Boolean(registrationHasAccess || accessState === "granted");
+    hasAccess = Boolean(registrationHasAccess || ["granted", "revealed"].includes(accessState));
     activeAccessEndAt = registration?.access_end_at ?? null;
     registrationAccessStatus = registration?.access_status ?? null;
     registrationPaymentStatus = registration?.payment_status ?? null;

@@ -155,7 +155,7 @@ export async function POST(request: Request) {
   const insertPayload = {
     user_id: auth.user.id,
     institute_id: instituteId,
-    order_kind: orderType === "course" ? "course_enrollment" : orderType === "psychometric" ? "psychometric_test" : "webinar_registration",
+    order_kind: orderType === "course" ? "course_enrollment" : orderType === "psychometric" ? "psychometric_test" : "webinar",
     course_order_id: orderType === "course" ? orderId : null,
     psychometric_order_id: orderType === "psychometric" ? orderId : null,
     webinar_order_id: orderType === "webinar" ? orderId : null,

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { resolveWebinarAccessState } from "@/lib/webinars/access-state";
 
 type WebinarFilter = "all" | "upcoming" | "free" | "paid";
 
@@ -200,6 +201,9 @@ export default async function StudentWebinarRegistrationsPage({
   }
 
   const allItems = Array.from(byWebinarId.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const canonicalStateByWebinarId = new Map(
+    await Promise.all(allItems.map(async (item) => [item.webinar_id, await resolveWebinarAccessState(dataClient, item.webinar_id, user.id)] as const)),
+  );
   const now = Date.now();
   const filteredItems = allItems.filter((item) => {
     if (activeFilter === "upcoming") {
@@ -257,15 +261,15 @@ export default async function StudentWebinarRegistrationsPage({
               <p className="text-slate-700">Mode: {toLabel(item.webinar_mode)} · Provider: {item.meeting_provider ?? "N/A"}</p>
               <p className="text-slate-700">Institute: {item.institute_name ?? "N/A"}</p>
               <p className="text-slate-700">Registration: {toLabel(item.registration_status)} · Payment: {toLabel(item.payment_status)} · Access: {toLabel(item.access_status)}</p>
-              {item.access_status === "granted" ? <p className="text-slate-700">Status: {webinarLifecycleLabel(item.starts_at, item.ends_at)} · Access Granted</p> : null}
-              {item.access_status === "granted" ? (
+              {["granted", "revealed"].includes(canonicalStateByWebinarId.get(item.webinar_id)?.state ?? "no_access") ? <p className="text-slate-700">Status: {webinarLifecycleLabel(item.starts_at, item.ends_at)} · Access Granted</p> : null}
+              {["granted", "revealed"].includes(canonicalStateByWebinarId.get(item.webinar_id)?.state ?? "no_access") ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <a href={`/student/webinars/${item.webinar_id}/join`} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white">
                     Join Webinar
                   </a>
                 </div>
               ) : (
-                <p className="mt-2 text-xs text-slate-600">Join access unlocks 15 minutes before webinar starts.</p>
+                <p className="mt-2 text-xs text-slate-600">Registration Confirmed. Join access unlocks 15 minutes before webinar starts.</p>
               )}
               <p className="text-xs text-slate-500">Webinar ID: {item.webinar_id}</p>
             </div>
