@@ -4,6 +4,7 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { getCouponErrorMessage, normalizeCouponCode, validateCouponForScope } from "@/lib/coupons";
 import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
+import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
 import { isInstituteEligibleForEnrollment } from "@/lib/institutes/enrollment-eligibility";
@@ -451,7 +452,7 @@ export async function POST(request: Request) {
       student_id: studentId,
       course_id: ensuredCourse.id,
       institute_id: ensuredCourse.institute_id,
-      order_kind: "course_enrollment",
+      order_kind: REFUND_ORDER_TYPE_TO_CANONICAL_KIND.course,
       payment_status: "created",
       gross_amount: commission.grossAmount,
       commission_percent: commission.commissionPercentage,

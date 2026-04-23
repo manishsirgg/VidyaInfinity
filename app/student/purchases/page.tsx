@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { RefundRequestButton } from "@/components/student/refund-request-button";
 import { requireUser } from "@/lib/auth/get-session";
+import type { CanonicalOrderKind } from "@/lib/payments/order-kinds";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveWebinarAccessState } from "@/lib/webinars/access-state";
@@ -102,7 +103,7 @@ type WebinarPurchase = {
 type RefundRecord = {
   id: string;
   refund_status: "requested" | "processing" | "refunded" | "failed" | "cancelled";
-  order_kind: "course_enrollment" | "psychometric_test" | "webinar" | "webinar_registration";
+  order_kind: CanonicalOrderKind;
   reason: string | null;
   amount: number | null;
   requested_at: string | null;
@@ -272,7 +273,7 @@ export default async function Page({
     console.info("[student/purchases] purchases_page_webinar_refunds_loaded", {
       event: "purchases_page_webinar_refunds_loaded",
       user_id: user.id,
-      count: refundsData?.filter((item) => item.order_kind === "webinar_registration" || item.order_kind === "webinar").length ?? 0,
+      count: refundsData?.filter((item) => item.order_kind === "webinar_registration").length ?? 0,
     });
   }
 
@@ -343,7 +344,7 @@ export default async function Page({
     refunds.filter((refund) => refund.psychometric_order_id).map((refund) => [refund.psychometric_order_id as string, refund]),
   );
   const webinarRefundByOrderId = new Map(
-    refunds.filter((refund) => refund.webinar_order_id && ["webinar", "webinar_registration"].includes(refund.order_kind)).map((refund) => [refund.webinar_order_id as string, refund]),
+    refunds.filter((refund) => refund.webinar_order_id && refund.order_kind === "webinar_registration").map((refund) => [refund.webinar_order_id as string, refund]),
   );
 
   const showCourses = purchaseKind === "all" || purchaseKind === "course";
