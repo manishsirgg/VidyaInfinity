@@ -25,6 +25,9 @@ type WebinarActionCardProps = {
   joinUrl: string | null;
   isStudent: boolean;
   initiallySaved?: boolean;
+  accessState?: "granted" | "pending_reconciliation" | "none";
+  registrationAccessStatus?: string | null;
+  registrationPaymentStatus?: string | null;
 };
 
 export function WebinarActionCard({
@@ -43,6 +46,9 @@ export function WebinarActionCard({
   joinUrl,
   isStudent,
   initiallySaved = false,
+  accessState = "none",
+  registrationAccessStatus,
+  registrationPaymentStatus,
 }: WebinarActionCardProps) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -159,6 +165,7 @@ export function WebinarActionCard({
 
   const isEnrolled = enrollmentStatus === "enrolled";
   const hasJoinAccess = isEnrolled && Boolean(joinUrl);
+  const isRevoked = String(registrationAccessStatus ?? "").toLowerCase() === "revoked" || String(registrationPaymentStatus ?? "").toLowerCase() === "refunded";
   const ctaDisabled = loading || !isLoggedIn || !enrollmentOpen || isEnrolled;
 
   return (
@@ -168,6 +175,17 @@ export function WebinarActionCard({
       <p className="text-sm font-medium text-slate-800">Status: {statusLabel}</p>
 
       {!isLoggedIn ? <p className="mt-2 text-sm text-slate-600">Please login as a student to enroll.</p> : null}
+      {isRevoked ? (
+        <div className="mt-3 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+          <p className="font-semibold">Access Revoked</p>
+          <p className="mt-1">This webinar access has been revoked due to refund/cancellation.</p>
+        </div>
+      ) : null}
+      {accessState === "pending_reconciliation" ? (
+        <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Payment is confirmed. Access is being synchronized, please refresh shortly.
+        </div>
+      ) : null}
       {hasJoinAccess ? (
         <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
           <p className="font-semibold">Access Granted</p>
@@ -178,6 +196,9 @@ export function WebinarActionCard({
           <a href={joinUrl!} target="_blank" rel="noreferrer" className="mt-3 inline-flex w-full items-center justify-center rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white">Join Webinar</a>
           <p className="mt-2 text-xs">Link also sent to your WhatsApp and email.</p>
         </div>
+      ) : null}
+      {isEnrolled && !hasJoinAccess && !isRevoked ? (
+        <p className="mt-2 text-xs text-slate-600">Access will be unlocked 15 minutes before webinar starts.</p>
       ) : null}
       {isEnrolled && !hasJoinAccess ? <p className="mt-2 text-sm text-emerald-700">Already Registered{activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}</p> : null}
 

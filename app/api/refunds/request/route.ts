@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   } else {
     const { data: order } = await admin.data
       .from("webinar_orders")
-      .select("id,amount,payment_status,order_status,institute_id,razorpay_payment_id")
+      .select("id,webinar_id,amount,payment_status,order_status,institute_id,razorpay_payment_id")
       .eq("id", orderId)
       .eq("student_id", auth.user.id)
       .maybeSingle();
@@ -78,12 +78,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Webinar order is already refunded" }, { status: 409 });
     }
 
-    const { data: registration, error: registrationError } = await admin.data
+    const [{ data: registration, error: registrationError }, { data: webinar }] = await Promise.all([
+      admin.data
       .from("webinar_registrations")
-      .select("id,registration_status,access_status")
+      .select("id,registration_status,access_status,access_granted_at,email_sent_at,whatsapp_sent_at")
       .eq("student_id", auth.user.id)
       .eq("webinar_order_id", orderId)
-      .maybeSingle<{ id: string; registration_status: string | null; access_status: string | null }>();
+      .maybeSingle<{
+        id: string;
+        registration_status: string | null;
+        access_status: string | null;
+        access_granted_at: string | null;
+        email_sent_at: string | null;
+        whatsapp_sent_at: string | null;
+      }>(),
+      admin.data.from("webinars").select("id,starts_at").eq("id", order.webinar_id).maybeSingle<{ id: string; starts_at: string | null }>(),
+    ]);
     if (registrationError) {
       return NextResponse.json({ error: registrationError.message }, { status: 500 });
     }
@@ -91,6 +101,17 @@ export async function POST(request: Request) {
     const accessStatus = String(registration?.access_status ?? "").toLowerCase();
     if (["cancelled", "canceled", "revoked"].includes(registrationStatus) || ["revoked"].includes(accessStatus)) {
       return NextResponse.json({ error: "Refund is blocked for cancelled or revoked webinar registrations" }, { status: 409 });
+    }
+    const now = Date.now();
+    const webinarStartsAt = webinar?.starts_at ? new Date(webinar.starts_at).getTime() : Number.NaN;
+    if (Number.isFinite(webinarStartsAt) && now >= webinarStartsAt) {
+      return NextResponse.json({ error: "Refund is blocked because webinar has already started." }, { status: 409 });
+    }
+    if (Number.isFinite(webinarStartsAt) && now >= webinarStartsAt - 30 * 60 * 1000) {
+      return NextResponse.json({ error: "Refund is allowed only before 30 minutes of webinar start time." }, { status: 409 });
+    }
+    if (registration?.access_granted_at || registration?.email_sent_at || registration?.whatsapp_sent_at) {
+      return NextResponse.json({ error: "Refund is blocked because access was already delivered." }, { status: 409 });
     }
 
     refundAmount = Number(order.amount ?? 0);

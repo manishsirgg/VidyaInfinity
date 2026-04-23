@@ -5,6 +5,7 @@ import { getCurrentUserProfile } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
+import { getWebinarAccessState } from "@/lib/webinars/access-state";
 import { shouldShowMeetingJoinWindow, toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
 
 type WebinarRecord = {
@@ -57,23 +58,19 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
 
   let hasAccess = false;
   let activeAccessEndAt: string | null = null;
+  let registrationAccessStatus: string | null = null;
+  let registrationPaymentStatus: string | null = null;
+  let webinarAccessState: "granted" | "pending_reconciliation" | "none" = "none";
   let isSaved = false;
   if (viewer?.user.id) {
-    const [{ data: registration }, { data: paidOrder }, { data: savedWebinar }] = await Promise.all([
+    const [{ data: registration }, accessState, { data: savedWebinar }] = await Promise.all([
       dataClient
       .from("webinar_registrations")
-      .select("registration_status,access_status,access_end_at")
+      .select("registration_status,access_status,payment_status,access_end_at")
       .eq("webinar_id", id)
       .eq("student_id", viewer.user.id)
-      .maybeSingle<{ registration_status: string | null; access_status: string | null; access_end_at: string | null }>(),
-      dataClient
-        .from("webinar_orders")
-      .select("access_status,payment_status,order_status")
-        .eq("webinar_id", id)
-        .eq("student_id", viewer.user.id)
-        .eq("payment_status", "paid")
-        .eq("order_status", "confirmed")
-        .maybeSingle<{ access_status: string | null; payment_status: string; order_status: string }>(),
+      .maybeSingle<{ registration_status: string | null; access_status: string | null; payment_status: string | null; access_end_at: string | null }>(),
+      getWebinarAccessState(dataClient, id, viewer.user.id),
       dataClient
         .from("student_saved_webinars")
         .select("id")
@@ -85,9 +82,11 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
       registration?.registration_status === "registered" &&
       registration?.access_status === "granted" &&
       (!registration.access_end_at || new Date(registration.access_end_at).getTime() >= Date.now());
-    const fallbackPaidOrderAccess = !registration && paidOrder?.access_status === "granted";
-    hasAccess = Boolean(registrationHasAccess || fallbackPaidOrderAccess);
+    webinarAccessState = accessState;
+    hasAccess = Boolean(registrationHasAccess || accessState === "granted");
     activeAccessEndAt = registration?.access_end_at ?? null;
+    registrationAccessStatus = registration?.access_status ?? null;
+    registrationPaymentStatus = registration?.payment_status ?? null;
     isSaved = Boolean(savedWebinar?.id);
   }
 
@@ -165,6 +164,9 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
           joinUrl={hasAccess ? webinar.meeting_url : null}
           isStudent={viewer?.profile.role === "student"}
           initiallySaved={isSaved}
+          accessState={webinarAccessState}
+          registrationAccessStatus={registrationAccessStatus}
+          registrationPaymentStatus={registrationPaymentStatus}
         />
       </div>
     </div>

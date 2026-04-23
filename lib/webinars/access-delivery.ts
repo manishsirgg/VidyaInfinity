@@ -87,7 +87,7 @@ async function sendWhatsApp(phone: string | null, message: string) {
 export async function deliverWebinarAccess(payload: WebinarAccessDeliveryPayload) {
   const { data: registration, error: registrationError } = await payload.supabase
     .from("webinar_registrations")
-    .select("id,access_status,payment_status,metadata,webinar_id,student_id")
+    .select("id,access_status,payment_status,metadata,webinar_id,student_id,email_sent_at,whatsapp_sent_at")
     .eq("id", payload.registrationId)
     .eq("webinar_id", payload.webinarId)
     .eq("student_id", payload.studentId)
@@ -98,6 +98,8 @@ export async function deliverWebinarAccess(payload: WebinarAccessDeliveryPayload
       metadata: DeliveryMetadata | null;
       webinar_id: string;
       student_id: string;
+      email_sent_at: string | null;
+      whatsapp_sent_at: string | null;
     }>();
 
   if (registrationError) throw new Error(registrationError.message);
@@ -165,6 +167,19 @@ export async function deliverWebinarAccess(payload: WebinarAccessDeliveryPayload
       registration_id: registration.id,
       webinar_id: payload.webinarId,
       student_id: payload.studentId,
+    });
+    return;
+  }
+
+  const now = Date.now();
+  const revealWindowAt = webinar.starts_at ? new Date(webinar.starts_at).getTime() - 15 * 60 * 1000 : Number.NaN;
+  if (Number.isFinite(revealWindowAt) && now < revealWindowAt) {
+    console.info("[webinars/access-delivery] webinar_delivery_deferred_before_reveal_window", {
+      event: "webinar_delivery_deferred_before_reveal_window",
+      registration_id: registration.id,
+      webinar_id: payload.webinarId,
+      student_id: payload.studentId,
+      reveal_window_at: new Date(revealWindowAt).toISOString(),
     });
     return;
   }
@@ -253,9 +268,18 @@ export async function deliverWebinarAccess(payload: WebinarAccessDeliveryPayload
     nextMeta.access_delivery!.last_sent_at = new Date().toISOString();
   }
 
+  const deliveredAt = nextMeta.access_delivery?.last_sent_at ?? null;
   const { error: updateError } = await payload.supabase
     .from("webinar_registrations")
-    .update({ metadata: nextMeta })
+    .update({
+      metadata: nextMeta,
+      email_sent_at: nextMeta.access_delivery?.email?.sent ? nextMeta.access_delivery?.email?.sent_at ?? registration.email_sent_at ?? deliveredAt : registration.email_sent_at,
+      whatsapp_sent_at: nextMeta.access_delivery?.whatsapp?.sent
+        ? nextMeta.access_delivery?.whatsapp?.sent_at ?? registration.whatsapp_sent_at ?? deliveredAt
+        : registration.whatsapp_sent_at,
+      access_granted_at: deliveredAt,
+      access_delivery_status: nextMeta.access_delivery?.email?.sent || nextMeta.access_delivery?.whatsapp?.sent ? "delivered" : "pending",
+    })
     .eq("id", registration.id)
     .eq("student_id", payload.studentId);
 

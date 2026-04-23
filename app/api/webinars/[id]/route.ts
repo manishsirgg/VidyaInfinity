@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUserProfile } from "@/lib/auth/get-session";
 import { shouldShowMeetingJoinWindow } from "@/lib/webinars/utils";
+import { getWebinarAccessState } from "@/lib/webinars/access-state";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -25,16 +26,21 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   let hasAccess = false;
   let registration: { access_status?: string | null; payment_status?: string | null } | null = null;
+  let accessState: "granted" | "pending_reconciliation" | "none" = "none";
 
   if (viewer?.user?.id) {
-    const { data: row } = await dataClient
+    const [{ data: row }, resolvedAccessState] = await Promise.all([
+      dataClient
       .from("webinar_registrations")
       .select("access_status,payment_status")
       .eq("webinar_id", webinar.id)
       .eq("student_id", viewer.user.id)
-      .maybeSingle<{ access_status: string | null; payment_status: string | null }>();
+      .maybeSingle<{ access_status: string | null; payment_status: string | null }>(),
+      getWebinarAccessState(dataClient, webinar.id, viewer.user.id),
+    ]);
     registration = row ?? null;
-    hasAccess = row?.access_status === "granted";
+    accessState = resolvedAccessState;
+    hasAccess = resolvedAccessState === "granted";
   }
 
   const isInstituteOwner = Boolean(viewer?.profile.role === "institute" && viewer?.user.id);
@@ -55,6 +61,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       hasAccess,
       meetingVisible,
       registration,
+      accessState,
       viewerRole: viewer?.profile.role ?? null,
       isLoggedIn: Boolean(viewer?.user),
     },
