@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { RefundRequestButton } from "@/components/student/refund-request-button";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -122,6 +123,12 @@ function webinarLifecycleLabel(startsAt: string | null, endsAt: string | null) {
   return "Upcoming";
 }
 
+const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+
+function isPaidLikeStatus(value: string | null | undefined) {
+  return SUCCESS_PAYMENT_STATUSES.has(String(value ?? "").trim().toLowerCase());
+}
+
 export default async function StudentWebinarRegistrationsPage({
   searchParams,
 }: {
@@ -151,7 +158,7 @@ export default async function StudentWebinarRegistrationsPage({
   ]);
 
   const registrationRows = registrationResult.data ?? [];
-  const paidOrders = paidOrdersResult.data ?? [];
+  const paidOrders = (paidOrdersResult.data ?? []).filter((row) => isPaidLikeStatus(row.payment_status));
 
   const byWebinarId = new Map<string, CombinedWebinarAccess>();
 
@@ -202,7 +209,21 @@ export default async function StudentWebinarRegistrationsPage({
 
   const allItems = Array.from(byWebinarId.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const canonicalStateByWebinarId = new Map(
-    await Promise.all(allItems.map(async (item) => [item.webinar_id, await resolveWebinarAccessState(dataClient, item.webinar_id, user.id)] as const)),
+    await Promise.all(
+      allItems.map(async (item) => {
+        try {
+          const resolved = await resolveWebinarAccessState(dataClient, item.webinar_id, user.id);
+          return [item.webinar_id, resolved] as const;
+        } catch (error) {
+          console.error("[student/webinar-registrations] resolve_access_state_failed", {
+            user_id: user.id,
+            webinar_id: item.webinar_id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [item.webinar_id, null] as const;
+        }
+      }),
+    ),
   );
   const now = Date.now();
   const filteredItems = allItems.filter((item) => {
@@ -245,12 +266,28 @@ export default async function StudentWebinarRegistrationsPage({
         {filterLink("free", "Free")}
         {filterLink("paid", "Paid")}
       </div>
+      {registrationResult.error ? (
+        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Unable to load some registration records right now. Please refresh in a moment.
+        </p>
+      ) : null}
+      {paidOrdersResult.error ? (
+        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Unable to load webinar order records right now. Refund options may be temporarily unavailable.
+        </p>
+      ) : null}
 
       {filteredItems.length === 0 ? (
         <p className="mt-4 rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">No webinar registrations found for this filter.</p>
       ) : (
         <div className="mt-4 space-y-3">
-          {filteredItems.map((item) => (
+          {filteredItems.map((item) => {
+            const canonicalState = canonicalStateByWebinarId.get(item.webinar_id);
+            const canJoin = ["granted", "revealed"].includes(canonicalState?.state ?? "no_access");
+            const paidLike = isPaidLikeStatus(item.payment_status) || item.webinar_mode === "paid";
+            const canRequestRefund = paidLike && Boolean(item.webinar_order_id) && Boolean(canonicalState?.refundAllowed);
+
+            return (
             <div key={item.id} className="rounded-xl border bg-white p-4 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-medium text-slate-900">{item.title}</p>
@@ -261,8 +298,8 @@ export default async function StudentWebinarRegistrationsPage({
               <p className="text-slate-700">Mode: {toLabel(item.webinar_mode)} · Provider: {item.meeting_provider ?? "N/A"}</p>
               <p className="text-slate-700">Institute: {item.institute_name ?? "N/A"}</p>
               <p className="text-slate-700">Registration: {toLabel(item.registration_status)} · Payment: {toLabel(item.payment_status)} · Access: {toLabel(item.access_status)}</p>
-              {["granted", "revealed"].includes(canonicalStateByWebinarId.get(item.webinar_id)?.state ?? "no_access") ? <p className="text-slate-700">Status: {webinarLifecycleLabel(item.starts_at, item.ends_at)} · Access Granted</p> : null}
-              {["granted", "revealed"].includes(canonicalStateByWebinarId.get(item.webinar_id)?.state ?? "no_access") ? (
+              {canJoin ? <p className="text-slate-700">Status: {webinarLifecycleLabel(item.starts_at, item.ends_at)} · Access Granted</p> : null}
+              {canJoin ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <a href={`/student/webinars/${item.webinar_id}/join`} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white">
                     Join Webinar
@@ -271,9 +308,21 @@ export default async function StudentWebinarRegistrationsPage({
               ) : (
                 <p className="mt-2 text-xs text-slate-600">Registration Confirmed. Join access unlocks 15 minutes before webinar starts.</p>
               )}
+              {canRequestRefund ? (
+                <div className="mt-2">
+                  <RefundRequestButton
+                    orderType="webinar"
+                    orderId={item.webinar_order_id as string}
+                    buttonLabel="Request Webinar Refund"
+                  />
+                </div>
+              ) : null}
+              {paidLike && !canRequestRefund ? (
+                <p className="mt-2 text-xs text-amber-700">{canonicalState?.refundBlockedReason ?? "Refund not available for this webinar at the moment."}</p>
+              ) : null}
               <p className="text-xs text-slate-500">Webinar ID: {item.webinar_id}</p>
             </div>
-          ))}
+          )})}
         </div>
       )}
     </div>
