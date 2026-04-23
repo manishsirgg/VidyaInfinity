@@ -388,14 +388,8 @@ export async function reconcileCourseOrderPaid({
     return { error: errorMessage };
   }
 
-  const { data: existingPayout } = await supabase
-    .from("institute_payouts")
-    .select("id")
-    .eq("course_order_id", canonicalPaidOrderId)
-    .maybeSingle();
-
-  if (!existingPayout) {
-    const { error: payoutError } = await supabase.from("institute_payouts").insert({
+  const { error: payoutError } = await supabase.from("institute_payouts").upsert(
+    {
       institute_id: order.institute_id,
       course_order_id: canonicalPaidOrderId,
       gross_amount: order.gross_amount,
@@ -403,9 +397,11 @@ export async function reconcileCourseOrderPaid({
       payout_amount: order.institute_receivable_amount,
       payout_status: "pending",
       scheduled_at: now,
-    });
-    if (payoutError) return { error: payoutError.message };
-  }
+      updated_at: now,
+    },
+    { onConflict: "course_order_id" },
+  );
+  if (payoutError) return { error: payoutError.message };
 
   const [{ data: course }, { data: student }, { data: institute }, { data: admins }] = await Promise.all([
     supabase.from("courses").select("title").eq("id", order.course_id).maybeSingle(),

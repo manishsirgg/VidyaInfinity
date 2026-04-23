@@ -8,6 +8,7 @@ const adminModules = [
   { href: "/admin/institutes", label: "Institutes" },
   { href: "/admin/courses", label: "Courses" },
   { href: "/admin/refunds", label: "Refunds" },
+  { href: "/admin/payout-requests", label: "Payout Requests" },
   { href: "/admin/transactions", label: "Transactions" },
   { href: "/admin/commission", label: "Commission" },
   { href: "/admin/blogs", label: "Blogs" },
@@ -119,6 +120,9 @@ export default async function AdminDashboardPage() {
         <Link href="/admin/transactions" className="vi-card vi-card-hover p-4">Course orders: {orders ?? 0}</Link>
         <Link href="/admin/refunds" className="vi-card p-4">
           Pending refunds: {refunds ?? 0}
+        </Link>
+        <Link href="/admin/payout-requests" className="vi-card p-4">
+          Manage payout requests
         </Link>
         <Link href="/admin/blogs" className="vi-card p-4">
           Blogs: {blogs ?? 0}

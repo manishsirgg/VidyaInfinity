@@ -26,6 +26,45 @@ function toUiLabel(status: RefundDbStatus) {
   return "Requested";
 }
 
+
+type RpcLikeClient = {
+  rpc: (fn: string, args?: Record<string, unknown>) => PromiseLike<{ error: { message?: string | null } | null }>;
+};
+
+async function applyInstitutePayoutRefund(adminClient: RpcLikeClient, payload: { refundId: string; adminUserId: string; amount: number; courseOrderId: string | null; webinarOrderId: string | null; }) {
+  const variants = [
+    {
+      p_refund_id: payload.refundId,
+      p_admin_user_id: payload.adminUserId,
+      p_amount: payload.amount,
+      p_course_order_id: payload.courseOrderId,
+      p_webinar_order_id: payload.webinarOrderId,
+    },
+    {
+      refund_id: payload.refundId,
+      admin_user_id: payload.adminUserId,
+      amount: payload.amount,
+      course_order_id: payload.courseOrderId,
+      webinar_order_id: payload.webinarOrderId,
+    },
+    {
+      p_refund_id: payload.refundId,
+    },
+    {
+      refund_id: payload.refundId,
+    },
+  ];
+
+  let lastError: string | null = null;
+  for (const args of variants) {
+    const { error } = await adminClient.rpc("apply_refund_to_institute_payout", args);
+    if (!error) return null;
+    lastError = error.message ?? "Unknown RPC error";
+  }
+
+  return lastError ?? "Unable to apply refund to institute payout.";
+}
+
 function logRefundAdminEvent(event: string, payload: Record<string, unknown>) {
   console.info(
     JSON.stringify({
@@ -320,6 +359,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           updated_at: new Date().toISOString(),
         })
         .eq("webinar_order_id", refund.webinar_order_id);
+    }
+
+    const payoutRefundError = await applyInstitutePayoutRefund(admin.data, {
+      refundId: refund.id,
+      adminUserId: auth.user.id,
+      amount: requestAmount,
+      courseOrderId: refund.course_order_id,
+      webinarOrderId: refund.webinar_order_id,
+    });
+
+    if (payoutRefundError) {
+      return NextResponse.json({ error: payoutRefundError }, { status: 500 });
     }
   }
 
