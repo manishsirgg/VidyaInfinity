@@ -96,7 +96,7 @@ type WebinarPurchase = {
 type RefundRecord = {
   id: string;
   refund_status: "requested" | "processing" | "refunded" | "failed" | "cancelled";
-  order_kind: "course_enrollment" | "psychometric_test" | "webinar";
+  order_kind: "course_enrollment" | "psychometric_test" | "webinar" | "webinar_registration";
   reason: string | null;
   amount: number | null;
   requested_at: string | null;
@@ -165,7 +165,7 @@ function RefundStatusBadge({ status }: { status: RefundRecord["refund_status"] }
 
   return (
     <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${tones[status]}`}>
-      Refund {toTitleCase(status, "Requested")}
+      {status === "requested" ? "Refund Requested" : status === "refunded" ? "Refund Processed" : status === "failed" ? "Refund Failed" : `Refund ${toTitleCase(status, "Requested")}`}
     </span>
   );
 }
@@ -400,8 +400,7 @@ export default async function Page({
 
                 const hasPaidOrder = String(order.payment_status ?? "").toLowerCase() === "paid";
                 const registrationStatus = registration?.registration_status ?? (hasPaidOrder ? "pending_sync" : "not_registered");
-                const accessStatus =
-                  registration?.access_status === "granted" ? "granted" : hasPaidOrder ? "processing" : "locked";
+                const accessStatus = registration?.access_status === "granted" ? "granted" : hasPaidOrder ? "processing" : "locked";
                 const revealWindowAt = startsAt ? new Date(startsAt).getTime() - 15 * 60 * 1000 : Number.NaN;
                 const revealWindowReached = Number.isFinite(revealWindowAt) ? Date.now() >= revealWindowAt : false;
                 const canJoin = accessStatus === "granted" && revealWindowReached;
@@ -418,6 +417,7 @@ export default async function Page({
                 const canRequestRefund = !refundBlockedByExistingState && !isRefundBlockedByOrder && !isRefundBlockedByRegistration;
                 const refundAllowedForWebinar = canRequestRefund && isInsideRefundWindow && !hasDeliveryEvidence && !isStarted;
                 const accessRevoked = String(registration?.access_status ?? "").toLowerCase() === "revoked" || String(order.payment_status ?? "").toLowerCase() === "refunded";
+                const syncPending = hasPaidOrder && (!registration || String(registration.payment_status ?? "").toLowerCase() !== "paid" || String(registration.access_status ?? "").toLowerCase() !== "granted");
 
                 return (
                   <article key={order.id} className="rounded border bg-white p-4 text-sm">
@@ -431,6 +431,7 @@ export default async function Page({
                     <p className="mt-1 text-slate-700">
                       Mode: {toTitleCase(webinarMode, "Not specified")} · Access: {toTitleCase(accessStatus, "Pending")}
                     </p>
+                    {syncPending ? <p className="mt-1 text-xs text-amber-700">Processing, please refresh.</p> : null}
                     {registration?.access_start_at ? <p className="mt-1 text-slate-700">Access Starts: {new Date(registration.access_start_at).toLocaleString()}</p> : null}
                     {registration?.access_end_at ? <p className="mt-1 text-slate-700">Access Ends: {new Date(registration.access_end_at).toLocaleString()}</p> : null}
                     {startsAt ? <p className="mt-1 text-slate-700">Webinar Date & Time: {new Date(startsAt).toLocaleString()}</p> : null}
@@ -451,7 +452,14 @@ export default async function Page({
                     ) : null}
                     <div className="mt-2">
                       {refundAllowedForWebinar ? (
-                        <RefundRequestButton orderType="webinar" orderId={order.id} buttonLabel="Request Webinar Refund" />
+                        <RefundRequestButton
+                          orderType="webinar"
+                          orderId={order.id}
+                          buttonLabel="Request Webinar Refund"
+                          endpoint="/api/refunds/webinar-request"
+                          requestBodyBuilder={({ orderId, reason }) => ({ webinarOrderId: orderId, reason })}
+                          disabled={Boolean(refund)}
+                        />
                       ) : null}
                     </div>
                     {refund ? (
