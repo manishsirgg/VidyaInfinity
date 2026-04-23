@@ -29,6 +29,18 @@ type CourseRow = {
   is_active: boolean | null;
 };
 
+function normalizePlanToken(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function resolvePlanByToken(plans: PlanRow[], token: string) {
+  const normalized = normalizePlanToken(token);
+  return plans.find((plan) => {
+    const tokens = [plan.id, plan.plan_code, plan.code].filter((item): item is string => typeof item === "string" && item.length > 0);
+    return tokens.some((item) => normalizePlanToken(item) === normalized);
+  }) ?? null;
+}
+
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
   if (typeof value === "string") {
@@ -53,7 +65,7 @@ export async function POST(request: Request) {
   const instituteId = await getInstituteIdForUser(admin.data, auth.user.id);
   if (!instituteId) return NextResponse.json({ error: "Institute profile not found" }, { status: 404 });
 
-  const [{ data: course }, { data: plan }] = await Promise.all([
+  const [{ data: course }, { data: planRows }] = await Promise.all([
     admin.data
       .from("courses")
       .select("id,institute_id,status,is_active")
@@ -63,10 +75,10 @@ export async function POST(request: Request) {
     admin.data
       .from("course_featured_plans")
       .select("id,plan_code,code,duration_days,amount,price,currency,is_active,tier_rank")
-      .eq("id", body.planId)
       .or("is_active.eq.true,is_active.is.null")
-      .maybeSingle<PlanRow>(),
+      .order("sort_order", { ascending: true }),
   ]);
+  const plan = resolvePlanByToken((planRows ?? []) as PlanRow[], body.planId);
 
   if (!course) return NextResponse.json({ error: "Course not found" }, { status: 404 });
   if (course.status !== "approved" || course.is_active === false) {
@@ -95,7 +107,7 @@ export async function POST(request: Request) {
       userId: auth.user.id,
       instituteId,
       courseId: body.courseId,
-      planId: body.planId,
+      planId: plan.id,
       productType: "course_featured_listing",
       payoutEligible: "false",
     },
@@ -108,7 +120,7 @@ export async function POST(request: Request) {
       institute_id: instituteId,
       created_by: auth.user.id,
       course_id: body.courseId,
-      plan_id: body.planId,
+      plan_id: plan.id,
       amount,
       currency,
       duration_days: durationDays,
@@ -132,7 +144,7 @@ export async function POST(request: Request) {
     purchase: {
       id: inserted.id,
       courseId: body.courseId,
-      planId: body.planId,
+      planId: plan.id,
       durationDays,
       amount,
       currency,

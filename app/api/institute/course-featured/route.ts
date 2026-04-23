@@ -41,6 +41,10 @@ type CourseFeaturedOrderRow = {
   razorpay_payment_id: string | null;
 };
 
+function normalizePlanToken(value: string) {
+  return value.trim().toLowerCase();
+}
+
 export async function GET() {
   const auth = await requireApiUser("institute");
   if ("error" in auth) return auth.error;
@@ -81,11 +85,15 @@ export async function GET() {
   const subscriptions = (subscriptionsResult.data ?? []) as SubscriptionSummary[];
   const orders = (ordersResult.data ?? []) as CourseFeaturedOrderRow[];
 
-  const historicalPlanIds = [...new Set(orders.map((item) => item.plan_id).filter((item): item is string => typeof item === "string" && item.length > 0))];
-  const historicalPlansResult = historicalPlanIds.length
-    ? await admin.data.from("course_featured_plans").select("id,name,plan_code,code").in("id", historicalPlanIds)
-    : { data: [] as Array<{ id: string; name: string | null; plan_code: string | null; code: string | null }> };
-  const planNameById = new Map((historicalPlansResult.data ?? []).map((item) => [item.id, item.name ?? item.plan_code ?? item.code ?? "Course Plan"]));
+  const historicalPlanRowsResult = await admin.data.from("course_featured_plans").select("id,name,plan_code,code");
+  const planRows = (historicalPlanRowsResult.data ?? []) as Array<{ id: string; name: string | null; plan_code: string | null; code: string | null }>;
+  const planNameByToken = new Map<string, string>();
+  for (const item of planRows) {
+    const planName = item.name ?? item.plan_code ?? item.code ?? "Course Plan";
+    for (const token of [item.id, item.plan_code, item.code]) {
+      if (typeof token === "string" && token.length > 0) planNameByToken.set(normalizePlanToken(token), planName);
+    }
+  }
 
   const nowMs = Date.now();
   const summary = {
@@ -110,7 +118,7 @@ export async function GET() {
     orders: orders.map((item) => ({
       ...item,
       course_title: courseTitleById.get(item.course_id) ?? "Course",
-      plan_name: item.plan_id ? planNameById.get(item.plan_id) ?? "Plan" : "Plan",
+      plan_name: item.plan_id ? planNameByToken.get(normalizePlanToken(item.plan_id)) ?? "Plan" : "Plan",
     })),
     summary,
   });
