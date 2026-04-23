@@ -32,6 +32,18 @@ type PlanRow = {
   tier_rank: number | null;
 };
 
+function normalizePlanToken(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function resolvePlanByToken(plans: PlanRow[], token: string) {
+  const normalized = normalizePlanToken(token);
+  return plans.find((plan) => {
+    const tokens = [plan.id, plan.plan_code, plan.code].filter((item): item is string => typeof item === "string" && item.length > 0);
+    return tokens.some((item) => normalizePlanToken(item) === normalized);
+  }) ?? null;
+}
+
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
   if (typeof value === "string") {
@@ -130,11 +142,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Course is no longer eligible for featuring" }, { status: 400 });
   }
 
-  const { data: plan } = await admin.data
+  const { data: planRows } = await admin.data
     .from("course_featured_plans")
     .select("id,plan_code,code,tier_rank")
-    .eq("id", existingOrder.plan_id)
-    .maybeSingle<PlanRow>();
+    .order("sort_order", { ascending: true });
+  const plan = resolvePlanByToken((planRows ?? []) as PlanRow[], existingOrder.plan_id);
 
   const planCode = plan?.plan_code ?? plan?.code;
   if (!planCode) return NextResponse.json({ error: "Unable to resolve plan code" }, { status: 500 });
