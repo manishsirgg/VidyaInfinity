@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { parseRefundOrderType, toCanonicalOrderKind } from "@/lib/payments/order-kinds";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const REFUND_ELIGIBLE_PAYMENT_STATUSES = ["paid", "captured", "success", "confirmed"] as const;
@@ -10,9 +11,13 @@ export async function POST(request: Request) {
   const auth = await requireApiUser("student");
   if ("error" in auth) return auth.error;
 
-  const { orderType, orderId, reason } = await request.json();
-  if (!["course", "psychometric", "webinar"].includes(orderType) || !orderId || !reason || !String(reason).trim()) {
-    return NextResponse.json({ error: "orderType, orderId, reason are required" }, { status: 400 });
+  const { orderType: rawOrderType, orderId, reason } = await request.json();
+  const orderType = parseRefundOrderType(rawOrderType);
+  if (!orderType) {
+    return NextResponse.json({ error: "Invalid orderType. Allowed values: course, psychometric, webinar." }, { status: 400 });
+  }
+  if (!orderId || !reason || !String(reason).trim()) {
+    return NextResponse.json({ error: "orderId and reason are required" }, { status: 400 });
   }
 
   const admin = getSupabaseAdmin();
@@ -155,7 +160,7 @@ export async function POST(request: Request) {
   const insertPayload = {
     user_id: auth.user.id,
     institute_id: instituteId,
-    order_kind: orderType === "course" ? "course_enrollment" : orderType === "psychometric" ? "psychometric_test" : "webinar",
+    order_kind: toCanonicalOrderKind(orderType),
     course_order_id: orderType === "course" ? orderId : null,
     psychometric_order_id: orderType === "psychometric" ? orderId : null,
     webinar_order_id: orderType === "webinar" ? orderId : null,

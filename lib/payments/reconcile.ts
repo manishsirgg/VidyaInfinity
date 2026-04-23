@@ -1,5 +1,6 @@
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { calculateCommission, sanitizeCommissionPercentage } from "@/lib/payments/commission";
+import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
 import { notifyCoursePurchase } from "@/lib/marketplace/course-notifications";
 import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications";
 import { deliverWebinarAccess } from "@/lib/webinars/access-delivery";
@@ -181,7 +182,7 @@ export async function reconcileCourseOrderPaid({
     {
       order_type: "course",
       order_id: canonicalPaidOrderId,
-      order_kind: "course_enrollment",
+      order_kind: REFUND_ORDER_TYPE_TO_CANONICAL_KIND.course,
       course_order_id: canonicalPaidOrderId,
       user_id: order.student_id,
       institute_id: order.institute_id,
@@ -599,7 +600,7 @@ export async function reconcilePsychometricOrderPaid({
     {
       order_type: "psychometric",
       order_id: canonicalPaidOrderId,
-      order_kind: "psychometric",
+      order_kind: REFUND_ORDER_TYPE_TO_CANONICAL_KIND.psychometric,
       psychometric_order_id: canonicalPaidOrderId,
       user_id: order.user_id,
       razorpay_order_id: razorpayOrderId,
@@ -888,7 +889,7 @@ export async function reconcileWebinarOrderPaid({
     {
       order_type: "course",
       order_id: canonicalPaidOrderId,
-      order_kind: "webinar_registration",
+      order_kind: REFUND_ORDER_TYPE_TO_CANONICAL_KIND.webinar,
       webinar_order_id: canonicalPaidOrderId,
       user_id: order.student_id,
       institute_id: order.institute_id,

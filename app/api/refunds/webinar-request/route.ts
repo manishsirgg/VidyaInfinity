@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const REFUND_BLOCKING_STATUSES = ["requested", "processing", "refunded"] as const;
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
   }
 
   const { error: insertError } = await admin.data.from("refunds").insert({
-    order_kind: "webinar_registration",
+    order_kind: REFUND_ORDER_TYPE_TO_CANONICAL_KIND.webinar,
     webinar_order_id: webinarOrderId,
     user_id: auth.user.id,
     institute_id: order.institute_id ?? null,
