@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { resolveFeaturedPlan } from "@/lib/featured-plan-resolution";
 import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser } from "@/lib/course-featured";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
@@ -32,21 +33,6 @@ type WebinarRow = {
   ends_at: string | null;
 };
 
-function normalizePlanToken(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return String(value).trim().toLowerCase();
-  if (typeof value === "string") return value.trim().toLowerCase();
-  return "";
-}
-
-function resolvePlanByToken(plans: PlanRow[], token: string) {
-  const normalized = normalizePlanToken(token);
-  if (!normalized) return null;
-  return plans.find((plan) => {
-    const tokens = [plan.id, plan.plan_code, plan.code];
-    return tokens.some((item) => normalizePlanToken(item) === normalized);
-  }) ?? null;
-}
-
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
   if (typeof value === "string") {
@@ -71,20 +57,25 @@ export async function POST(request: Request) {
   const instituteId = await getInstituteIdForUser(admin.data, auth.user.id);
   if (!instituteId) return NextResponse.json({ error: "Institute profile not found" }, { status: 404 });
 
-  const [{ data: webinar }, { data: planRows }] = await Promise.all([
-    admin.data
-      .from("webinars")
-      .select("id,institute_id,approval_status,status,ends_at")
-      .eq("id", body.webinarId)
-      .eq("institute_id", instituteId)
-      .maybeSingle<WebinarRow>(),
-    admin.data
-      .from("webinar_featured_plans")
-      .select("id,plan_code,code,duration_days,amount,price,currency,is_active,tier_rank")
-      .or("is_active.eq.true,is_active.is.null")
-      .order("sort_order", { ascending: true }),
-  ]);
-  const plan = resolvePlanByToken((planRows ?? []) as PlanRow[], body.planId);
+  const { data: webinar } = await admin.data
+    .from("webinars")
+    .select("id,institute_id,approval_status,status,ends_at")
+    .eq("id", body.webinarId)
+    .eq("institute_id", instituteId)
+    .maybeSingle<WebinarRow>();
+
+  const planResolution = await resolveFeaturedPlan({
+    admin: admin.data,
+    table: "webinar_featured_plans",
+    selectedPlanToken: body.planId,
+  });
+  const plan = planResolution.plan as PlanRow | null;
+
+  console.info("[webinar-featured/create-order] plan_resolution", {
+    selectedPlanToken: body.planId,
+    resolution: planResolution.resolution,
+    resolvedPlanId: plan ? String(plan.id) : null,
+  });
 
   if (!webinar) return NextResponse.json({ error: "Webinar not found" }, { status: 404 });
   if (!isWebinarPromotable(webinar)) {
@@ -92,21 +83,26 @@ export async function POST(request: Request) {
   }
 
   if (!plan || plan.is_active === false) {
-    const availablePlanTokens = ((planRows ?? []) as PlanRow[])
-      .map((candidate) => [candidate.id, candidate.plan_code, candidate.code].map((token) => normalizePlanToken(token)).filter(Boolean).join("|"))
-      .filter(Boolean);
     return NextResponse.json(
       {
-        error: `Featured plan not found for token "${normalizePlanToken(body.planId)}" in /api/institute/webinar-featured/create-order`,
-        details: { availablePlanTokens },
+        error: `Featured plan not found for token "${body.planId.trim()}" in /api/institute/webinar-featured/create-order`,
+        details: { availablePlanTokens: planResolution.availablePlanTokens },
       },
       { status: 404 },
     );
   }
 
-  const durationDays = toNumber(plan.duration_days);
-  const amount = toNumber(plan.amount ?? plan.price);
-  const currency = typeof plan.currency === "string" && plan.currency.length > 0 ? plan.currency : "INR";
+  const { data: canonicalPlan } = await admin.data
+    .from("webinar_featured_plans")
+    .select("id,plan_code,code,duration_days,amount,price,currency,is_active,tier_rank")
+    .eq("id", String(plan.id))
+    .or("is_active.eq.true,is_active.is.null")
+    .maybeSingle<PlanRow>();
+  const resolvedPlan = canonicalPlan ?? plan;
+
+  const durationDays = toNumber(resolvedPlan.duration_days);
+  const amount = toNumber(resolvedPlan.amount ?? resolvedPlan.price);
+  const currency = typeof resolvedPlan.currency === "string" && resolvedPlan.currency.length > 0 ? resolvedPlan.currency : "INR";
 
   if (durationDays <= 0 || amount <= 0) {
     return NextResponse.json({ error: "Invalid plan configuration" }, { status: 400 });
@@ -126,7 +122,7 @@ export async function POST(request: Request) {
         userId: auth.user.id,
         instituteId,
         webinarId: body.webinarId,
-        planId: String(plan.id),
+        planId: String(resolvedPlan.id),
         productType: "webinar_featured_listing",
         payoutEligible: "false",
       },
@@ -146,7 +142,7 @@ export async function POST(request: Request) {
       institute_id: instituteId,
       created_by: auth.user.id,
       webinar_id: body.webinarId,
-      plan_id: String(plan.id),
+      plan_id: String(resolvedPlan.id),
       amount,
       currency,
       duration_days: durationDays,
@@ -156,7 +152,8 @@ export async function POST(request: Request) {
       razorpay_receipt: order.receipt ?? receipt,
       metadata: {
         source: "webinar_featured_create_order_api",
-        tier_rank: plan.tier_rank ?? null,
+        tier_rank: resolvedPlan.tier_rank ?? null,
+        plan_resolution: planResolution.resolution,
       },
       updated_at: nowIso,
     })
@@ -170,7 +167,7 @@ export async function POST(request: Request) {
     instituteUserId: auth.user.id,
     title: "Webinar promotion payment initiated",
     message: "A Razorpay order was created for a webinar featured promotion purchase.",
-    metadata: { webinarId: body.webinarId, orderId: inserted.id, planId: String(plan.id), razorpayOrderId: order.id },
+    metadata: { webinarId: body.webinarId, orderId: inserted.id, planId: String(resolvedPlan.id), razorpayOrderId: order.id },
   });
 
   return NextResponse.json({
@@ -178,11 +175,11 @@ export async function POST(request: Request) {
     purchase: {
       id: inserted.id,
       webinarId: body.webinarId,
-      planId: String(plan.id),
+      planId: String(resolvedPlan.id),
       durationDays,
       amount,
       currency,
-      planCode: plan.plan_code ?? plan.code ?? "",
+      planCode: resolvedPlan.plan_code ?? resolvedPlan.code ?? "",
     },
   });
 }

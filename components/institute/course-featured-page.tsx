@@ -170,6 +170,7 @@ export function InstituteCourseFeaturedPageClient() {
     setMessage(null);
 
     try {
+      console.info("[course-featured/purchase] create_order_payload", { courseId, planId });
       const createResponse = await fetch("/api/institute/course-featured/create-order", {
         method: "POST",
         headers: { "content-type": "application/json" },

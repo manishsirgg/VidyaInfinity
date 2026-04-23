@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { resolveFeaturedPlan } from "@/lib/featured-plan-resolution";
 import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser, getNextCourseFeaturedWindow } from "@/lib/course-featured";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
@@ -25,28 +26,6 @@ type ExistingOrder = {
   payment_status: string;
   order_status: string;
 };
-
-type PlanRow = {
-  id: string | number;
-  plan_code: string | null;
-  code: string | null;
-  tier_rank: number | null;
-};
-
-function normalizePlanToken(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return String(value).trim().toLowerCase();
-  if (typeof value === "string") return value.trim().toLowerCase();
-  return "";
-}
-
-function resolvePlanByToken(plans: PlanRow[], token: string) {
-  const normalized = normalizePlanToken(token);
-  if (!normalized) return null;
-  return plans.find((plan) => {
-    const tokens = [plan.id, plan.plan_code, plan.code];
-    return tokens.some((item) => normalizePlanToken(item) === normalized);
-  }) ?? null;
-}
 
 function toNumber(value: unknown) {
   if (typeof value === "number") return value;
@@ -197,11 +176,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Course is no longer eligible for featuring" }, { status: 400 });
   }
 
-  const { data: planRows } = await admin.data
-    .from("course_featured_plans")
-    .select("id,plan_code,code,tier_rank")
-    .order("sort_order", { ascending: true });
-  const plan = resolvePlanByToken((planRows ?? []) as PlanRow[], existingOrder.plan_id);
+  const planResolution = await resolveFeaturedPlan({
+    admin: admin.data,
+    table: "course_featured_plans",
+    selectedPlanToken: existingOrder.plan_id,
+  });
+  const plan = planResolution.plan;
 
   const planCode = plan?.plan_code ?? plan?.code;
   if (!planCode) return NextResponse.json({ error: "Unable to resolve plan code" }, { status: 500 });
