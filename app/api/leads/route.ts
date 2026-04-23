@@ -16,11 +16,12 @@ export async function POST(request: Request) {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const source = payload.data.source?.trim() || (payload.data.leadTarget === "webinar" ? "webinar_detail_page" : "course_detail_page");
+  const leadType = payload.data.leadType ?? payload.data.leadTarget ?? "course";
+  const source = payload.data.source?.trim() || (leadType === "webinar" ? "webinar_detail_page" : "course_detail_page");
   let course: { id: string; title: string; institute_id: string } | null = null;
   let webinar: { id: string; title: string; institute_id: string } | null = null;
 
-  if (payload.data.leadTarget === "webinar") {
+  if (leadType === "webinar") {
     const { data, error: webinarError } = await admin.data
       .from("webinars")
       .select("id,title,institute_id")
@@ -68,9 +69,11 @@ export async function POST(request: Request) {
     email: payload.data.email?.trim() || null,
     phone: payload.data.phone?.trim() || null,
     message: payload.data.message?.trim() || null,
-    lead_target: payload.data.leadTarget,
-    course_id: payload.data.leadTarget === "course" ? payload.data.courseId ?? null : null,
-    webinar_id: payload.data.leadTarget === "webinar" ? payload.data.webinarId ?? null : null,
+    lead_type: leadType,
+    lead_target: leadType,
+    contact_preference: payload.data.contactPreference,
+    course_id: leadType === "course" ? payload.data.courseId ?? null : null,
+    webinar_id: leadType === "webinar" ? payload.data.webinarId ?? null : null,
     institute_id: payload.data.instituteId ?? (course?.institute_id ?? webinar?.institute_id ?? null),
     source,
     metadata: {
@@ -94,7 +97,7 @@ export async function POST(request: Request) {
       course_id: payload.data.courseId ?? null,
       webinar_id: payload.data.webinarId ?? null,
       institute_id: payload.data.instituteId ?? (course?.institute_id ?? webinar?.institute_id ?? null),
-      lead_target: payload.data.leadTarget,
+      lead_type: leadType,
       source,
       message: payload.data.message,
       contact_preference: payload.data.contactPreference,
@@ -115,7 +118,7 @@ export async function POST(request: Request) {
   const targetInstituteId = course?.institute_id ?? webinar?.institute_id ?? null;
   const targetId = course?.id ?? webinar?.id ?? null;
   const targetTitle = course?.title ?? webinar?.title ?? "listing";
-  const targetType = payload.data.leadTarget === "webinar" ? "webinar" : "course";
+  const targetType = leadType === "webinar" ? "webinar" : "course";
   if (targetInstituteId && targetId) {
     const { data: institute } = await admin.data.from("institutes").select("user_id").eq("id", targetInstituteId).maybeSingle<{ user_id: string }>();
 
@@ -157,7 +160,7 @@ export async function POST(request: Request) {
   }
 
   const integrations =
-    payload.data.leadTarget === "course" && payload.data.courseId
+    leadType === "course" && payload.data.courseId
       ? await triggerCourseLeadAutomations({
           name: payload.data.fullName,
           email: payload.data.email,

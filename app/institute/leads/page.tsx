@@ -23,12 +23,12 @@ export default async function InstituteLeadsPage() {
   const leadsResult = institute
     ? await dataClient
         .from("leads")
-        .select("id,name,email,phone,message,created_at,course_id,webinar_id,lead_target,source")
+        .select("id,name,email,phone,message,created_at,course_id,webinar_id,lead_type,lead_target,source,contact_preference")
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
     : { data: [], error: null };
   const legacyLeadsResult =
-    institute && leadsResult.error?.message?.includes("webinar_id")
+    institute && (leadsResult.error?.message?.includes("webinar_id") || leadsResult.error?.message?.includes("lead_type"))
       ? await dataClient
           .from("leads")
           .select("id,name,email,phone,message,created_at,course_id,lead_target,source")
@@ -45,8 +45,10 @@ export default async function InstituteLeadsPage() {
     created_at: string;
     course_id: string | null;
     webinar_id?: string | null;
+    lead_type?: string | null;
     lead_target?: string | null;
     source?: string | null;
+    contact_preference?: string | null;
   }>;
   const leadsError = legacyLeadsResult?.error ?? (legacyLeadsResult ? null : leadsResult.error);
 
@@ -60,8 +62,8 @@ export default async function InstituteLeadsPage() {
     : { data: [], error: null };
   const courseById = new Map((courseResult.data ?? []).map((course) => [course.id, course]));
   const webinarById = new Map((webinarResult.data ?? []).map((webinar) => [webinar.id, webinar]));
-  const courseLeads = leads.filter((lead) => (lead.lead_target ?? "course") === "course").length;
-  const webinarLeads = leads.filter((lead) => lead.lead_target === "webinar").length;
+  const courseLeads = leads.filter((lead) => (lead.lead_type ?? lead.lead_target ?? "course") === "course").length;
+  const webinarLeads = leads.filter((lead) => (lead.lead_type ?? lead.lead_target) === "webinar").length;
   const recentLeads = leads.filter((lead) => Date.now() - new Date(lead.created_at).getTime() <= 1000 * 60 * 60 * 24 * 7).length;
 
   return (
@@ -112,7 +114,7 @@ export default async function InstituteLeadsPage() {
         {leads.map((lead) => {
           const course = lead.course_id ? courseById.get(lead.course_id) : null;
           const webinar = lead.webinar_id ? webinarById.get(lead.webinar_id) : null;
-          const isWebinarLead = lead.lead_target === "webinar";
+          const isWebinarLead = (lead.lead_type ?? lead.lead_target) === "webinar";
           const targetTitle = isWebinarLead ? webinar?.title : course?.title;
 
           return (
@@ -130,6 +132,7 @@ export default async function InstituteLeadsPage() {
               </div>
             </div>
             {webinar?.starts_at ? <p className="mt-2 text-xs text-slate-500">Webinar starts: {formatDate(webinar.starts_at)}</p> : null}
+            {lead.contact_preference ? <p className="mt-2 text-xs text-slate-500">Preferred contact: {lead.contact_preference}</p> : null}
             {lead.message ? <p className="mt-3 rounded border bg-slate-50 px-3 py-2 text-sm text-slate-700">{lead.message}</p> : null}
             {lead.source ? <p className="mt-2 text-xs text-slate-500">Source: {lead.source}</p> : null}
           </article>

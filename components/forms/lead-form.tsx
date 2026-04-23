@@ -61,7 +61,7 @@ export function LeadForm({ courseId, webinarId, instituteId }: LeadFormProps) {
 
     setSubmitting(true);
 
-    const leadTarget = webinarId ? "webinar" : "course";
+    const leadType = webinarId ? "webinar" : "course";
     const payload = {
       fullName: values.name.trim(),
       email: values.email.trim() || undefined,
@@ -70,8 +70,8 @@ export function LeadForm({ courseId, webinarId, instituteId }: LeadFormProps) {
       courseId: courseId ?? undefined,
       webinarId: webinarId ?? undefined,
       instituteId,
-      leadTarget,
-      source: leadTarget === "webinar" ? "webinar_detail_page" : "course_detail_page",
+      leadType,
+      source: leadType === "webinar" ? "webinar_detail_page" : "course_detail_page",
       metadata: {
         contactPreference: values.contactPreference,
       },

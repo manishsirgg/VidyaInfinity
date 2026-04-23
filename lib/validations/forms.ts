@@ -9,13 +9,16 @@ export const leadSchema = z.object({
   instituteId: z.string().uuid().optional(),
   courseId: z.string().uuid().optional(),
   webinarId: z.string().uuid().optional(),
-  leadTarget: z.enum(["course", "webinar"]).default("course"),
+  leadType: z.enum(["course", "webinar"]).optional(),
+  leadTarget: z.enum(["course", "webinar"]).optional(),
   source: z.string().trim().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   message: z.string().max(500).optional(),
   contactPreference: leadContactPreferenceSchema,
 }).superRefine((value, ctx) => {
-  if (value.leadTarget === "course" && !value.courseId) {
+  const leadType = value.leadType ?? value.leadTarget ?? "course";
+
+  if (leadType === "course" && !value.courseId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["courseId"],
@@ -23,11 +26,27 @@ export const leadSchema = z.object({
     });
   }
 
-  if (value.leadTarget === "webinar" && !value.webinarId) {
+  if (leadType === "course" && value.webinarId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["webinarId"],
+      message: "Webinar id must be empty for course leads.",
+    });
+  }
+
+  if (leadType === "webinar" && !value.webinarId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["webinarId"],
       message: "Webinar id is required for webinar leads.",
+    });
+  }
+
+  if (leadType === "webinar" && value.courseId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["courseId"],
+      message: "Course id must be empty for webinar leads.",
     });
   }
 
