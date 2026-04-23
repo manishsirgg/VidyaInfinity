@@ -3,6 +3,8 @@
 import Script from "next/script";
 import { useState } from "react";
 
+import { shouldShowMeetingJoinWindow } from "@/lib/webinars/utils";
+
 declare global {
   interface Window {
     Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
@@ -164,7 +166,9 @@ export function WebinarActionCard({
   }
 
   const isEnrolled = enrollmentStatus === "enrolled";
-  const hasJoinAccess = isEnrolled && Boolean(secureJoinUrl) && accessState === "granted";
+  const revealWindowOpen = shouldShowMeetingJoinWindow(startsAt, endsAt ?? null);
+  const entitlementGranted = ["granted", "revealed"].includes(accessState);
+  const hasJoinAccess = isEnrolled && Boolean(secureJoinUrl) && entitlementGranted && revealWindowOpen;
   const isRevoked = String(registrationAccessStatus ?? "").toLowerCase() === "revoked" || String(registrationPaymentStatus ?? "").toLowerCase() === "refunded";
   const ctaDisabled = loading || !isLoggedIn || !enrollmentOpen || isEnrolled;
 
@@ -199,7 +203,7 @@ export function WebinarActionCard({
         </div>
       ) : null}
       {isEnrolled && !hasJoinAccess && !isRevoked ? (
-        <p className="mt-2 text-xs text-slate-600">Registration Confirmed · Join access unlocks 15 minutes before webinar starts.</p>
+        <p className="mt-2 text-xs text-slate-600">Registration: Registered · Access: Granted{!revealWindowOpen ? " · Join unlocks 15 minutes before webinar starts." : ""}</p>
       ) : null}
       {isEnrolled && !hasJoinAccess ? <p className="mt-2 text-sm text-emerald-700">Already Registered{activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}</p> : null}
 

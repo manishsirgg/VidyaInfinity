@@ -20,30 +20,41 @@ export function RefundRequestButton({
   onSuccess?: () => void;
 }) {
   const [msg, setMsg] = useState("");
+  const [isError, setIsError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [requested, setRequested] = useState(false);
 
   async function requestRefund() {
+    if (submitting || requested || disabled) return;
+
     const reason = window.prompt(`Reason for ${orderType} refund request`, "Changed plan");
-    if (!reason) return;
+    if (!reason || !reason.trim()) return;
+
     setSubmitting(true);
+    setMsg("");
+    setIsError(false);
 
     try {
       const response = await fetch(endpoint ?? "/api/refunds/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBodyBuilder ? requestBodyBuilder({ orderType, orderId, reason }) : { orderType, orderId, reason }),
+        body: JSON.stringify(requestBodyBuilder ? requestBodyBuilder({ orderType, orderId, reason: reason.trim() }) : { orderType, orderId, reason: reason.trim() }),
       });
 
-      const body = await response.json();
-      const ok = Boolean(response.ok);
-      setMsg(ok ? "Refund requested" : body.error ?? "Failed");
-      if (ok) {
-        setRequested(true);
-        onSuccess?.();
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setIsError(true);
+        setMsg(body?.error ?? "Refund request failed.");
+        return;
       }
+
+      setRequested(true);
+      setIsError(false);
+      setMsg("Refund request submitted successfully.");
+      onSuccess?.();
     } catch {
-      setMsg("Failed");
+      setIsError(true);
+      setMsg("Refund request failed.");
     } finally {
       setSubmitting(false);
     }
@@ -56,9 +67,9 @@ export function RefundRequestButton({
         onClick={requestRefund}
         disabled={disabled || submitting || requested}
       >
-        {buttonLabel}
+        {submitting ? "Submitting..." : requested ? "Refund Requested" : buttonLabel}
       </button>
-      {msg && <p className="text-xs text-slate-600">{msg}</p>}
+      {msg ? <p className={`mt-1 text-xs ${isError ? "text-rose-700" : "text-emerald-700"}`}>{msg}</p> : null}
     </div>
   );
 }
