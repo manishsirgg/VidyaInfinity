@@ -121,6 +121,8 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     initialMedia.map((item) => ({ ...item, file_url: resolveMediaUrl(item.file_url, item.storage_path) })),
   );
   const [isLoadingSavedMedia, setIsLoadingSavedMedia] = useState(false);
+  const [step, setStep] = useState(0);
+  const steps = ["Basics", "Duration", "Outcomes", "Support", "Media & review"];
 
   const computedDuration = useMemo(() => {
     if (durationValue && durationUnit) return `${durationValue} ${durationUnit}`;
@@ -403,7 +405,18 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         </p>
       </div>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <div className="rounded-lg border border-brand-100 bg-brand-50/70 p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">Step {step + 1} of {steps.length}</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {steps.map((item, index) => (
+            <button key={item} type="button" onClick={() => setStep(index)} className={`rounded-full border px-3 py-1 text-xs ${step === index ? "border-brand-300 bg-white text-brand-800" : "border-brand-100 text-slate-600"}`}>
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <section className={`space-y-3 rounded-lg border border-slate-200 p-4 ${step === 0 ? "block" : "hidden"}`}>
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Course basics</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Course title" required>
@@ -436,7 +449,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <section className={`space-y-3 rounded-lg border border-slate-200 p-4 ${step === 1 ? "block" : "hidden"}`}>
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Duration & schedule</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Duration value" required>
@@ -463,7 +476,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <section className={`space-y-3 rounded-lg border border-slate-200 p-4 ${step === 2 ? "block" : "hidden"}`}>
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Eligibility & learner outcomes</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Eligibility">
@@ -478,7 +491,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         </div>
       </section>
 
-      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+      <section className={`space-y-3 rounded-lg border border-slate-200 p-4 ${step === 3 ? "block" : "hidden"}`}>
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Certification, faculty & support</h3>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Certificate status">
@@ -511,7 +524,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         </div>
       </section>
 
-      <div className="rounded border border-slate-200 p-4">
+      <div className={`rounded border border-slate-200 p-4 ${step === 4 ? "block" : "hidden"}`}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-semibold text-slate-900">Existing media</p>
             <p className="text-xs text-slate-500">
@@ -620,7 +633,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
           ) : null}
       </div>
 
-      <div className="rounded border border-slate-200 p-4">
+      <div className={`rounded border border-slate-200 p-4 ${step === 4 ? "block" : "hidden"}`}>
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-semibold text-slate-900">Upload new media</p>
           <p className="text-xs text-slate-500">Up to {MAX_MEDIA_FILES} files per upload action</p>
@@ -694,7 +707,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         )}
       </div>
 
-      <div className="rounded border border-slate-200 bg-slate-50 p-3">
+      <div className={`rounded border border-slate-200 bg-slate-50 p-3 ${step === 4 ? "block" : "hidden"}`}>
         <p className="text-sm font-medium text-slate-800">Media summary after save</p>
         <p className="mt-1 text-xs text-slate-600">
           Existing: {currentMedia.length} • New: {newMedia.length} • Total after save: {totalMediaAfterSave}
@@ -703,6 +716,16 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
         <p className="text-xs text-slate-500">Tip: Keep your summary concise and outcomes measurable for higher conversions.</p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setStep((prev) => Math.max(0, prev - 1))} disabled={step === 0} className="rounded-md border px-4 py-2 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60">
+            Back
+          </button>
+          {step < steps.length - 1 ? (
+            <button type="button" onClick={() => setStep((prev) => Math.min(steps.length - 1, prev + 1))} className="rounded-md border border-brand-200 bg-brand-50 px-4 py-2 text-xs font-medium text-brand-700">
+              Next step
+            </button>
+          ) : null}
+        </div>
         <button type="submit" disabled={state === "submitting"} className="rounded-md bg-brand-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60">
           {state === "submitting" ? "Saving..." : submitLabel}
         </button>

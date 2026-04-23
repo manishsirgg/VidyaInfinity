@@ -16,19 +16,36 @@ export async function POST(request: Request) {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
 
-  const source = payload.data.source?.trim() || "course_detail_page";
-  const { data: course, error: courseError } = await admin.data
-    .from("courses")
-    .select("id,title,institute_id")
-    .eq("id", payload.data.courseId)
-    .maybeSingle<{ id: string; title: string; institute_id: string }>();
+  const source = payload.data.source?.trim() || (payload.data.leadTarget === "webinar" ? "webinar_detail_page" : "course_detail_page");
+  let course: { id: string; title: string; institute_id: string } | null = null;
+  let webinar: { id: string; title: string; institute_id: string } | null = null;
 
-  if (courseError) {
-    return NextResponse.json({ error: "Unable to validate the selected course right now. Please try again." }, { status: 503 });
-  }
-
-  if (!course) {
-    return NextResponse.json({ error: "The selected course could not be found." }, { status: 404 });
+  if (payload.data.leadTarget === "webinar") {
+    const { data, error: webinarError } = await admin.data
+      .from("webinars")
+      .select("id,title,institute_id")
+      .eq("id", payload.data.webinarId)
+      .maybeSingle<{ id: string; title: string; institute_id: string }>();
+    if (webinarError) {
+      return NextResponse.json({ error: "Unable to validate the selected webinar right now. Please try again." }, { status: 503 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: "The selected webinar could not be found." }, { status: 404 });
+    }
+    webinar = data;
+  } else {
+    const { data, error: courseError } = await admin.data
+      .from("courses")
+      .select("id,title,institute_id")
+      .eq("id", payload.data.courseId)
+      .maybeSingle<{ id: string; title: string; institute_id: string }>();
+    if (courseError) {
+      return NextResponse.json({ error: "Unable to validate the selected course right now. Please try again." }, { status: 503 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: "The selected course could not be found." }, { status: 404 });
+    }
+    course = data;
   }
 
   const supabase = await createClient();
@@ -52,8 +69,9 @@ export async function POST(request: Request) {
     phone: payload.data.phone?.trim() || null,
     message: payload.data.message?.trim() || null,
     lead_target: payload.data.leadTarget,
-    course_id: payload.data.courseId,
-    institute_id: payload.data.instituteId ?? course.institute_id,
+    course_id: payload.data.leadTarget === "course" ? payload.data.courseId ?? null : null,
+    webinar_id: payload.data.leadTarget === "webinar" ? payload.data.webinarId ?? null : null,
+    institute_id: payload.data.instituteId ?? (course?.institute_id ?? webinar?.institute_id ?? null),
     source,
     metadata: {
       ...(payload.data.metadata ?? {}),
@@ -73,8 +91,9 @@ export async function POST(request: Request) {
     phone: payload.data.phone?.trim() || null,
     source: "course_lead",
     metadata: {
-      course_id: payload.data.courseId,
-      institute_id: payload.data.instituteId ?? course.institute_id,
+      course_id: payload.data.courseId ?? null,
+      webinar_id: payload.data.webinarId ?? null,
+      institute_id: payload.data.instituteId ?? (course?.institute_id ?? webinar?.institute_id ?? null),
       lead_target: payload.data.leadTarget,
       source,
       message: payload.data.message,
@@ -86,15 +105,19 @@ export async function POST(request: Request) {
     console.error("Course lead CRM sync failed", {
       error: crmError.message,
       courseId: payload.data.courseId,
-      instituteId: payload.data.instituteId ?? course.institute_id,
+      instituteId: payload.data.instituteId ?? (course?.institute_id ?? webinar?.institute_id ?? null),
       source,
     });
   }
 
   const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
 
-  if (course) {
-    const { data: institute } = await admin.data.from("institutes").select("user_id").eq("id", course.institute_id).maybeSingle<{ user_id: string }>();
+  const targetInstituteId = course?.institute_id ?? webinar?.institute_id ?? null;
+  const targetId = course?.id ?? webinar?.id ?? null;
+  const targetTitle = course?.title ?? webinar?.title ?? "listing";
+  const targetType = payload.data.leadTarget === "webinar" ? "webinar" : "course";
+  if (targetInstituteId && targetId) {
+    const { data: institute } = await admin.data.from("institutes").select("user_id").eq("id", targetInstituteId).maybeSingle<{ user_id: string }>();
 
     await Promise.allSettled([
       ...(institute?.user_id
@@ -104,14 +127,14 @@ export async function POST(request: Request) {
               type: "lead",
               category: "crm_lead",
               priority: "high",
-              title: "New course lead received",
-              message: `${payload.data.fullName} submitted a new lead for ${course.title}.`,
+              title: `New ${targetType} lead received`,
+              message: `${payload.data.fullName} submitted a new lead for ${targetTitle}.`,
               targetUrl: "/institute/leads",
               actionLabel: "View leads",
-              entityType: "course",
-              entityId: course.id,
-              dedupeKey: `course-lead:${course.id}:${payload.data.email ?? payload.data.phone}`,
-              metadata: { courseId: course.id, email: payload.data.email ?? null, phone: payload.data.phone ?? null },
+              entityType: targetType,
+              entityId: targetId,
+              dedupeKey: `${targetType}-lead:${targetId}:${payload.data.email ?? payload.data.phone}`,
+              metadata: { targetId, targetType, email: payload.data.email ?? null, phone: payload.data.phone ?? null },
             }),
           ]
         : []),
@@ -122,30 +145,34 @@ export async function POST(request: Request) {
           category: "crm_lead",
           priority: "normal",
           title: "New platform lead",
-          message: `A new lead was captured for ${course.title}.`,
+          message: `A new lead was captured for ${targetTitle}.`,
           targetUrl: "/admin/crm",
           actionLabel: "Open CRM",
-          entityType: "course",
-          entityId: course.id,
-          dedupeKey: `course-lead-admin:${course.id}:${payload.data.email ?? payload.data.phone}:${row.id}`,
+          entityType: targetType,
+          entityId: targetId,
+          dedupeKey: `${targetType}-lead-admin:${targetId}:${payload.data.email ?? payload.data.phone}:${row.id}`,
         }),
       ),
     ]);
   }
 
-  const integrations = await triggerCourseLeadAutomations({
-    name: payload.data.fullName,
-    email: payload.data.email,
-    phone: payload.data.phone,
-    courseId: payload.data.courseId,
-    message: payload.data.message,
-    contactPreference: payload.data.contactPreference,
-  });
+  const integrations =
+    payload.data.leadTarget === "course" && payload.data.courseId
+      ? await triggerCourseLeadAutomations({
+          name: payload.data.fullName,
+          email: payload.data.email,
+          phone: payload.data.phone,
+          courseId: payload.data.courseId,
+          message: payload.data.message,
+          contactPreference: payload.data.contactPreference,
+        })
+      : [];
 
   const failedIntegrations = integrations.filter((integration) => !integration.ok);
   if (failedIntegrations.length > 0) {
     console.error("Course lead automation sync failed", {
       courseId: payload.data.courseId,
+      webinarId: payload.data.webinarId,
       source,
       failures: failedIntegrations,
     });

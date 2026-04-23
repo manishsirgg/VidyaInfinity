@@ -7,13 +7,30 @@ export const leadSchema = z.object({
   email: z.string().trim().optional(),
   phone: z.string().trim().optional(),
   instituteId: z.string().uuid().optional(),
-  courseId: z.string().uuid(),
+  courseId: z.string().uuid().optional(),
+  webinarId: z.string().uuid().optional(),
   leadTarget: z.enum(["course", "webinar"]).default("course"),
   source: z.string().trim().min(1).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   message: z.string().max(500).optional(),
   contactPreference: leadContactPreferenceSchema,
 }).superRefine((value, ctx) => {
+  if (value.leadTarget === "course" && !value.courseId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["courseId"],
+      message: "Course id is required for course leads.",
+    });
+  }
+
+  if (value.leadTarget === "webinar" && !value.webinarId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["webinarId"],
+      message: "Webinar id is required for webinar leads.",
+    });
+  }
+
   if (value.contactPreference === "email" || value.contactPreference === "both") {
     if (!value.email) {
       ctx.addIssue({
