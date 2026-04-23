@@ -308,8 +308,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (refund.webinar_order_id) {
       await admin.data
         .from("webinar_orders")
-        .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
+        .update({ payment_status: "refunded", order_status: "refunded", access_status: "revoked", updated_at: new Date().toISOString() })
         .eq("id", refund.webinar_order_id);
+
+      await admin.data
+        .from("webinar_registrations")
+        .update({
+          payment_status: "refunded",
+          registration_status: "cancelled",
+          access_status: "revoked",
+          access_end_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("webinar_order_id", refund.webinar_order_id);
     }
   }
 

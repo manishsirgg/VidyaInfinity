@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   } else {
     const { data: order } = await admin.data
       .from("webinar_orders")
-      .select("id,amount,payment_status,institute_id,razorpay_payment_id")
+      .select("id,amount,payment_status,order_status,institute_id,razorpay_payment_id")
       .eq("id", orderId)
       .eq("student_id", auth.user.id)
       .maybeSingle();
@@ -71,8 +71,26 @@ export async function POST(request: Request) {
     if (!REFUND_ELIGIBLE_PAYMENT_STATUSES.includes(String(order.payment_status ?? "").toLowerCase() as (typeof REFUND_ELIGIBLE_PAYMENT_STATUSES)[number])) {
       return NextResponse.json({ error: "Refund is allowed only for paid webinar orders" }, { status: 400 });
     }
+    if (String(order.order_status ?? "").toLowerCase() !== "confirmed") {
+      return NextResponse.json({ error: "Refund is allowed only for confirmed webinar orders" }, { status: 400 });
+    }
     if (String(order.payment_status ?? "").toLowerCase() === "refunded") {
       return NextResponse.json({ error: "Webinar order is already refunded" }, { status: 409 });
+    }
+
+    const { data: registration, error: registrationError } = await admin.data
+      .from("webinar_registrations")
+      .select("id,registration_status,access_status")
+      .eq("student_id", auth.user.id)
+      .eq("webinar_order_id", orderId)
+      .maybeSingle<{ id: string; registration_status: string | null; access_status: string | null }>();
+    if (registrationError) {
+      return NextResponse.json({ error: registrationError.message }, { status: 500 });
+    }
+    const registrationStatus = String(registration?.registration_status ?? "").toLowerCase();
+    const accessStatus = String(registration?.access_status ?? "").toLowerCase();
+    if (["cancelled", "canceled", "revoked"].includes(registrationStatus) || ["revoked"].includes(accessStatus)) {
+      return NextResponse.json({ error: "Refund is blocked for cancelled or revoked webinar registrations" }, { status: 409 });
     }
 
     refundAmount = Number(order.amount ?? 0);
