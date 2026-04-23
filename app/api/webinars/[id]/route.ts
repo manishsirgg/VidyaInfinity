@@ -25,7 +25,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   let hasAccess = false;
   let registration: { access_status?: string | null; payment_status?: string | null } | null = null;
-  let accessState: "granted" | "pending_reconciliation" | "none" | "revoked" | "refunded" | "locked_until_window" = "none";
+  let accessState: "no_access" | "registered_confirmed" | "locked_until_window" | "revealed" | "granted" | "refunded" | "revoked" = "no_access";
 
   if (viewer?.user?.id) {
     const [{ data: row }, resolvedAccessState] = await Promise.all([
@@ -39,7 +39,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     ]);
     registration = row ?? null;
     accessState = resolvedAccessState;
-    hasAccess = resolvedAccessState === "granted";
+    hasAccess = ["granted", "revealed"].includes(resolvedAccessState);
   }
 
   const isInstituteOwner = Boolean(viewer?.profile.role === "institute" && viewer?.user.id);

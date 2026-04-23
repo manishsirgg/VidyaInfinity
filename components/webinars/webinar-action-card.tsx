@@ -25,7 +25,7 @@ type WebinarActionCardProps = {
   secureJoinUrl: string | null;
   isStudent: boolean;
   initiallySaved?: boolean;
-  accessState?: "granted" | "pending_reconciliation" | "none" | "revoked" | "refunded" | "locked_until_window";
+  accessState?: "no_access" | "registered_confirmed" | "locked_until_window" | "revealed" | "granted" | "refunded" | "revoked";
   registrationAccessStatus?: string | null;
   registrationPaymentStatus?: string | null;
 };
@@ -46,7 +46,7 @@ export function WebinarActionCard({
   secureJoinUrl,
   isStudent,
   initiallySaved = false,
-  accessState = "none",
+  accessState = "no_access",
   registrationAccessStatus,
   registrationPaymentStatus,
 }: WebinarActionCardProps) {
@@ -181,9 +181,10 @@ export function WebinarActionCard({
           <p className="mt-1">This webinar access has been revoked due to refund/cancellation.</p>
         </div>
       ) : null}
-      {accessState === "pending_reconciliation" ? (
+      {accessState === "registered_confirmed" ? (
         <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Payment is confirmed. Access is being synchronized, please refresh shortly.
+          <p className="font-semibold">Registration Confirmed</p>
+          <p className="mt-1">Access unlocks 15 minutes before webinar starts.</p>
         </div>
       ) : null}
       {hasJoinAccess ? (
@@ -198,7 +199,7 @@ export function WebinarActionCard({
         </div>
       ) : null}
       {isEnrolled && !hasJoinAccess && !isRevoked ? (
-        <p className="mt-2 text-xs text-slate-600">Join access unlocks 15 minutes before webinar starts.</p>
+        <p className="mt-2 text-xs text-slate-600">Registration Confirmed · Join access unlocks 15 minutes before webinar starts.</p>
       ) : null}
       {isEnrolled && !hasJoinAccess ? <p className="mt-2 text-sm text-emerald-700">Already Registered{activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}</p> : null}
 
