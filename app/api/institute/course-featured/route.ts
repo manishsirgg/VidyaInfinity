@@ -60,7 +60,7 @@ export async function GET() {
   }
 
   const [plansResult, allCoursesResult, subscriptionsResult, ordersResult] = await Promise.all([
-    admin.data.from("course_featured_plans").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+    admin.data.from("course_featured_plans").select("*").or("is_active.eq.true,is_active.is.null").order("sort_order", { ascending: true }),
     admin.data.from("courses").select("id,title,category,level,status,is_active").eq("institute_id", instituteId).order("created_at", { ascending: false }),
     admin.data
       .from("course_featured_subscription_summary")

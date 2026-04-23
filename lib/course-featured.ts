@@ -10,6 +10,7 @@ export type CourseFeaturedPlan = {
   currency: string;
   isActive: boolean;
   sortOrder: number;
+  tierRank: number;
 };
 
 export type CourseFeaturedSubscription = {
@@ -77,17 +78,20 @@ function normalizeIso(value: unknown, fallbackIso: string) {
 }
 
 export function parseCourseFeaturedPlans(rows: Array<Record<string, unknown>>): CourseFeaturedPlan[] {
-  return rows.map((row) => ({
-    id: pickString(row.id),
-    code: pickString(row.plan_code ?? row.code),
-    name: pickString(row.name ?? row.plan_code ?? row.code, "Course Featured Plan"),
-    description: typeof row.description === "string" ? row.description : null,
-    durationDays: toNumber(row.duration_days),
-    amount: toNumber(row.price ?? row.amount),
-    currency: pickString(row.currency, "INR"),
-    isActive: row.is_active === null ? true : toBoolean(row.is_active),
-    sortOrder: toNumber(row.sort_order),
-  }));
+  return rows
+    .map((row) => ({
+      id: pickString(row.id),
+      code: pickString(row.plan_code ?? row.code),
+      name: pickString(row.name ?? row.plan_code ?? row.code, "Course Featured Plan"),
+      description: typeof row.description === "string" ? row.description : null,
+      durationDays: toNumber(row.duration_days),
+      amount: toNumber(row.price ?? row.amount),
+      currency: pickString(row.currency, "INR"),
+      isActive: row.is_active === null ? true : toBoolean(row.is_active),
+      sortOrder: toNumber(row.sort_order),
+      tierRank: toNumber(row.tier_rank),
+    }))
+    .filter((row) => row.id.length > 0 && row.durationDays > 0 && row.amount > 0);
 }
 
 export async function getInstituteIdForUser(admin: SupabaseClient, userId: string) {

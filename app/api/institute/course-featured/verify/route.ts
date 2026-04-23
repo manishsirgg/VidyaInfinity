@@ -29,7 +29,17 @@ type PlanRow = {
   id: string;
   plan_code: string | null;
   code: string | null;
+  tier_rank: number | null;
 };
+
+function toNumber(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
 
 export async function POST(request: Request) {
   const auth = await requireApiUser("institute");
@@ -122,12 +132,48 @@ export async function POST(request: Request) {
 
   const { data: plan } = await admin.data
     .from("course_featured_plans")
-    .select("id,plan_code,code")
+    .select("id,plan_code,code,tier_rank")
     .eq("id", existingOrder.plan_id)
     .maybeSingle<PlanRow>();
 
   const planCode = plan?.plan_code ?? plan?.code;
   if (!planCode) return NextResponse.json({ error: "Unable to resolve plan code" }, { status: 500 });
+
+  const { data: currentActiveSubscription } = await admin.data
+    .from("course_featured_subscriptions")
+    .select("id,plan_id,starts_at,ends_at,status")
+    .eq("course_id", existingOrder.course_id)
+    .eq("status", "active")
+    .lte("starts_at", nowIso)
+    .gt("ends_at", nowIso)
+    .order("ends_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; plan_id: string | null; starts_at: string; ends_at: string; status: string }>();
+
+  let window = await getNextCourseFeaturedWindow(admin.data, existingOrder.course_id, Number(existingOrder.duration_days));
+  if (currentActiveSubscription?.id && currentActiveSubscription.plan_id) {
+    const { data: currentPlan } = await admin.data
+      .from("course_featured_plans")
+      .select("id,tier_rank")
+      .eq("id", currentActiveSubscription.plan_id)
+      .maybeSingle<{ id: string; tier_rank: number | null }>();
+
+    const nextTierRank = toNumber(plan?.tier_rank);
+    const activeTierRank = toNumber(currentPlan?.tier_rank);
+    const isUpgrade = nextTierRank > activeTierRank;
+    if (isUpgrade) {
+      await admin.data
+        .from("course_featured_subscriptions")
+        .update({ status: "expired", ends_at: nowIso, updated_at: nowIso })
+        .eq("id", currentActiveSubscription.id)
+        .eq("status", "active");
+      window = {
+        startsAt: nowIso,
+        endsAt: new Date(new Date(nowIso).getTime() + Number(existingOrder.duration_days) * 24 * 60 * 60 * 1000).toISOString(),
+        queuedFromPrevious: false,
+      };
+    }
+  }
 
   const existingSubscription = await admin.data
     .from("course_featured_subscriptions")
@@ -146,7 +192,6 @@ export async function POST(request: Request) {
     });
   }
 
-  const window = await getNextCourseFeaturedWindow(admin.data, existingOrder.course_id, Number(existingOrder.duration_days));
   const status = window.queuedFromPrevious ? "scheduled" : "active";
 
   const { error: subscriptionInsertError } = await admin.data.from("course_featured_subscriptions").insert({
