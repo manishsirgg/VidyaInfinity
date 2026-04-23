@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const [{ data: registration, error: registrationError }, { data: webinar }] = await Promise.all([
       admin.data
       .from("webinar_registrations")
-      .select("id,registration_status,access_status,access_granted_at,email_sent_at,whatsapp_sent_at")
+      .select("id,registration_status,access_status,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at")
       .eq("student_id", auth.user.id)
       .eq("webinar_order_id", orderId)
       .maybeSingle<{
@@ -89,6 +89,7 @@ export async function POST(request: Request) {
         registration_status: string | null;
         access_status: string | null;
         access_granted_at: string | null;
+        reveal_started_at: string | null;
         email_sent_at: string | null;
         whatsapp_sent_at: string | null;
       }>(),
@@ -110,8 +111,13 @@ export async function POST(request: Request) {
     if (Number.isFinite(webinarStartsAt) && now >= webinarStartsAt - 30 * 60 * 1000) {
       return NextResponse.json({ error: "Refund is allowed only before 30 minutes of webinar start time." }, { status: 409 });
     }
-    if (registration?.access_granted_at || registration?.email_sent_at || registration?.whatsapp_sent_at) {
-      return NextResponse.json({ error: "Refund is blocked because access was already delivered." }, { status: 409 });
+    if (registration?.access_granted_at || registration?.reveal_started_at || registration?.email_sent_at || registration?.whatsapp_sent_at || ["granted", "revealed"].includes(accessStatus)) {
+      console.info("[api/refunds/request] webinar_refund_blocked_due_to_access_release", {
+        event: "webinar_refund_blocked_due_to_access_release",
+        student_id: auth.user.id,
+        webinar_order_id: orderId,
+      });
+      return NextResponse.json({ error: "Refunds are not available once webinar access details have been issued." }, { status: 409 });
     }
 
     refundAmount = Number(order.amount ?? 0);

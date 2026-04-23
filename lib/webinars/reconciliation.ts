@@ -40,6 +40,19 @@ export async function reconcilePaidWebinarRegistrations(supabase: SupabaseClient
     return { error: paidOrdersError.message, fixedMissingRegistration: 0, fixedPendingAccess: 0, inspectedOrders: 0 };
   }
 
+
+  const { data: refundedOrders } = await supabase
+    .from("webinar_orders")
+    .select("id,webinar_id,student_id")
+    .eq("payment_status", "refunded")
+    .returns<Array<{ id: string; webinar_id: string; student_id: string }>>();
+
+  for (const refunded of refundedOrders ?? []) {
+    await supabase
+      .from("webinar_registrations")
+      .update({ payment_status: "refunded", access_status: "revoked", updated_at: new Date().toISOString() })
+      .eq("webinar_order_id", refunded.id);
+  }
   let fixedMissingRegistration = 0;
   let fixedPendingAccess = 0;
 
@@ -125,7 +138,7 @@ export async function reconcilePaidWebinarRegistrations(supabase: SupabaseClient
         registrationId: registrationToDeliver.id,
         webinarId: order.webinar_id,
         studentId: order.student_id,
-      }).catch(() => undefined);
+      });
     }
   }
 

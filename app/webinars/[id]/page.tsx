@@ -60,7 +60,7 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
   let activeAccessEndAt: string | null = null;
   let registrationAccessStatus: string | null = null;
   let registrationPaymentStatus: string | null = null;
-  let webinarAccessState: "granted" | "pending_reconciliation" | "none" = "none";
+  let webinarAccessState: "granted" | "pending_reconciliation" | "none" | "revoked" | "refunded" | "locked_until_window" = "none";
   let isSaved = false;
   if (viewer?.user.id) {
     const [{ data: registration }, accessState, { data: savedWebinar }] = await Promise.all([
@@ -161,7 +161,7 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
           startsAt={webinar.starts_at}
           endsAt={webinar.ends_at}
           timezone={webinar.timezone}
-          joinUrl={hasAccess ? webinar.meeting_url : null}
+          secureJoinUrl={hasAccess ? `/student/webinars/${webinar.id}/join` : null}
           isStudent={viewer?.profile.role === "student"}
           initiallySaved={isSaved}
           accessState={webinarAccessState}

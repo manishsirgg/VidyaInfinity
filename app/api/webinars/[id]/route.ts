@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentUserProfile } from "@/lib/auth/get-session";
-import { shouldShowMeetingJoinWindow } from "@/lib/webinars/utils";
 import { getWebinarAccessState } from "@/lib/webinars/access-state";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -26,7 +25,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
   let hasAccess = false;
   let registration: { access_status?: string | null; payment_status?: string | null } | null = null;
-  let accessState: "granted" | "pending_reconciliation" | "none" = "none";
+  let accessState: "granted" | "pending_reconciliation" | "none" | "revoked" | "refunded" | "locked_until_window" = "none";
 
   if (viewer?.user?.id) {
     const [{ data: row }, resolvedAccessState] = await Promise.all([
@@ -49,8 +48,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     if (institute?.id === webinar.institute_id) hasAccess = true;
   }
 
-  const meetingVisible = hasAccess && shouldShowMeetingJoinWindow(webinar.starts_at, webinar.ends_at);
-  const safeMeetingUrl = meetingVisible ? webinar.meeting_url : null;
+  const meetingVisible = false;
+  const safeMeetingUrl = null;
 
   return NextResponse.json({
     webinar: {
