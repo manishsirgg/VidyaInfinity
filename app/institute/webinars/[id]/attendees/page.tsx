@@ -20,7 +20,6 @@ type AttendeeRegistrationRow = {
   joined_at: string | null;
   attended_at: string | null;
   created_at: string;
-  profiles: ProfileJoin | ProfileJoin[] | null;
 };
 
 type WebinarOrderRow = {
@@ -36,11 +35,6 @@ type WebinarRefundRow = {
 };
 
 type AttendeeTab = "all" | "eligible" | "refunded" | "attendance";
-
-function profileField(value: unknown, key: keyof ProfileJoin) {
-  if (Array.isArray(value)) return (value[0]?.[key] ?? null) as string | null;
-  return ((value as ProfileJoin | null)?.[key] ?? null) as string | null;
-}
 
 function paymentBadgeLabel(paymentStatus: string) {
   return paymentStatus === "paid" ? "Paid" : paymentStatus === "not_required" ? "Free" : paymentStatus;
@@ -118,7 +112,7 @@ export default async function WebinarAttendeesPage({ params, searchParams }: { p
 
   const { data: attendees, error: attendeesError } = await dataClient
     .from("webinar_registrations")
-    .select("id,webinar_order_id,student_id,registration_status,payment_status,access_status,registered_at,joined_at,attended_at,created_at,profiles(full_name,email,phone)")
+    .select("id,webinar_order_id,student_id,registration_status,payment_status,access_status,registered_at,joined_at,attended_at,created_at")
     .eq("webinar_id", id)
     .order("registered_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
@@ -134,6 +128,30 @@ export default async function WebinarAttendeesPage({ params, searchParams }: { p
   }
 
   const rows = (attendees ?? []) as AttendeeRegistrationRow[];
+  const studentIds = [...new Set(rows.map((row) => row.student_id).filter(Boolean))];
+  const { data: profileRows, error: profileError } = studentIds.length
+    ? await dataClient.from("profiles").select("id,full_name,email,phone").in("id", studentIds)
+    : { data: [] as Array<{ id: string; full_name: string | null; email: string | null; phone: string | null }>, error: null };
+
+  if (profileError) {
+    console.error("[institute/webinars/attendees] profile_lookup_failed", {
+      event: "profile_lookup_failed",
+      webinar_id: id,
+      error: profileError.message,
+      code: profileError.code ?? null,
+    });
+  }
+
+  const profileByStudentId = new Map(
+    (profileRows ?? []).map((profile) => [
+      profile.id,
+      {
+        full_name: profile.full_name,
+        email: profile.email,
+        phone: profile.phone,
+      } satisfies ProfileJoin,
+    ]),
+  );
 
   const webinarOrderIds = [...new Set(rows.map((row) => row.webinar_order_id).filter((value): value is string => Boolean(value)))];
 
@@ -168,9 +186,9 @@ export default async function WebinarAttendeesPage({ params, searchParams }: { p
 
     return {
       ...row,
-      displayName: profileField(row.profiles, "full_name") ?? profileField(row.profiles, "email") ?? "Student",
-      email: profileField(row.profiles, "email") ?? "-",
-      phone: profileField(row.profiles, "phone") ?? "-",
+      displayName: profileByStudentId.get(row.student_id)?.full_name ?? profileByStudentId.get(row.student_id)?.email ?? "Student",
+      email: profileByStudentId.get(row.student_id)?.email ?? "-",
+      phone: profileByStudentId.get(row.student_id)?.phone ?? "-",
       registeredAt: toDateTimeLabel(row.registered_at ?? row.created_at),
       joinedAt: row.joined_at ? toDateTimeLabel(row.joined_at) : "-",
       attendedAt: row.attended_at ? toDateTimeLabel(row.attended_at) : "-",
