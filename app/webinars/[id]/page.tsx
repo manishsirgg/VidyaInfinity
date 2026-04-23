@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { LeadForm } from "@/components/forms/lead-form";
 import { WebinarActionCard } from "@/components/webinars/webinar-action-card";
 import { getCurrentUserProfile } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -29,6 +30,7 @@ type WebinarRecord = {
   is_public: boolean | null;
   max_attendees: number | null;
   institutes: { name?: string | null } | Array<{ name?: string | null }> | null;
+  institute_id: string;
 };
 
 function instituteName(value: WebinarRecord["institutes"]) {
@@ -48,7 +50,7 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
 
   const { data: webinar } = await dataClient
     .from("webinars")
-    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,meeting_provider,faculty_name,faculty_bio,banner_url,thumbnail_url,approval_status,status,is_public,max_attendees,institutes(name)")
+    .select("id,title,description,starts_at,ends_at,timezone,webinar_mode,price,currency,meeting_url,meeting_provider,faculty_name,faculty_bio,banner_url,thumbnail_url,approval_status,status,is_public,max_attendees,institute_id,institutes(name)")
     .eq("id", id)
     .eq("approval_status", "approved")
     .eq("is_public", true)
@@ -169,6 +171,13 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
           registrationPaymentStatus={registrationPaymentStatus}
         />
       </div>
+      <section className="mt-6 rounded-xl border bg-white p-5">
+        <h2 className="text-lg font-semibold text-slate-900">Interested in this webinar?</h2>
+        <p className="mt-1 text-sm text-slate-600">Submit your details and the institute will get back to you.</p>
+        <div className="mt-4">
+          <LeadForm webinarId={webinar.id} instituteId={webinar.institute_id} />
+        </div>
+      </section>
     </div>
   );
 }

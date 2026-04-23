@@ -163,20 +163,50 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
   }));
 
   const instituteId = "id" in institute ? institute.id : null;
+  const loadInstituteCourses = async () => {
+    if (!instituteId) return { data: [] as Array<{ id: string; title: string; summary: string | null; fees: number | null; duration: string | null; slug?: string | null }>, error: null };
+
+    const withSlug = await admin.data
+      .from("courses")
+      .select("id,title,summary,fees,duration,slug")
+      .eq("institute_id", instituteId)
+      .eq("status", "approved")
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
+      .limit(6);
+
+    if (!withSlug.error) return withSlug;
+
+    const withoutSlug = await admin.data
+      .from("courses")
+      .select("id,title,summary,fees,duration")
+      .eq("institute_id", instituteId)
+      .eq("status", "approved")
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
+      .limit(6);
+
+    if (!withoutSlug.error) return withoutSlug;
+
+    return admin.data
+      .from("courses")
+      .select("id,title,summary,fees,duration")
+      .eq("institute_id", instituteId)
+      .eq("approval_status", "approved")
+      .eq("is_deleted", false)
+      .order("created_at", { ascending: false })
+      .limit(6);
+  };
+
   const [courses, webinars] = instituteId
     ? await Promise.all([
-        admin.data
-          .from("courses")
-          .select("id,title,summary,fees,duration,slug")
-          .eq("institute_id", instituteId)
-          .eq("status", "approved")
-          .order("created_at", { ascending: false })
-          .limit(6),
+        loadInstituteCourses(),
         admin.data
           .from("webinars")
           .select("id,title,description,starts_at,webinar_mode,price,currency")
           .eq("institute_id", instituteId)
           .eq("approval_status", "approved")
+          .eq("is_deleted", false)
           .order("starts_at", { ascending: true })
           .limit(6),
       ])
@@ -244,7 +274,11 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {(courses.data ?? []).map((course) => (
-              <Link key={course.id} href={`/courses/${course.slug ?? course.id}`} className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm">
+              <Link
+                key={course.id}
+                href={`/courses/${"slug" in course && course.slug ? course.slug : course.id}`}
+                className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm"
+              >
                 <p className="line-clamp-2 font-semibold text-slate-900">{course.title}</p>
                 <p className="mt-1 line-clamp-2 text-sm text-slate-600">{course.summary ?? "Explore this course for detailed curriculum and outcomes."}</p>
                 <p className="mt-3 text-xs text-slate-500">₹{Number(course.fees ?? 0)} · {course.duration ?? "Flexible duration"}</p>

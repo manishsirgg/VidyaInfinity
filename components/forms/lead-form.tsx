@@ -14,7 +14,11 @@ const contactOptions = [
 
 type ContactPreference = (typeof contactOptions)[number]["value"];
 
-export function LeadForm({ courseId, instituteId }: { courseId: string; instituteId?: string }) {
+type LeadFormProps =
+  | { courseId: string; instituteId?: string; webinarId?: never }
+  | { webinarId: string; instituteId?: string; courseId?: never };
+
+export function LeadForm({ courseId, webinarId, instituteId }: LeadFormProps) {
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -57,15 +61,17 @@ export function LeadForm({ courseId, instituteId }: { courseId: string; institut
 
     setSubmitting(true);
 
+    const leadTarget = webinarId ? "webinar" : "course";
     const payload = {
       fullName: values.name.trim(),
       email: values.email.trim() || undefined,
       phone: values.phone.trim() || undefined,
       message: values.message.trim() || null,
-      courseId,
+      courseId: courseId ?? undefined,
+      webinarId: webinarId ?? undefined,
       instituteId,
-      leadTarget: "course" as const,
-      source: "course_detail_page",
+      leadTarget,
+      source: leadTarget === "webinar" ? "webinar_detail_page" : "course_detail_page",
       metadata: {
         contactPreference: values.contactPreference,
       },
