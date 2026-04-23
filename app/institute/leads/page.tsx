@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -48,9 +46,6 @@ export default async function InstituteLeadsPage() {
             Review and follow up with students who submitted inquiries for your courses.
           </p>
         </div>
-        <Link href="/institute/dashboard" className="rounded border bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
-          Back to dashboard
-        </Link>
       </div>
 
       {instituteError ? (

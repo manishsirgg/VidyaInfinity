@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { FormFeedback } from "@/components/shared/form-feedback";
@@ -78,6 +78,31 @@ type Props = {
   initialCourse?: InstituteCourseRecord;
   initialMedia?: InstituteCourseMedia[];
 };
+
+function Field({
+  label,
+  helper,
+  required,
+  children,
+  className = "",
+}: {
+  label: string;
+  helper?: string;
+  required?: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <label className={`space-y-1.5 ${className}`}>
+      <span className="text-sm font-medium text-slate-700">
+        {label}
+        {required ? <span className="ml-1 text-rose-600">*</span> : null}
+      </span>
+      {children}
+      {helper ? <span className="block text-xs text-slate-500">{helper}</span> : null}
+    </label>
+  );
+}
 
 export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, successMessage, submitLabel, initialCourse, initialMedia = [] }: Props) {
   const router = useRouter();
@@ -363,42 +388,122 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
   const totalMediaAfterSave = currentMedia.length + newMedia.length;
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4 rounded border bg-white p-4 md:p-6">
-      <div>
-        <h2 className="text-lg font-semibold">{pageTitle}</h2>
+    <form onSubmit={onSubmit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+      <div className="rounded-lg border border-brand-100 bg-brand-50/60 p-4">
+        <h2 className="text-xl font-semibold text-slate-900">{pageTitle}</h2>
         <p className="mt-1 text-sm text-slate-600">All edits are sent for moderation approval.</p>
+        <p className="mt-2 text-xs text-slate-500">
+          Fields marked with <span className="text-rose-600">*</span> are required.
+        </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <input name="title" required defaultValue={initialCourse?.title ?? ""} placeholder="Course title" className="rounded border px-3 py-2" />
-        <input name="summary" defaultValue={initialCourse?.summary ?? ""} placeholder="Short summary" className="rounded border px-3 py-2" />
-        <textarea name="description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" className="min-h-28 rounded border px-3 py-2 md:col-span-2" />
-        <input name="category" defaultValue={initialCourse?.category ?? ""} placeholder="Category" className="rounded border px-3 py-2" />
-        <input name="subject" defaultValue={initialCourse?.subject ?? ""} placeholder="Subject" className="rounded border px-3 py-2" />
-        <select name="level" defaultValue={initialCourse?.level ?? ""} className="rounded border px-3 py-2"><option value="">Level</option>{LEVEL_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
-        <input name="language" defaultValue={initialCourse?.language ?? ""} placeholder="Language" className="rounded border px-3 py-2" />
-        <input name="fees" type="number" min={0} required defaultValue={initialCourse?.fees ?? 0} placeholder="Fees" className="rounded border px-3 py-2" />
-        <select name="mode" required defaultValue={initialCourse?.mode ?? ""} className="rounded border px-3 py-2"><option value="">Mode</option>{COURSE_MODE_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
-        <input name="durationValue" required type="number" min={1} value={durationValue} onChange={(event) => setDurationValue(event.target.value)} placeholder="Duration value" className="rounded border px-3 py-2" />
-        <select name="durationUnit" required value={durationUnit} onChange={(event) => setDurationUnit(event.target.value)} className="rounded border px-3 py-2"><option value="">Duration unit</option>{DURATION_UNITS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
-        <input name="location" defaultValue={initialCourse?.location ?? ""} placeholder="Location" className="rounded border px-3 py-2" />
-        <input name="schedule" defaultValue={initialCourse?.schedule ?? ""} placeholder="Schedule" className="rounded border px-3 py-2" />
-        <input name="admissionDeadline" type="date" defaultValue={initialCourse?.admission_deadline ?? ""} className="rounded border px-3 py-2" />
-        <input name="startDate" type="date" defaultValue={initialCourse?.start_date ?? ""} className="rounded border px-3 py-2" />
-        <input name="endDate" type="date" defaultValue={initialCourse?.end_date ?? ""} className="rounded border px-3 py-2" />
-        <textarea name="eligibility" defaultValue={initialCourse?.eligibility ?? ""} placeholder="Eligibility" className="min-h-20 rounded border px-3 py-2" />
-        <textarea name="learningOutcomes" defaultValue={initialCourse?.learning_outcomes ?? ""} placeholder="Learning outcomes" className="min-h-20 rounded border px-3 py-2" />
-        <textarea name="targetAudience" defaultValue={initialCourse?.target_audience ?? ""} placeholder="Target audience" className="min-h-20 rounded border px-3 py-2 md:col-span-2" />
-        <select name="certificateStatus" defaultValue={initialCourse?.certificate_status ?? ""} className="rounded border px-3 py-2"><option value="">Certificate status</option>{CERTIFICATE_STATUS_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
-        <input name="certificateDetails" defaultValue={initialCourse?.certificate_details ?? ""} placeholder="Certificate details" className="rounded border px-3 py-2" />
-        <input name="batchSize" type="number" min={0} defaultValue={initialCourse?.batch_size ?? ""} placeholder="Batch size" className="rounded border px-3 py-2" />
-        <select name="placementSupport" defaultValue={initialCourse?.placement_support === null ? "" : String(initialCourse?.placement_support)} className="rounded border px-3 py-2"><option value="">Placement support</option><option value="true">Yes</option><option value="false">No</option></select>
-        <select name="internshipSupport" defaultValue={initialCourse?.internship_support === null ? "" : String(initialCourse?.internship_support)} className="rounded border px-3 py-2"><option value="">Internship support</option><option value="true">Yes</option><option value="false">No</option></select>
-        <input name="facultyName" defaultValue={initialCourse?.faculty_name ?? ""} placeholder="Faculty name" className="rounded border px-3 py-2" />
-        <input name="facultyQualification" defaultValue={initialCourse?.faculty_qualification ?? ""} placeholder="Faculty qualification" className="rounded border px-3 py-2" />
-        <input name="supportEmail" type="email" defaultValue={initialCourse?.support_email ?? ""} placeholder="Support email" className="rounded border px-3 py-2" />
-        <input name="supportPhone" defaultValue={initialCourse?.support_phone ?? ""} placeholder="Support phone" className="rounded border px-3 py-2" />
-      </div>
+      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Course basics</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Course title" required>
+            <input name="title" required defaultValue={initialCourse?.title ?? ""} placeholder="e.g. Full Stack Web Development" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Short summary">
+            <input name="summary" defaultValue={initialCourse?.summary ?? ""} placeholder="A quick one-line course pitch" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Description" className="md:col-span-2" helper={`Word count: ${descriptionWords}/3000`}>
+            <textarea name="description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Explain what this course covers, learning flow, and outcomes." className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Category">
+            <input name="category" defaultValue={initialCourse?.category ?? ""} placeholder="e.g. Technology" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Subject">
+            <input name="subject" defaultValue={initialCourse?.subject ?? ""} placeholder="e.g. Data Science" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Level">
+            <select name="level" defaultValue={initialCourse?.level ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"><option value="">Select level</option>{LEVEL_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+          </Field>
+          <Field label="Language">
+            <input name="language" defaultValue={initialCourse?.language ?? ""} placeholder="e.g. English" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Fees" required helper="Enter total amount in INR.">
+            <input name="fees" type="number" min={0} required defaultValue={initialCourse?.fees ?? 0} placeholder="0" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Mode" required>
+            <select name="mode" required defaultValue={initialCourse?.mode ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"><option value="">Select mode</option>{COURSE_MODE_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+          </Field>
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Duration & schedule</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Duration value" required>
+            <input name="durationValue" required type="number" min={1} value={durationValue} onChange={(event) => setDurationValue(event.target.value)} placeholder="e.g. 12" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Duration unit" required helper={computedDuration ? `Combined duration: ${computedDuration}` : undefined}>
+            <select name="durationUnit" required value={durationUnit} onChange={(event) => setDurationUnit(event.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"><option value="">Select duration unit</option>{DURATION_UNITS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+          </Field>
+          <Field label="Location">
+            <input name="location" defaultValue={initialCourse?.location ?? ""} placeholder="Online / City / Campus" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Schedule">
+            <input name="schedule" defaultValue={initialCourse?.schedule ?? ""} placeholder="Weekend, evening, weekdays..." className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Admission deadline">
+            <input name="admissionDeadline" type="date" defaultValue={initialCourse?.admission_deadline ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Start date">
+            <input name="startDate" type="date" defaultValue={initialCourse?.start_date ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="End date">
+            <input name="endDate" type="date" defaultValue={initialCourse?.end_date ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Eligibility & learner outcomes</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Eligibility">
+            <textarea name="eligibility" defaultValue={initialCourse?.eligibility ?? ""} placeholder="Prerequisites students should meet." className="min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Learning outcomes">
+            <textarea name="learningOutcomes" defaultValue={initialCourse?.learning_outcomes ?? ""} placeholder="What students can do after completing this course." className="min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Target audience" className="md:col-span-2">
+            <textarea name="targetAudience" defaultValue={initialCourse?.target_audience ?? ""} placeholder="Who should enroll in this course?" className="min-h-20 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-lg border border-slate-200 p-4">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Certification, faculty & support</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Certificate status">
+            <select name="certificateStatus" defaultValue={initialCourse?.certificate_status ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"><option value="">Select certificate status</option>{CERTIFICATE_STATUS_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+          </Field>
+          <Field label="Certificate details">
+            <input name="certificateDetails" defaultValue={initialCourse?.certificate_details ?? ""} placeholder="Issuing body, validity, etc." className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Batch size">
+            <input name="batchSize" type="number" min={0} defaultValue={initialCourse?.batch_size ?? ""} placeholder="e.g. 40" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Placement support">
+            <select name="placementSupport" defaultValue={initialCourse?.placement_support === null ? "" : String(initialCourse?.placement_support)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"><option value="">Select</option><option value="true">Yes</option><option value="false">No</option></select>
+          </Field>
+          <Field label="Internship support">
+            <select name="internshipSupport" defaultValue={initialCourse?.internship_support === null ? "" : String(initialCourse?.internship_support)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"><option value="">Select</option><option value="true">Yes</option><option value="false">No</option></select>
+          </Field>
+          <Field label="Faculty name">
+            <input name="facultyName" defaultValue={initialCourse?.faculty_name ?? ""} placeholder="Name of lead faculty" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Faculty qualification">
+            <input name="facultyQualification" defaultValue={initialCourse?.faculty_qualification ?? ""} placeholder="e.g. PhD, Industry experience" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Support email">
+            <input name="supportEmail" type="email" defaultValue={initialCourse?.support_email ?? ""} placeholder="help@yourinstitute.com" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+          <Field label="Support phone">
+            <input name="supportPhone" defaultValue={initialCourse?.support_phone ?? ""} placeholder="+91..." className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          </Field>
+        </div>
+      </section>
 
       <div className="rounded border border-slate-200 p-4">
           <div className="flex items-center justify-between gap-2">
@@ -590,9 +695,12 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         </p>
       </div>
 
-      <button type="submit" disabled={state === "submitting"} className="rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-60">
-        {state === "submitting" ? "Saving..." : submitLabel}
-      </button>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+        <p className="text-xs text-slate-500">Tip: Keep your summary concise and outcomes measurable for higher conversions.</p>
+        <button type="submit" disabled={state === "submitting"} className="rounded-md bg-brand-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60">
+          {state === "submitting" ? "Saving..." : submitLabel}
+        </button>
+      </div>
 
       {state === "success" && message ? <FormFeedback tone="success">{message}</FormFeedback> : null}
       {state === "error" && error ? <FormFeedback tone="error">{error}</FormFeedback> : null}
