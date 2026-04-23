@@ -479,8 +479,8 @@ export default async function StudentDashboardPage() {
                   </p>
                   <p className="text-slate-700">Access: {toTitleCase(item.access_status)} · Payment: {toTitleCase(item.payment_status)}</p>
                   <p className="text-slate-700">Provider: {webinar?.meeting_provider ?? "N/A"} · Institute: {extractInstituteName(webinar?.institutes) ?? "N/A"}</p>
-                  {item.access_status === "granted" && webinar?.meeting_url ? (
-                    <a href={webinar.meeting_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white">
+                  {item.access_status === "granted" ? (
+                    <a href={`/student/webinars/${item.webinar_id}/join`} className="mt-2 inline-flex rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white">
                       Join Webinar
                     </a>
                   ) : null}
@@ -508,8 +508,8 @@ export default async function StudentDashboardPage() {
                   </p>
                   <p className="text-slate-700">Payment: {toTitleCase(item.payment_status ?? "pending")} · Amount: ₹{item.amount ?? 0}</p>
                   <p className="text-slate-700">Provider: {webinar?.meeting_provider ?? "N/A"} · Institute: {extractInstituteName(webinar?.institutes) ?? "N/A"}</p>
-                  {(item.payment_status ?? "").toLowerCase() === "paid" && webinar?.meeting_url ? (
-                    <a href={webinar.meeting_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white">
+                  {(item.payment_status ?? "").toLowerCase() === "paid" ? (
+                    <a href={`/student/webinars/${item.webinar_id}/join`} className="mt-2 inline-flex rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white">
                       Join Webinar
                     </a>
                   ) : null}

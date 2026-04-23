@@ -22,10 +22,10 @@ type WebinarActionCardProps = {
   startsAt: string;
   endsAt?: string | null;
   timezone?: string | null;
-  joinUrl: string | null;
+  secureJoinUrl: string | null;
   isStudent: boolean;
   initiallySaved?: boolean;
-  accessState?: "granted" | "pending_reconciliation" | "none";
+  accessState?: "granted" | "pending_reconciliation" | "none" | "revoked" | "refunded" | "locked_until_window";
   registrationAccessStatus?: string | null;
   registrationPaymentStatus?: string | null;
 };
@@ -43,7 +43,7 @@ export function WebinarActionCard({
   startsAt,
   endsAt,
   timezone,
-  joinUrl,
+  secureJoinUrl,
   isStudent,
   initiallySaved = false,
   accessState = "none",
@@ -164,7 +164,7 @@ export function WebinarActionCard({
   }
 
   const isEnrolled = enrollmentStatus === "enrolled";
-  const hasJoinAccess = isEnrolled && Boolean(joinUrl);
+  const hasJoinAccess = isEnrolled && Boolean(secureJoinUrl) && accessState === "granted";
   const isRevoked = String(registrationAccessStatus ?? "").toLowerCase() === "revoked" || String(registrationPaymentStatus ?? "").toLowerCase() === "refunded";
   const ctaDisabled = loading || !isLoggedIn || !enrollmentOpen || isEnrolled;
 
@@ -189,16 +189,16 @@ export function WebinarActionCard({
       {hasJoinAccess ? (
         <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
           <p className="font-semibold">Access Granted</p>
-          <p className="mt-1">Webinar link unlocked.</p>
+          <p className="mt-1">Secure join is unlocked.</p>
           <p className="mt-1">Date: {new Date(startsAt).toLocaleDateString()}</p>
           <p className="mt-1">Time: {new Date(startsAt).toLocaleTimeString()} {endsAt ? `- ${new Date(endsAt).toLocaleTimeString()}` : ""}</p>
           <p className="mt-1">Timezone: {timezone ?? "Asia/Kolkata"}</p>
-          <a href={joinUrl!} target="_blank" rel="noreferrer" className="mt-3 inline-flex w-full items-center justify-center rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white">Join Webinar</a>
+          <a href={secureJoinUrl!} className="mt-3 inline-flex w-full items-center justify-center rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white">Join Webinar</a>
           <p className="mt-2 text-xs">Link also sent to your WhatsApp and email.</p>
         </div>
       ) : null}
       {isEnrolled && !hasJoinAccess && !isRevoked ? (
-        <p className="mt-2 text-xs text-slate-600">Access will be unlocked 15 minutes before webinar starts.</p>
+        <p className="mt-2 text-xs text-slate-600">Join access unlocks 15 minutes before webinar starts.</p>
       ) : null}
       {isEnrolled && !hasJoinAccess ? <p className="mt-2 text-sm text-emerald-700">Already Registered{activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}</p> : null}
 

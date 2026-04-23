@@ -22,8 +22,7 @@ type WebinarRegistrationRow = {
         ends_at: string | null;
         timezone: string | null;
         webinar_mode: string | null;
-        meeting_url: string | null;
-        meeting_provider: string | null;
+              meeting_provider: string | null;
         institutes: { name: string | null } | { name: string | null }[] | null;
       }
     | {
@@ -32,8 +31,7 @@ type WebinarRegistrationRow = {
         ends_at: string | null;
         timezone: string | null;
         webinar_mode: string | null;
-        meeting_url: string | null;
-        meeting_provider: string | null;
+              meeting_provider: string | null;
         institutes: { name: string | null } | { name: string | null }[] | null;
       }[]
     | null;
@@ -53,8 +51,7 @@ type WebinarOrderRow = {
         ends_at: string | null;
         timezone: string | null;
         webinar_mode: string | null;
-        meeting_url: string | null;
-        meeting_provider: string | null;
+              meeting_provider: string | null;
         institutes: { name: string | null } | { name: string | null }[] | null;
       }
     | {
@@ -63,8 +60,7 @@ type WebinarOrderRow = {
         ends_at: string | null;
         timezone: string | null;
         webinar_mode: string | null;
-        meeting_url: string | null;
-        meeting_provider: string | null;
+              meeting_provider: string | null;
         institutes: { name: string | null } | { name: string | null }[] | null;
       }[]
     | null;
@@ -79,7 +75,6 @@ type CombinedWebinarAccess = {
   ends_at: string | null;
   timezone: string | null;
   webinar_mode: string;
-  meeting_url: string | null;
   meeting_provider: string | null;
   institute_name: string | null;
   registration_status: string;
@@ -141,13 +136,13 @@ export default async function StudentWebinarRegistrationsPage({
   const [registrationResult, paidOrdersResult] = await Promise.all([
     dataClient
       .from("webinar_registrations")
-      .select("id,webinar_id,webinar_order_id,created_at,registered_at,registration_status,payment_status,access_status,webinars(title,starts_at,ends_at,timezone,webinar_mode,meeting_provider,meeting_url,institutes(name))")
+      .select("id,webinar_id,webinar_order_id,created_at,registered_at,registration_status,payment_status,access_status,webinars(title,starts_at,ends_at,timezone,webinar_mode,meeting_provider,institutes(name))")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .returns<WebinarRegistrationRow[]>(),
     dataClient
       .from("webinar_orders")
-      .select("id,webinar_id,payment_status,paid_at,created_at,access_status,webinars(title,starts_at,ends_at,timezone,webinar_mode,meeting_provider,meeting_url,institutes(name))")
+      .select("id,webinar_id,payment_status,paid_at,created_at,access_status,webinars(title,starts_at,ends_at,timezone,webinar_mode,meeting_provider,institutes(name))")
       .eq("student_id", user.id)
       .eq("payment_status", "paid")
       .order("created_at", { ascending: false })
@@ -171,7 +166,6 @@ export default async function StudentWebinarRegistrationsPage({
       ends_at: webinar?.ends_at ?? null,
       timezone: webinar?.timezone ?? "Asia/Kolkata",
       webinar_mode: webinar?.webinar_mode ?? (row.payment_status === "paid" ? "paid" : "free"),
-      meeting_url: webinar?.meeting_url ?? null,
       meeting_provider: webinar?.meeting_provider ?? null,
       institute_name: institute?.name ?? null,
       registration_status: row.registration_status,
@@ -195,7 +189,6 @@ export default async function StudentWebinarRegistrationsPage({
       ends_at: webinar?.ends_at ?? null,
       timezone: webinar?.timezone ?? "Asia/Kolkata",
       webinar_mode: webinar?.webinar_mode ?? "paid",
-      meeting_url: webinar?.meeting_url ?? null,
       meeting_provider: webinar?.meeting_provider ?? null,
       institute_name: institute?.name ?? null,
       registration_status: "registered",
@@ -265,16 +258,15 @@ export default async function StudentWebinarRegistrationsPage({
               <p className="text-slate-700">Institute: {item.institute_name ?? "N/A"}</p>
               <p className="text-slate-700">Registration: {toLabel(item.registration_status)} · Payment: {toLabel(item.payment_status)} · Access: {toLabel(item.access_status)}</p>
               {item.access_status === "granted" ? <p className="text-slate-700">Status: {webinarLifecycleLabel(item.starts_at, item.ends_at)} · Access Granted</p> : null}
-              {item.access_status === "granted" && item.meeting_url ? (
+              {item.access_status === "granted" ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <a href={item.meeting_url} target="_blank" rel="noreferrer" className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white">
+                  <a href={`/student/webinars/${item.webinar_id}/join`} className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white">
                     Join Webinar
                   </a>
-                  <a href={item.meeting_url} target="_blank" rel="noreferrer" className="text-xs text-brand-700 underline">
-                    {item.meeting_url}
-                  </a>
                 </div>
-              ) : null}
+              ) : (
+                <p className="mt-2 text-xs text-slate-600">Join access unlocks 15 minutes before webinar starts.</p>
+              )}
               <p className="text-xs text-slate-500">Webinar ID: {item.webinar_id}</p>
             </div>
           ))}

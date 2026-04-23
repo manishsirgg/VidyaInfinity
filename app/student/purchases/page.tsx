@@ -79,16 +79,14 @@ type WebinarPurchase = {
     | {
         title: string | null;
         starts_at: string | null;
-        meeting_url: string | null;
-        webinar_mode: string | null;
+                webinar_mode: string | null;
         meeting_provider: string | null;
         institutes: { name: string | null } | { name: string | null }[] | null;
       }
     | {
         title: string | null;
         starts_at: string | null;
-        meeting_url: string | null;
-        webinar_mode: string | null;
+                webinar_mode: string | null;
         meeting_provider: string | null;
         institutes: { name: string | null } | { name: string | null }[] | null;
       }[]
@@ -203,7 +201,7 @@ export default async function Page({
     dataClient
       .from("webinar_orders")
       .select(
-        "id,webinar_id,amount,currency,payment_status,paid_at,order_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_start_at,access_end_at,access_granted_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,meeting_url,webinar_mode,meeting_provider,institutes(name))",
+        "id,webinar_id,amount,currency,payment_status,paid_at,order_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_start_at,access_end_at,access_granted_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))",
       )
       .eq("student_id", user.id)
       .order("created_at", { ascending: false }),
@@ -397,7 +395,6 @@ export default async function Page({
                 const institute = webinarJoin(webinar?.institutes);
                 const startsAt = webinar?.starts_at ?? webinarDetails.get(order.webinar_id)?.startsAt ?? null;
                 const webinarMode = webinar?.webinar_mode ?? webinarDetails.get(order.webinar_id)?.webinarMode ?? null;
-                const webinarMeetingUrl = webinar?.meeting_url ?? null;
                 const refund = webinarRefundByOrderId.get(order.id);
                 if (purchaseKind === "webinar-refunds" && !refund) return null;
 
@@ -407,7 +404,7 @@ export default async function Page({
                   registration?.access_status === "granted" ? "granted" : hasPaidOrder ? "processing" : "locked";
                 const revealWindowAt = startsAt ? new Date(startsAt).getTime() - 15 * 60 * 1000 : Number.NaN;
                 const revealWindowReached = Number.isFinite(revealWindowAt) ? Date.now() >= revealWindowAt : false;
-                const canJoin = accessStatus === "granted" && revealWindowReached && Boolean(webinarMeetingUrl);
+                const canJoin = accessStatus === "granted" && revealWindowReached;
                 const refundBlockedByExistingState = refund ? ["requested", "processing", "refunded"].includes(refund.refund_status) : false;
                 const isRefundBlockedByOrder = !isConfirmedPayment(order.payment_status, order.paid_at) || String(order.order_status ?? "").toLowerCase() !== "confirmed";
                 const isRefundBlockedByRegistration = registration
@@ -444,7 +441,7 @@ export default async function Page({
                     {accessRevoked ? <p className="mt-2 text-xs text-rose-700">Access Revoked</p> : null}
                     {canJoin ? (
                       <div className="mt-2">
-                        <a href={webinarMeetingUrl ?? "#"} target="_blank" rel="noreferrer" className="inline-flex rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white">
+                        <a href={`/student/webinars/${order.webinar_id}/join`} className="inline-flex rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white">
                           Join Webinar
                         </a>
                       </div>
