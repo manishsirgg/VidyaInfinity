@@ -6,9 +6,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { toDateTimeLabel } from "@/lib/webinars/utils";
 
-function profileField(value: unknown, key: "full_name" | "email") {
-  if (Array.isArray(value)) return ((value[0] as { full_name?: string; email?: string } | undefined)?.[key] ?? null);
-  return ((value as { full_name?: string; email?: string } | null)?.[key] ?? null);
+function profileField(value: unknown, key: "full_name" | "email" | "phone") {
+  if (Array.isArray(value)) return ((value[0] as { full_name?: string; email?: string; phone?: string } | undefined)?.[key] ?? null);
+  return ((value as { full_name?: string; email?: string; phone?: string } | null)?.[key] ?? null);
 }
 
 export default async function WebinarAttendeesPage({ params }: { params: Promise<{ id: string }> }) {
@@ -26,27 +26,36 @@ export default async function WebinarAttendeesPage({ params }: { params: Promise
 
   const { data: attendees } = await dataClient
     .from("webinar_registrations")
-    .select("id,registration_status,payment_status,access_status,joined_at,left_at,attended_at,profiles!webinar_registrations_student_id_fkey(full_name,email)")
+    .select("id,student_id,registration_status,payment_status,access_status,registered_at,joined_at,left_at,attended_at,created_at,profiles!webinar_registrations_student_id_fkey(full_name,email,phone)")
     .eq("webinar_id", id)
     .order("created_at", { ascending: false });
+
+  const attendeeRows = (attendees ?? []).map((row) => ({
+    ...row,
+    displayName: profileField(row.profiles, "full_name") ?? profileField(row.profiles, "email") ?? "Student",
+    email: profileField(row.profiles, "email") ?? "-",
+    phone: profileField(row.profiles, "phone") ?? "-",
+    registeredAt: toDateTimeLabel(row.registered_at ?? row.created_at),
+  }));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <h1 className="text-2xl font-semibold">Attendees · {webinar.title}</h1>
       <div className="mt-4 space-y-2">
-        {(attendees ?? []).map((row) => (
+        {attendeeRows.map((row) => (
           <article key={row.id} className="rounded border bg-white p-3 text-sm">
-            <p className="font-medium">{profileField(row.profiles, "full_name") ?? profileField(row.profiles, "email") ?? "Student"}</p>
-            <p className="text-slate-600">{profileField(row.profiles, "email") ?? "-"}</p>
+            <p className="font-medium">{row.displayName}</p>
+            <p className="text-slate-600">Email: {row.email}</p>
+            <p className="text-slate-600">Phone: {row.phone}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <StatusBadge status={row.registration_status} />
               <StatusBadge status={row.payment_status} />
               <StatusBadge status={row.access_status} />
             </div>
-            <p className="mt-1 text-xs text-slate-500">Joined: {toDateTimeLabel(row.joined_at)} · Left: {toDateTimeLabel(row.left_at)} · Attended: {toDateTimeLabel(row.attended_at)}</p>
+            <p className="mt-1 text-xs text-slate-500">Registered: {row.registeredAt} · Joined: {toDateTimeLabel(row.joined_at)} · Left: {toDateTimeLabel(row.left_at)} · Attended: {toDateTimeLabel(row.attended_at)}</p>
           </article>
         ))}
-        {(attendees ?? []).length === 0 ? <p className="rounded border border-dashed bg-white p-8 text-center text-slate-600">No attendees yet.</p> : null}
+        {attendeeRows.length === 0 ? <p className="rounded border border-dashed bg-white p-8 text-center text-slate-600">No attendees yet.</p> : null}
       </div>
     </div>
   );
