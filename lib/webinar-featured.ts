@@ -33,6 +33,7 @@ function toBoolean(value: unknown) {
 }
 
 function pickString(value: unknown, fallback = "") {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return typeof value === "string" && value.length > 0 ? value : fallback;
 }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser } from "@/lib/course-featured";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
@@ -27,20 +28,23 @@ type ExistingOrder = {
 };
 
 type PlanRow = {
-  id: string;
+  id: string | number;
   plan_code: string | null;
   code: string | null;
   tier_rank: number | null;
 };
 
-function normalizePlanToken(value: string) {
-  return value.trim().toLowerCase();
+function normalizePlanToken(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value).trim().toLowerCase();
+  if (typeof value === "string") return value.trim().toLowerCase();
+  return "";
 }
 
 function resolvePlanByToken(plans: PlanRow[], token: string) {
   const normalized = normalizePlanToken(token);
+  if (!normalized) return null;
   return plans.find((plan) => {
-    const tokens = [plan.id, plan.plan_code, plan.code].filter((item): item is string => typeof item === "string" && item.length > 0);
+    const tokens = [plan.id, plan.plan_code, plan.code];
     return tokens.some((item) => normalizePlanToken(item) === normalized);
   }) ?? null;
 }
@@ -112,6 +116,13 @@ export async function POST(request: Request) {
       .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
       .eq("id", existingOrder.id)
       .in("payment_status", ["pending", "failed"]);
+    await notifyInstituteAndAdmins({
+      admin: admin.data,
+      instituteUserId: auth.user.id,
+      title: "Webinar promotion payment failed",
+      message: "Webinar promotion payment signature verification failed.",
+      metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "invalid_signature" },
+    });
     return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
   }
 
@@ -149,6 +160,13 @@ export async function POST(request: Request) {
       .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
       .eq("id", existingOrder.id)
       .in("payment_status", ["pending", "failed"]);
+    await notifyInstituteAndAdmins({
+      admin: admin.data,
+      instituteUserId: auth.user.id,
+      title: "Webinar promotion payment failed",
+      message: "Webinar promotion payment did not pass Razorpay capture validation.",
+      metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "payment_validation_failed" },
+    });
     return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
   }
 
@@ -274,6 +292,16 @@ export async function POST(request: Request) {
         ? `${webinar.title ?? "Webinar"} is now live in featured webinar listings.`
         : `${webinar.title ?? "Webinar"} featured webinar extension is confirmed and scheduled.`,
   }).catch(() => undefined);
+  await notifyInstituteAndAdmins({
+    admin: admin.data,
+    instituteUserId: auth.user.id,
+    title: status === "active" ? "Webinar promotion activated" : "Webinar promotion scheduled",
+    message:
+      status === "active"
+        ? `${webinar.title ?? "Webinar"} is now live in featured webinar listings.`
+        : `${webinar.title ?? "Webinar"} featured webinar extension is confirmed and scheduled.`,
+    metadata: { webinarId: existingOrder.webinar_id, orderId: existingOrder.id, status },
+  });
 
   return NextResponse.json({
     ok: true,

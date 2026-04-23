@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser } from "@/lib/course-featured";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -12,7 +13,7 @@ type RequestBody = {
 };
 
 type PlanRow = {
-  id: string;
+  id: string | number;
   plan_code: string | null;
   code: string | null;
   duration_days: number;
@@ -31,14 +32,17 @@ type WebinarRow = {
   ends_at: string | null;
 };
 
-function normalizePlanToken(value: string) {
-  return value.trim().toLowerCase();
+function normalizePlanToken(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value).trim().toLowerCase();
+  if (typeof value === "string") return value.trim().toLowerCase();
+  return "";
 }
 
 function resolvePlanByToken(plans: PlanRow[], token: string) {
   const normalized = normalizePlanToken(token);
+  if (!normalized) return null;
   return plans.find((plan) => {
-    const tokens = [plan.id, plan.plan_code, plan.code].filter((item): item is string => typeof item === "string" && item.length > 0);
+    const tokens = [plan.id, plan.plan_code, plan.code];
     return tokens.some((item) => normalizePlanToken(item) === normalized);
   }) ?? null;
 }
@@ -101,7 +105,7 @@ export async function POST(request: Request) {
   if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
 
   const receipt = `webinar_featured_${body.webinarId.slice(0, 8)}_${Date.now()}`;
-  let order: { id: string; receipt: string | null };
+  let order: { id: string; receipt: string | null; amount: number; currency: string };
   try {
     const created = await razorpay.data.orders.create({
       amount: Math.round(amount * 100),
@@ -111,12 +115,12 @@ export async function POST(request: Request) {
         userId: auth.user.id,
         instituteId,
         webinarId: body.webinarId,
-        planId: plan.id,
+        planId: String(plan.id),
         productType: "webinar_featured_listing",
         payoutEligible: "false",
       },
     });
-    order = { id: created.id, receipt: created.receipt ?? null };
+    order = { id: created.id, receipt: created.receipt ?? null, amount: toNumber(created.amount), currency: String(created.currency ?? currency) };
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to create Razorpay order" },
@@ -131,7 +135,7 @@ export async function POST(request: Request) {
       institute_id: instituteId,
       created_by: auth.user.id,
       webinar_id: body.webinarId,
-      plan_id: plan.id,
+      plan_id: String(plan.id),
       amount,
       currency,
       duration_days: durationDays,
@@ -150,12 +154,20 @@ export async function POST(request: Request) {
 
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
 
+  await notifyInstituteAndAdmins({
+    admin: admin.data,
+    instituteUserId: auth.user.id,
+    title: "Webinar promotion payment initiated",
+    message: "A Razorpay order was created for a webinar featured promotion purchase.",
+    metadata: { webinarId: body.webinarId, orderId: inserted.id, planId: String(plan.id), razorpayOrderId: order.id },
+  });
+
   return NextResponse.json({
     order,
     purchase: {
       id: inserted.id,
       webinarId: body.webinarId,
-      planId: plan.id,
+      planId: String(plan.id),
       durationDays,
       amount,
       currency,
