@@ -552,8 +552,6 @@ export default async function Page({
                           orderType="webinar"
                           orderId={order.id}
                           buttonLabel="Request Webinar Refund"
-                          endpoint="/api/refunds/webinar-request"
-                          requestBodyBuilder={({ orderId, reason }) => ({ webinarOrderId: orderId, reason })}
                           disabled={Boolean(refund)}
                         />
                       ) : null}
