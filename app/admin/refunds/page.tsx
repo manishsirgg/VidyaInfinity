@@ -17,7 +17,7 @@ export default async function Page() {
   const { data: refunds, error } = await admin.data
     .from("refunds")
     .select(
-      "id,user_id,order_kind,course_order_id,psychometric_order_id,reason,internal_notes,refund_status,amount,requested_at,processed_at,created_at,updated_at",
+      "id,user_id,order_kind,course_order_id,psychometric_order_id,webinar_order_id,reason,internal_notes,refund_status,amount,requested_at,processed_at,created_at,updated_at",
     )
     .order("created_at", { ascending: false })
     .limit(500);
@@ -32,11 +32,10 @@ export default async function Page() {
 
   const userIds = [...new Set((refunds ?? []).map((refund) => refund.user_id).filter((value): value is string => Boolean(value)))];
   const courseOrderIds = [...new Set((refunds ?? []).map((refund) => refund.course_order_id).filter((value): value is string => Boolean(value)))];
-  const psychometricOrderIds = [
-    ...new Set((refunds ?? []).map((refund) => refund.psychometric_order_id).filter((value): value is string => Boolean(value))),
-  ];
+  const psychometricOrderIds = [...new Set((refunds ?? []).map((refund) => refund.psychometric_order_id).filter((value): value is string => Boolean(value)))];
+  const webinarOrderIds = [...new Set((refunds ?? []).map((refund) => refund.webinar_order_id).filter((value): value is string => Boolean(value)))];
 
-  const [profilesResult, courseOrdersResult, psychometricOrdersResult] = await Promise.all([
+  const [profilesResult, courseOrdersResult, psychometricOrdersResult, webinarOrdersResult] = await Promise.all([
     userIds.length
       ? admin.data.from("profiles").select("id,full_name,email").in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
@@ -46,9 +45,12 @@ export default async function Page() {
     psychometricOrderIds.length
       ? admin.data.from("psychometric_orders").select("id,final_paid_amount,currency,payment_status,paid_at").in("id", psychometricOrderIds)
       : Promise.resolve({ data: [], error: null }),
+    webinarOrderIds.length
+      ? admin.data.from("webinar_orders").select("id,amount,currency,payment_status,paid_at").in("id", webinarOrderIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
-  const lookupsError = profilesResult.error || courseOrdersResult.error || psychometricOrdersResult.error;
+  const lookupsError = profilesResult.error || courseOrdersResult.error || psychometricOrdersResult.error || webinarOrdersResult.error;
   if (lookupsError) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-12">
@@ -61,6 +63,7 @@ export default async function Page() {
   const profilesById = new Map((profilesResult.data ?? []).map((profile) => [profile.id, profile]));
   const courseOrdersById = new Map((courseOrdersResult.data ?? []).map((order) => [order.id, order]));
   const psychometricOrdersById = new Map((psychometricOrdersResult.data ?? []).map((order) => [order.id, order]));
+  const webinarOrdersById = new Map((webinarOrdersResult.data ?? []).map((order) => [order.id, order]));
 
   const initialRefunds = (refunds ?? []).map((refund) => ({
     ...refund,
@@ -76,15 +79,23 @@ export default async function Page() {
                 }
               : null;
           })()
-        : (refund.psychometric_order_id ? psychometricOrdersById.get(refund.psychometric_order_id) ?? null : null),
+        : refund.order_kind === "psychometric_test"
+          ? (refund.psychometric_order_id ? psychometricOrdersById.get(refund.psychometric_order_id) ?? null : null)
+          : (() => {
+              const order = refund.webinar_order_id ? webinarOrdersById.get(refund.webinar_order_id) ?? null : null;
+              return order
+                ? {
+                    ...order,
+                    final_paid_amount: Number(order.amount ?? 0),
+                  }
+                : null;
+            })(),
   }));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-2xl font-semibold">Admin Refunds</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        Review requests, track payment details, record admin notes, and move refunds through approval and processing.
-      </p>
+      <p className="mt-2 text-sm text-slate-600">Review requests, track payment details, record admin notes, and move refunds through approval and processing.</p>
       <AdminRefundsManagement initialRefunds={initialRefunds} />
     </div>
   );

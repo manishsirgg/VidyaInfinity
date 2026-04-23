@@ -19,6 +19,7 @@ type WebinarRegistrationForAccess = {
   registration_status: string | null;
   payment_status: string | null;
   access_status: string | null;
+  access_delivery_status?: string | null;
   access_granted_at: string | null;
   reveal_started_at: string | null;
   email_sent_at: string | null;
@@ -64,9 +65,11 @@ export async function resolveWebinarAccessState(
       : supabase.from("webinars").select("id,starts_at,ends_at,webinar_mode").eq("id", webinarId).maybeSingle<WebinarForAccess>(),
     supabase
       .from("webinar_registrations")
-      .select("id,webinar_order_id,registration_status,payment_status,access_status,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at")
+      .select("id,webinar_order_id,registration_status,payment_status,access_status,access_delivery_status,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at")
       .eq("webinar_id", webinarId)
       .eq("student_id", studentId)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle<WebinarRegistrationForAccess>(),
     supabase
       .from("webinar_orders")
@@ -96,20 +99,19 @@ export async function resolveWebinarAccessState(
       state = "refunded";
     } else if (accessStatus === "revoked" || registrationStatus === "revoked") {
       state = "revoked";
+    } else if (accessStatus === "granted") {
+      // Canonical entitlement truth from registration row.
+      state = "granted";
     } else if (accessStatus === "revealed") {
       state = "revealed";
-    } else if (accessStatus === "granted") {
-      state = revealWindowOpen ? "granted" : "locked_until_window";
     } else if (registrationStatus === "registered" && ["paid", "not_required"].includes(paymentStatus)) {
       state = revealWindowOpen ? "revealed" : "registered_confirmed";
     }
   } else if (paidOrderFallback) {
+    // Transaction truth fallback when registration row is not available yet.
     state = "registered_confirmed";
   }
 
-  if (state === "revealed" && revealWindowOpen) {
-    state = "granted";
-  }
   if (state === "registered_confirmed" && revealWindowOpen) {
     state = "locked_until_window";
   }
@@ -143,6 +145,9 @@ export async function resolveWebinarAccessState(
     state,
     reveal_at: revealAt,
     reveal_window_open: revealWindowOpen,
+    registration_status: registrationStatus || null,
+    access_status: accessStatus || null,
+    access_delivery_status: registration?.access_delivery_status ?? null,
     used_order_fallback: !registration && Boolean(paidOrderFallback),
   });
 
