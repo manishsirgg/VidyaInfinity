@@ -6,6 +6,7 @@ import { getRazorpayClient, verifyRazorpayWebhookSignature } from "@/lib/payment
 import { mapRazorpayRefundStatus } from "@/lib/payments/refunds";
 import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 async function insertWebhookLogBestEffort({
@@ -376,7 +377,7 @@ export async function POST(request: Request) {
             {
               order_type: "course",
               order_id: courseOrder.id,
-              order_kind: "course_enrollment",
+              order_kind: REFUND_ORDER_TYPE_TO_CANONICAL_KIND.course,
               course_order_id: courseOrder.id,
               user_id: courseOrder.student_id,
               institute_id: courseOrder.institute_id,

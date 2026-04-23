@@ -3,12 +3,14 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import type { CanonicalOrderKind } from "@/lib/payments/order-kinds";
+
 type RefundDbStatus = "requested" | "processing" | "refunded" | "failed" | "cancelled";
 
 type RefundRow = {
   id: string;
   user_id: string | null;
-  order_kind: "course_enrollment" | "psychometric_test" | "webinar" | "webinar_registration";
+  order_kind: CanonicalOrderKind;
   course_order_id: string | null;
   psychometric_order_id: string | null;
   webinar_order_id: string | null;
