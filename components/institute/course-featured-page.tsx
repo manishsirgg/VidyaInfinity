@@ -23,6 +23,7 @@ type Plan = {
   durationDays: number;
   amount: number;
   currency: string;
+  tierRank: number;
 };
 
 type Course = {
@@ -130,10 +131,12 @@ export function InstituteCourseFeaturedPageClient() {
 
   useEffect(() => {
     if (plans.length === 0 || courses.length === 0) return;
+    const validPlanIds = new Set(plans.map((plan) => plan.id));
     setSelectedPlanByCourse((current) => {
       const next = { ...current };
       for (const course of courses) {
-        if (!next[course.id]) next[course.id] = plans[0].id;
+        const currentPlanId = next[course.id];
+        if (!currentPlanId || !validPlanIds.has(currentPlanId)) next[course.id] = plans[0].id;
       }
       return next;
     });
@@ -264,7 +267,10 @@ export function InstituteCourseFeaturedPageClient() {
           {courses.map((course) => {
             const state = subscriptionByCourse.get(course.id) ?? { active: null, scheduled: null };
             const selectedPlanId = selectedPlanByCourse[course.id] ?? "";
-            const actionText = state.active && state.scheduled ? "Currently Featured" : state.active ? "Extend Feature" : "Feature Course";
+            const activePlan = plans.find((plan) => plan.code === state.active?.plan_code);
+            const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
+            const isUpgrade = Boolean(state.active && selectedPlan && activePlan && selectedPlan.tierRank > activePlan.tierRank);
+            const actionText = isUpgrade ? "Upgrade Feature" : state.active ? "Extend Feature" : "Feature Course";
 
             return (
               <div key={course.id} className="rounded border p-4">
@@ -297,7 +303,7 @@ export function InstituteCourseFeaturedPageClient() {
                       type="button"
                       className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                       onClick={() => void purchase(course.id)}
-                      disabled={Boolean(busyCourseId) || plans.length === 0 || (state.active !== null && state.scheduled !== null)}
+                      disabled={Boolean(busyCourseId) || plans.length === 0 || (state.active !== null && state.scheduled !== null && !isUpgrade)}
                     >
                       {busyCourseId === course.id ? "Processing..." : actionText}
                     </button>

@@ -19,6 +19,7 @@ type PlanRow = {
   price: number | null;
   currency: string | null;
   is_active: boolean | null;
+  tier_rank: number | null;
 };
 
 type CourseRow = {
@@ -61,9 +62,9 @@ export async function POST(request: Request) {
       .maybeSingle<CourseRow>(),
     admin.data
       .from("course_featured_plans")
-      .select("id,plan_code,code,duration_days,amount,price,currency,is_active")
+      .select("id,plan_code,code,duration_days,amount,price,currency,is_active,tier_rank")
       .eq("id", body.planId)
-      .eq("is_active", true)
+      .or("is_active.eq.true,is_active.is.null")
       .maybeSingle<PlanRow>(),
   ]);
 
@@ -117,6 +118,7 @@ export async function POST(request: Request) {
       razorpay_receipt: order.receipt ?? receipt,
       metadata: {
         source: "course_featured_create_order_api",
+        tier_rank: plan.tier_rank ?? null,
       },
       updated_at: nowIso,
     })

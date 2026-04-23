@@ -10,6 +10,7 @@ export type WebinarFeaturedPlan = {
   currency: string;
   isActive: boolean;
   sortOrder: number;
+  tierRank: number;
 };
 
 export type WebinarFeaturedWindow = {
@@ -54,6 +55,7 @@ export function parseWebinarFeaturedPlans(rows: Array<Record<string, unknown>>):
       currency: pickString(row.currency, "INR"),
       isActive: row.is_active === null ? true : toBoolean(row.is_active),
       sortOrder: toNumber(row.sort_order),
+      tierRank: toNumber(row.tier_rank),
     }))
     .filter((row) => row.id.length > 0 && row.durationDays > 0 && row.amount > 0);
 }

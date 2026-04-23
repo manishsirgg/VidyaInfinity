@@ -23,6 +23,7 @@ type Plan = {
   durationDays: number;
   amount: number;
   currency: string;
+  tierRank: number;
 };
 
 type Webinar = {
@@ -133,10 +134,12 @@ export function InstituteWebinarFeaturedPageClient() {
 
   useEffect(() => {
     if (plans.length === 0 || webinars.length === 0) return;
+    const validPlanIds = new Set(plans.map((plan) => plan.id));
     setSelectedPlanByWebinar((current) => {
       const next = { ...current };
       for (const webinar of webinars) {
-        if (!next[webinar.id]) next[webinar.id] = plans[0].id;
+        const currentPlanId = next[webinar.id];
+        if (!currentPlanId || !validPlanIds.has(currentPlanId)) next[webinar.id] = plans[0].id;
       }
       return next;
     });
@@ -267,7 +270,10 @@ export function InstituteWebinarFeaturedPageClient() {
           {webinars.map((webinar) => {
             const state = subscriptionByWebinar.get(webinar.id) ?? { active: null, scheduled: null };
             const selectedPlanId = selectedPlanByWebinar[webinar.id] ?? "";
-            const actionText = state.active && state.scheduled ? "Currently Featured" : state.active ? "Extend Promotion" : "Promote Webinar";
+            const activePlan = plans.find((plan) => plan.code === state.active?.plan_code);
+            const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
+            const isUpgrade = Boolean(state.active && selectedPlan && activePlan && selectedPlan.tierRank > activePlan.tierRank);
+            const actionText = isUpgrade ? "Upgrade Promotion" : state.active ? "Extend Promotion" : "Promote Webinar";
 
             return (
               <div key={webinar.id} className="rounded border p-4">
@@ -303,7 +309,7 @@ export function InstituteWebinarFeaturedPageClient() {
                       type="button"
                       className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                       onClick={() => void purchase(webinar.id)}
-                      disabled={Boolean(busyWebinarId) || plans.length === 0 || (state.active !== null && state.scheduled !== null)}
+                      disabled={Boolean(busyWebinarId) || plans.length === 0 || (state.active !== null && state.scheduled !== null && !isUpgrade)}
                     >
                       {busyWebinarId === webinar.id ? "Processing..." : actionText}
                     </button>

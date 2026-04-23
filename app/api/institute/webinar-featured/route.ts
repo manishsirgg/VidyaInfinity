@@ -60,7 +60,7 @@ export async function GET() {
   await expireWebinarFeaturedSubscriptionsSafe(admin.data);
 
   const [plansResult, allWebinarsResult, subscriptionsResult, ordersResult] = await Promise.all([
-    admin.data.from("webinar_featured_plans").select("*").eq("is_active", true).order("sort_order", { ascending: true }),
+    admin.data.from("webinar_featured_plans").select("*").or("is_active.eq.true,is_active.is.null").order("sort_order", { ascending: true }),
     admin.data
       .from("webinars")
       .select("id,title,starts_at,ends_at,webinar_mode,price,currency,approval_status,status")
