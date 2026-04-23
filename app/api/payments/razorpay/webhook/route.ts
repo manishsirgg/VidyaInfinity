@@ -211,7 +211,7 @@ export async function POST(request: Request) {
       const localStatus = mapRazorpayRefundStatus(refundEntity.status);
       const { data: refundRow, error: refundFetchError } = await admin.data
         .from("refunds")
-        .select("id,refund_status,course_order_id,psychometric_order_id,metadata")
+        .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id,metadata")
         .or(`razorpay_refund_id.eq.${refundEntity.id},and(razorpay_payment_id.eq.${refundEntity.payment_id},refund_status.eq.processing)`)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -260,7 +260,7 @@ export async function POST(request: Request) {
           },
         })
         .eq("id", refundRow.id)
-        .select("id,refund_status,course_order_id,psychometric_order_id")
+        .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id")
         .single();
 
       if (refundUpdateError || !updatedRefund) {
@@ -279,6 +279,23 @@ export async function POST(request: Request) {
             .from("psychometric_orders")
             .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
             .eq("id", updatedRefund.psychometric_order_id);
+        }
+        if (updatedRefund.webinar_order_id) {
+          await admin.data
+            .from("webinar_orders")
+            .update({ payment_status: "refunded", order_status: "refunded", access_status: "revoked", updated_at: new Date().toISOString() })
+            .eq("id", updatedRefund.webinar_order_id);
+
+          await admin.data
+            .from("webinar_registrations")
+            .update({
+              payment_status: "refunded",
+              registration_status: "cancelled",
+              access_status: "revoked",
+              access_end_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("webinar_order_id", updatedRefund.webinar_order_id);
         }
       }
 

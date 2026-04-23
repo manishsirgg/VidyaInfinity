@@ -62,15 +62,13 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
     const [{ data: registration }, { data: paidOrder }, { data: savedWebinar }] = await Promise.all([
       dataClient
       .from("webinar_registrations")
-      .select("access_status,access_end_at")
+      .select("registration_status,access_status,access_end_at")
       .eq("webinar_id", id)
       .eq("student_id", viewer.user.id)
-      .in("access_status", ["granted"])
-      .or("access_end_at.is.null,access_end_at.gte.now()")
-      .maybeSingle<{ access_status: string; access_end_at: string | null }>(),
+      .maybeSingle<{ registration_status: string | null; access_status: string | null; access_end_at: string | null }>(),
       dataClient
         .from("webinar_orders")
-        .select("access_status,payment_status,order_status")
+      .select("access_status,payment_status,order_status")
         .eq("webinar_id", id)
         .eq("student_id", viewer.user.id)
         .eq("payment_status", "paid")
@@ -83,7 +81,12 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
         .eq("webinar_id", id)
         .maybeSingle<{ id: string }>(),
     ]);
-    hasAccess = registration?.access_status === "granted" || paidOrder?.access_status === "granted";
+    const registrationHasAccess =
+      registration?.registration_status === "registered" &&
+      registration?.access_status === "granted" &&
+      (!registration.access_end_at || new Date(registration.access_end_at).getTime() >= Date.now());
+    const fallbackPaidOrderAccess = !registration && paidOrder?.access_status === "granted";
+    hasAccess = Boolean(registrationHasAccess || fallbackPaidOrderAccess);
     activeAccessEndAt = registration?.access_end_at ?? null;
     isSaved = Boolean(savedWebinar?.id);
   }

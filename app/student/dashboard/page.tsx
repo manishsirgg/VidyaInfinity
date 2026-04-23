@@ -152,7 +152,6 @@ export default async function StudentDashboardPage() {
     { data: recentEnrollments },
     { data: recentTestAttempts },
     { data: webinarMetricRows },
-    { data: paidWebinarMetricOrders },
     { count: webinarRefundRequestsCount },
     { data: recentWebinarRegistrations },
     { data: recentWebinarTransactions },
@@ -210,24 +209,17 @@ export default async function StudentDashboardPage() {
       .returns<TestAttemptItem[]>(),
     dataClient
       .from("webinar_registrations")
-      .select("id,registration_status,payment_status,webinar_id,webinars(starts_at,webinar_mode)")
+      .select("id,registration_status,payment_status,access_status,webinar_id,webinars(starts_at,webinar_mode)")
       .eq("student_id", user.id)
       .returns<
         {
           id: string;
           registration_status: string;
           payment_status: string;
+          access_status: string | null;
           webinar_id: string;
           webinars: { starts_at: string | null; webinar_mode: string | null } | { starts_at: string | null; webinar_mode: string | null }[] | null;
         }[]
-      >(),
-    dataClient
-      .from("webinar_orders")
-      .select("id,webinar_id,payment_status,webinars(starts_at,webinar_mode)")
-      .eq("student_id", user.id)
-      .eq("payment_status", "paid")
-      .returns<
-        { id: string; webinar_id: string; payment_status: string; webinars: { starts_at: string | null; webinar_mode: string | null } | { starts_at: string | null; webinar_mode: string | null }[] | null }[]
       >(),
     dataClient.from("refunds").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("order_kind", "webinar"),
     dataClient
@@ -277,11 +269,8 @@ export default async function StudentDashboardPage() {
   const mergedRecentEnrollments = [...((recentEnrollments ?? []) as EnrollmentItem[]), ...fallbackRecentEnrollments].slice(0, 3);
   const normalizedActiveEnrollments = Math.max(activeEnrollmentCount ?? enrollmentRows.length, confirmedCourseOrders.length);
   const webinarMetricItems = webinarMetricRows ?? [];
-  const paidWebinarOrders = paidWebinarMetricOrders ?? [];
-  const registeredWebinarIds = new Set(webinarMetricItems.map((item) => item.webinar_id).filter(Boolean));
-  const paidOrderFallbackCount = paidWebinarOrders.filter((order) => !registeredWebinarIds.has(order.webinar_id)).length;
-  const paidWebinarOrdersCount = paidWebinarOrders.length;
-  const normalizedActiveWebinarRegistrations = webinarMetricItems.length + paidOrderFallbackCount;
+  const paidWebinarOrdersCount = webinarMetricItems.filter((item) => item.payment_status === "paid").length;
+  const normalizedActiveWebinarRegistrations = webinarMetricItems.filter((item) => item.registration_status === "registered").length;
   const freeWebinarRegistrationsCount = webinarMetricItems.filter((item) => {
     const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
     return item.payment_status === "not_required" || webinar?.webinar_mode === "free";
