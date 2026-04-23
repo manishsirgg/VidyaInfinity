@@ -26,10 +26,9 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
 
   let query = admin.data
     .from("webinars")
-    .select("id,title,starts_at,ends_at,webinar_mode,price,currency,status,approval_status,rejection_reason,institutes(name)", { count: "exact" })
+    .select("id,title,starts_at,ends_at,webinar_mode,price,currency,status,approval_status,rejection_reason,created_at,institutes(name)", { count: "exact" })
     .eq("is_deleted", false)
-    .order("created_at", { ascending: false })
-    .range((pageNumber - 1) * pageSize, pageNumber * pageSize - 1);
+    .order("created_at", { ascending: false });
 
   if (approval_status && ["pending", "approved", "rejected"].includes(approval_status)) {
     query = query.eq("approval_status", approval_status);
@@ -37,8 +36,16 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
 
   const { data: webinars, count, error } = await query;
   if (error) throw new Error(`Unable to load webinars: ${error.message}`);
-  const totalItems = count ?? 0;
-  const paginatedWebinars = webinars ?? [];
+  const sortedWebinars = [...(webinars ?? [])].sort((a, b) => {
+    const aPending = (a.approval_status ?? "pending") === "pending" ? 0 : 1;
+    const bPending = (b.approval_status ?? "pending") === "pending" ? 0 : 1;
+    if (aPending !== bPending) return aPending - bPending;
+    const aCreatedAt = Date.parse(a.created_at ?? "") || 0;
+    const bCreatedAt = Date.parse(b.created_at ?? "") || 0;
+    return bCreatedAt - aCreatedAt;
+  });
+  const totalItems = count ?? sortedWebinars.length;
+  const paginatedWebinars = sortedWebinars.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
   const paidCount = paginatedWebinars.filter((item) => item.webinar_mode === "paid").length;
   const freeCount = paginatedWebinars.length - paidCount;
 

@@ -89,6 +89,7 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2 text-sm">
+        <Link href="/institute/webinars/new" className="rounded border border-brand-300 bg-brand-50 px-3 py-1.5 text-brand-700">Add new webinar</Link>
         <Link href={`/institute/webinars/${id}/edit`} className="rounded border px-3 py-1.5">Edit webinar</Link>
         <Link href={`/institute/webinars/${id}/attendees`} className="rounded border px-3 py-1.5">View attendees</Link>
         <Link href={`/institute/webinars/${id}/orders`} className="rounded border px-3 py-1.5">View orders</Link>

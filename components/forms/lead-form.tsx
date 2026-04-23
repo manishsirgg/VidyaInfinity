@@ -14,7 +14,7 @@ const contactOptions = [
 
 type ContactPreference = (typeof contactOptions)[number]["value"];
 
-export function LeadForm({ courseId }: { courseId: string }) {
+export function LeadForm({ courseId, instituteId }: { courseId: string; instituteId?: string }) {
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -58,11 +58,17 @@ export function LeadForm({ courseId }: { courseId: string }) {
     setSubmitting(true);
 
     const payload = {
-      name: values.name.trim(),
+      fullName: values.name.trim(),
       email: values.email.trim() || undefined,
       phone: values.phone.trim() || undefined,
       message: values.message.trim() || null,
       courseId,
+      instituteId,
+      leadTarget: "course" as const,
+      source: "course_detail_page",
+      metadata: {
+        contactPreference: values.contactPreference,
+      },
       contactPreference: values.contactPreference,
     };
 
@@ -77,7 +83,7 @@ export function LeadForm({ courseId }: { courseId: string }) {
       setSubmitting(false);
 
       if (!response.ok) {
-        setError(body?.error ?? "Unable to submit your lead right now.");
+        setError(body?.error ?? "We could not submit your inquiry right now. Please try again in a moment.");
         return;
       }
 
@@ -85,7 +91,7 @@ export function LeadForm({ courseId }: { courseId: string }) {
       setValues({ name: "", email: "", phone: "", message: "", contactPreference: "both" });
     } catch {
       setSubmitting(false);
-      setError("Unable to submit your lead right now. Please check your connection and try again.");
+      setError("We could not submit your inquiry right now. Please check your connection and try again.");
     }
   }
 
