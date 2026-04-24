@@ -71,7 +71,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, instituteFeaturedOrdersResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -132,6 +132,11 @@ export default async function InstituteDashboardPage() {
     dataClient.from("course_featured_plans").select("id,name,plan_code,code,price,amount,currency,duration_days,sort_order,tier_rank").eq("is_active", true).order("sort_order", { ascending: true }),
     dataClient.from("webinar_featured_plans").select("id,name,plan_code,code,price,amount,currency,duration_days,sort_order,tier_rank").eq("is_active", true).order("sort_order", { ascending: true }),
     dataClient
+      .from("featured_listing_orders")
+      .select("id,payment_status,amount,created_at")
+      .eq("institute_id", institute.id)
+      .order("created_at", { ascending: false }),
+    dataClient
       .from("course_featured_orders")
       .select("id,course_id,payment_status,amount,created_at")
       .eq("institute_id", institute.id)
@@ -159,6 +164,7 @@ export default async function InstituteDashboardPage() {
   const instituteFeaturedPlans = parseFeaturedPlanRows(instituteFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Institute Featured");
   const courseFeaturedPlans = parseFeaturedPlanRows(courseFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Course Featured");
   const webinarFeaturedPlans = parseFeaturedPlanRows(webinarFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Webinar Featured");
+  const instituteFeaturedOrders = (instituteFeaturedOrdersResult.data ?? []) as Array<{ id: string; payment_status: string; amount: number | null; created_at: string }>;
   const courseFeaturedOrders = (courseFeaturedOrdersResult.data ?? []) as Array<{ id: string; course_id: string; payment_status: string; amount: number | null; created_at: string }>;
   const webinarFeaturedOrders = (webinarFeaturedOrdersResult.data ?? []) as Array<{ id: string; webinar_id: string; payment_status: string; amount: number | null; created_at: string }>;
 
@@ -194,8 +200,10 @@ export default async function InstituteDashboardPage() {
   const liveWebinars = webinars.filter((webinar) => webinar.status === "live").length;
   const webinarPaidOrders = webinarOrders.filter((order) => order.payment_status === "paid");
   const webinarPayoutTotal = webinarPaidOrders.reduce((sum, order) => sum + Number(order.payout_amount ?? 0), 0);
+  const paidInstituteFeaturedOrders = instituteFeaturedOrders.filter((order) => order.payment_status === "paid");
   const paidCourseFeaturedOrders = courseFeaturedOrders.filter((order) => order.payment_status === "paid");
   const paidWebinarFeaturedOrders = webinarFeaturedOrders.filter((order) => order.payment_status === "paid");
+  const instituteFeaturedSpend = paidInstituteFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const courseFeaturedSpend = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const webinarFeaturedSpend = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const currentlyFeaturedCourseIds = Array.from(
@@ -425,8 +433,10 @@ export default async function InstituteDashboardPage() {
       </div>
 
       <section className="mt-6 rounded border bg-white p-4">
-        <h2 className="text-base font-semibold">Course & webinar featured metrics</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+        <h2 className="text-base font-semibold">Featured listing metrics & plans</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-6 text-sm">
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Institute featured paid orders: <span className="font-semibold">{paidInstituteFeaturedOrders.length}</span></p>
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Institute featured spend: <span className="font-semibold">{money(instituteFeaturedSpend)}</span></p>
           <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Course featured paid orders: <span className="font-semibold">{paidCourseFeaturedOrders.length}</span></p>
           <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Course featured spend: <span className="font-semibold">{money(courseFeaturedSpend)}</span></p>
           <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Webinar featured paid orders: <span className="font-semibold">{paidWebinarFeaturedOrders.length}</span></p>
@@ -442,10 +452,6 @@ export default async function InstituteDashboardPage() {
             <p className="mt-1 text-emerald-800">{featuredWebinarTitles.length > 0 ? featuredWebinarTitles.join(", ") : "None currently active."}</p>
           </div>
         </div>
-      </section>
-
-      <section className="mt-6 rounded border bg-white p-4">
-        <h2 className="text-base font-semibold">Featured listing plans</h2>
         <p className="mt-1 text-sm text-slate-600">
           Plan pricing is now available on your dashboard for institute visibility, course featured slots, and webinar promotions.
         </p>
