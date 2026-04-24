@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { detectPaymentSchemaMismatches } from "@/lib/supabase/schema-guard";
 import { getRazorpayClient, verifyRazorpayWebhookSignature } from "@/lib/payments/razorpay";
+import { applyRefundToInstitutePayout } from "@/lib/payments/institute-payout-refunds";
 import { mapRazorpayRefundStatus } from "@/lib/payments/refunds";
 import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -231,7 +232,7 @@ export async function POST(request: Request) {
       const localStatus = mapRazorpayRefundStatus(refundEntity.status);
       const { data: refundRow, error: refundFetchError } = await admin.data
         .from("refunds")
-        .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id,metadata")
+        .select("id,amount,refund_status,course_order_id,psychometric_order_id,webinar_order_id,metadata")
         .or(`razorpay_refund_id.eq.${refundEntity.id},and(razorpay_payment_id.eq.${refundEntity.payment_id},refund_status.eq.processing)`)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -280,12 +281,14 @@ export async function POST(request: Request) {
           },
         })
         .eq("id", refundRow.id)
-        .select("id,refund_status,course_order_id,psychometric_order_id,webinar_order_id")
+        .select("id,amount,refund_status,course_order_id,psychometric_order_id,webinar_order_id")
         .single();
 
       if (refundUpdateError || !updatedRefund) {
         return NextResponse.json({ ok: false, code: "REFUND_UPDATE_FAILED", error: refundUpdateError?.message ?? "Failed to update refund" }, { status: 500 });
       }
+
+      const updatedRefundAmount = Number(updatedRefund.amount ?? (refundEntity.amount ? Number(refundEntity.amount) / 100 : 0));
 
       if (updatedRefund.refund_status === "refunded") {
         if (updatedRefund.course_order_id) {
@@ -315,6 +318,40 @@ export async function POST(request: Request) {
               updated_at: new Date().toISOString(),
             })
             .eq("webinar_order_id", updatedRefund.webinar_order_id);
+        }
+
+        const payoutOrderKind = updatedRefund.course_order_id ? "course" : updatedRefund.webinar_order_id ? "webinar" : null;
+        const payoutOrderId = updatedRefund.course_order_id ?? updatedRefund.webinar_order_id;
+        const payoutRefundReference = String(refundEntity.id ?? updatedRefund.id);
+
+        if (payoutOrderKind && payoutOrderId) {
+          const payoutRefundResult = await applyRefundToInstitutePayout(admin.data, {
+            orderKind: payoutOrderKind,
+            orderId: payoutOrderId,
+            refundAmount: Number(updatedRefundAmount),
+            refundReference: payoutRefundReference,
+          });
+
+          if (!payoutRefundResult.ok) {
+            console.error("[razorpay/webhook] refund_wallet_adjustment_failed", {
+              eventType,
+              eventId,
+              refund_id: updatedRefund.id,
+              order_kind: payoutOrderKind,
+              order_id: payoutOrderId,
+              reason: payoutRefundResult.error,
+            });
+            return NextResponse.json({ ok: false, code: "REFUND_WALLET_ADJUSTMENT_FAILED", error: payoutRefundResult.error }, { status: 500 });
+          }
+
+          console.info("[razorpay/webhook] refund_wallet_adjustment_applied", {
+            eventType,
+            eventId,
+            refund_id: updatedRefund.id,
+            order_kind: payoutOrderKind,
+            order_id: payoutOrderId,
+            refund_reference: payoutRefundReference,
+          });
         }
       }
 
