@@ -257,7 +257,21 @@ export default async function HomePage() {
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(0, 4);
 
-  const featuredInstitutes = institutesForHome.slice(0, 3);
+  const instituteIds = institutesForHome.map((institute) => institute.id);
+  const featuredInstituteRows = instituteIds.length
+    ? (
+        await dataClient
+          .from("active_institute_featured_status")
+          .select("institute_id")
+          .in("institute_id", instituteIds)
+      ).data ?? []
+    : [];
+  const featuredInstituteIdSet = new Set(
+    (featuredInstituteRows as Array<{ institute_id: string | null }>)
+      .map((row) => row.institute_id)
+      .filter((row): row is string => typeof row === "string" && row.length > 0),
+  );
+  const featuredInstitutes = institutesForHome.filter((institute) => featuredInstituteIdSet.has(institute.id)).slice(0, 3);
   const instituteCategoryGroups = Object.entries(
     institutesForHome.reduce<Record<string, typeof institutesForHome>>((acc, institute) => {
       const key = getOrganizationTypeLabel(institute.organization_type) || "General";
@@ -300,52 +314,53 @@ export default async function HomePage() {
         ))}
       </section>
 
-      <section className="mt-14">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold">Featured Courses</h2>
-            <p className="mt-1 text-sm text-slate-600">Handpicked approved courses available now.</p>
+      {featuredCourses.length > 0 ? (
+        <section className="mt-14">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-semibold">Featured Courses</h2>
+              <p className="mt-1 text-sm text-slate-600">Handpicked approved courses available now.</p>
+            </div>
+            <Link href="/courses" className="text-sm text-brand-600">
+              View all courses
+            </Link>
           </div>
-          <Link href="/courses" className="text-sm text-brand-600">
-            View all courses
-          </Link>
-        </div>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {featuredCourses.map((course) => (
-            (() => {
-              const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
-              const courseCoverUrl = courseCover
-                ? /^https?:\/\//i.test(courseCover)
-                  ? courseCover
-                  : getPublicFileUrl({ bucket: "course-media", path: courseCover })
-                : null;
-              return (
-                <Link
-                  key={course.id}
-                  href={`/courses/${course.id}` as Route}
-                  className="group rounded-xl border bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
-                >
-                  <article>
-                    {courseCoverUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                      <img src={courseCoverUrl} alt={`${course.title} preview`} className="mb-3 h-40 w-full rounded-md border object-cover" />
-                    ) : null}
-                    <p className="text-xs text-brand-700">{course.category ?? "General"}</p>
-                    <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{course.title}</h3>
-                    <p className="mt-2 line-clamp-4 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
-                    <p className="mt-3 text-xs text-slate-600">
-                      {course.duration ?? "-"} · {course.mode ?? "-"} · {course.language ?? "-"}
-                    </p>
-                    <p className="mt-3 text-base font-semibold">₹{course.fees ?? "-"}</p>
-                    <p className="mt-5 text-sm text-brand-600 group-hover:underline">View course</p>
-                  </article>
-                </Link>
-              );
-            })()
-          ))}
-        </div>
-        {featuredCourses.length === 0 ? <p className="mt-4 text-sm text-slate-600">No listed courses available yet.</p> : null}
-      </section>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {featuredCourses.map((course) => (
+              (() => {
+                const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
+                const courseCoverUrl = courseCover
+                  ? /^https?:\/\//i.test(courseCover)
+                    ? courseCover
+                    : getPublicFileUrl({ bucket: "course-media", path: courseCover })
+                  : null;
+                return (
+                  <Link
+                    key={course.id}
+                    href={`/courses/${course.id}` as Route}
+                    className="group rounded-xl border bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
+                  >
+                    <article>
+                      {courseCoverUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                        <img src={courseCoverUrl} alt={`${course.title} preview`} className="mb-3 h-40 w-full rounded-md border object-cover" />
+                      ) : null}
+                      <p className="text-xs text-brand-700">{course.category ?? "General"}</p>
+                      <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{course.title}</h3>
+                      <p className="mt-2 line-clamp-4 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
+                      <p className="mt-3 text-xs text-slate-600">
+                        {course.duration ?? "-"} · {course.mode ?? "-"} · {course.language ?? "-"}
+                      </p>
+                      <p className="mt-3 text-base font-semibold">₹{course.fees ?? "-"}</p>
+                      <p className="mt-5 text-sm text-brand-600 group-hover:underline">View course</p>
+                    </article>
+                  </Link>
+                );
+              })()
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-10">
         <div className="flex items-end justify-between gap-3">
@@ -461,54 +476,55 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      <section className="mt-14">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold">Featured Institutes</h2>
-            <p className="mt-1 text-sm text-slate-600">Top approved institutes currently open for students.</p>
-          </div>
-          <Link href="/institutes" className="text-sm text-brand-600">
-            View all institutes
-          </Link>
-        </div>
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {featuredInstitutes.map((institute) => (
-            <Link
-              key={institute.id}
-              href={`/institutes/${institute.slug ?? institute.id}` as Route}
-              className="group rounded-xl border bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
-            >
-              <article>
-                {instituteImageById.get(institute.id) ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={instituteImageById.get(institute.id) ?? ""}
-                    alt={`${institute.name ?? "Institute"} cover`}
-                    className="mb-3 h-40 w-full rounded-md border object-cover"
-                  />
-                ) : null}
-                <p className="text-xs text-brand-700">{institute.organization_type ?? "General"}</p>
-                <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{institute.name ?? "Institute"}</h3>
-                <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
-                <p className="mt-3 text-xs text-slate-600">
-                  {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
-                    institute.email ||
-                    institute.phone ||
-                    "Details not shared yet."}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
-                </p>
-                <p className="mt-5 text-sm text-brand-600 group-hover:underline">View institute</p>
-              </article>
+      {featuredInstitutes.length > 0 ? (
+        <section className="mt-14">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-semibold">Featured Institutes</h2>
+              <p className="mt-1 text-sm text-slate-600">Top approved institutes currently open for students.</p>
+            </div>
+            <Link href="/institutes" className="text-sm text-brand-600">
+              View all institutes
             </Link>
-          ))}
-        </div>
-        {featuredInstitutes.length === 0 ? <p className="mt-4 text-sm text-slate-600">No listed institutes available yet.</p> : null}
-      </section>
+          </div>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {featuredInstitutes.map((institute) => (
+              <Link
+                key={institute.id}
+                href={`/institutes/${institute.slug ?? institute.id}` as Route}
+                className="group rounded-xl border bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
+              >
+                <article>
+                  {instituteImageById.get(institute.id) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={instituteImageById.get(institute.id) ?? ""}
+                      alt={`${institute.name ?? "Institute"} cover`}
+                      className="mb-3 h-40 w-full rounded-md border object-cover"
+                    />
+                  ) : null}
+                  <p className="text-xs text-brand-700">{institute.organization_type ?? "General"}</p>
+                  <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{institute.name ?? "Institute"}</h3>
+                  <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
+                  <p className="mt-3 text-xs text-slate-600">
+                    {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
+                      institute.email ||
+                      institute.phone ||
+                      "Details not shared yet."}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
+                  </p>
+                  <p className="mt-5 text-sm text-brand-600 group-hover:underline">View institute</p>
+                </article>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-10">
         <div className="flex items-end justify-between gap-3">
