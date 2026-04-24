@@ -137,8 +137,10 @@ export function AdminRefundsManagement({ initialRefunds }: { initialRefunds: Ref
       );
 
       setToast({
-        type: "success",
-        text: body?.message ?? `Refund ${refundId.slice(0, 8)} updated to ${UI_STATUS_META[nextStatus].label}.`,
+        type: body?.warning ? "error" : "success",
+        text: body?.warning
+          ? `${body?.message ?? `Refund ${refundId.slice(0, 8)} updated.`} Wallet sync warning: ${body.warning}`
+          : body?.message ?? `Refund ${refundId.slice(0, 8)} updated to ${UI_STATUS_META[nextStatus].label}.`,
       });
       router.refresh();
     } catch (error) {
