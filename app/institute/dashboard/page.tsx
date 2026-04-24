@@ -6,6 +6,8 @@ import { loadInstituteWalletSnapshot } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
+const ACTIVE_COURSE_ENROLLMENT_STATUSES = ["enrolled", "pending", "active", "suspended", "completed"] as const;
+
 function money(value: number) {
   return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
@@ -83,7 +85,11 @@ export default async function InstituteDashboardPage() {
       .select("id,name,email,phone,created_at,course_id,webinar_id,lead_type,lead_target")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    dataClient.from("course_enrollments").select("id", { count: "exact", head: true }).eq("institute_id", institute.id),
+    dataClient
+      .from("course_enrollments")
+      .select("id", { count: "exact", head: true })
+      .eq("institute_id", institute.id)
+      .in("enrollment_status", [...ACTIVE_COURSE_ENROLLMENT_STATUSES]),
     dataClient
       .from("course_orders")
       .select("id,course_id,payment_status,gross_amount,platform_fee_amount,institute_receivable_amount,created_at")

@@ -313,6 +313,7 @@ export async function reconcileCourseOrderPaid({
   console.info("[payments/reconcile] reconcileCourseOrderPaid:start", { orderId: order.id, razorpayOrderId, razorpayPaymentId, source });
 
   let canonicalPaidOrderId = order.id;
+  let effectivePaidAt = now;
 
   const { data: existingPaidOrder } = await supabase
     .from("course_orders")
@@ -330,6 +331,7 @@ export async function reconcileCourseOrderPaid({
 
   if (existingPaidOrder) {
     canonicalPaidOrderId = existingPaidOrder.id;
+    effectivePaidAt = existingPaidOrder.paid_at ?? effectivePaidAt;
     console.info("[payments/reconcile] already_paid_order_found", {
       event: "already_paid_order_found",
       orderId: order.id,
@@ -357,8 +359,7 @@ export async function reconcileCourseOrderPaid({
     .eq("id", order.course_id)
     .maybeSingle<{ duration_value: number | null; duration_unit: string | null }>();
 
-  const accessStartAt = now;
-  const resolvedAccessEndAt = resolveAccessEndAt(accessStartAt, courseForDuration?.duration_value ?? null, courseForDuration?.duration_unit ?? null);
+  const resolvedAccessEndAt = resolveAccessEndAt(effectivePaidAt, courseForDuration?.duration_value ?? null, courseForDuration?.duration_unit ?? null);
 
   if (canonicalPaidOrderId === order.id && order.payment_status !== "paid") {
     const { error: updateError } = await supabase
@@ -404,6 +405,8 @@ export async function reconcileCourseOrderPaid({
       } else {
         return { error: updateError.message };
       }
+    } else {
+      effectivePaidAt = now;
     }
   } else if (canonicalPaidOrderId === order.id && order.payment_status === "paid") {
     console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
@@ -413,6 +416,7 @@ export async function reconcileCourseOrderPaid({
       courseId: order.course_id,
       source,
     });
+    effectivePaidAt = now;
   }
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
@@ -467,8 +471,8 @@ export async function reconcileCourseOrderPaid({
     course_id: order.course_id,
     institute_id: order.institute_id,
     enrollment_status: enrollmentStatus,
-    enrolled_at: now,
-    access_start_at: now,
+    enrolled_at: effectivePaidAt,
+    access_start_at: effectivePaidAt,
     access_end_at: resolvedAccessEndAt,
     metadata: { source, reconciled: true },
   });

@@ -131,6 +131,7 @@ function extractInstituteName(institutes: { name: string | null } | { name: stri
 
 function isConfirmedPayment(status: string | null | undefined, paidAt?: string | null) {
   const normalized = String(status ?? "").trim().toLowerCase();
+  if (normalized === "refunded" || normalized === "failed") return false;
   if (SUCCESS_PAYMENT_STATUSES.has(normalized)) return true;
   return Boolean(paidAt);
 }
@@ -272,7 +273,7 @@ export default async function StudentDashboardPage() {
       access_end_at: null,
     }));
   const mergedRecentEnrollments = [...((recentEnrollments ?? []) as EnrollmentItem[]), ...fallbackRecentEnrollments].slice(0, 3);
-  const normalizedActiveEnrollments = Math.max(activeEnrollmentCount ?? enrollmentRows.length, confirmedCourseOrders.length);
+  const normalizedActiveEnrollments = activeEnrollmentCount ?? enrollmentRows.length;
   const webinarMetricItems = webinarMetricRows ?? [];
   const paidWebinarOrdersCount = webinarMetricItems.filter((item) => item.payment_status === "paid").length;
   const normalizedActiveWebinarRegistrations = webinarMetricItems.filter((item) => item.registration_status === "registered").length;
