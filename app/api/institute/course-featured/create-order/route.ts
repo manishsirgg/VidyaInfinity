@@ -251,7 +251,7 @@ export async function POST(request: Request) {
     console.info("[course-featured/create-order] stage", { stage: "razorpay_client_ok", userId: auth.user.id, instituteId, localOrderId: orderId });
 
     stage = "razorpay_order_create";
-    const receipt = `course_featured_${orderId.replace(/-/g, "").slice(0, 20)}_${Date.now()}`;
+    const receipt = `cf_${orderId.replace(/-/g, "").slice(0, 12)}_${Date.now().toString().slice(-8)}`;
 
     let order: { id: string; receipt: string | null; amount: number; currency: string };
     try {
