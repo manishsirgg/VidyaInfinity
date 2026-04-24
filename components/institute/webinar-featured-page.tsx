@@ -91,8 +91,8 @@ function getSubscriptionDisplayStatus(subscription: Subscription) {
   const nowMs = Date.now();
   const startMs = new Date(subscription.starts_at).getTime();
   const endMs = new Date(subscription.ends_at).getTime();
-  if (subscription.status === "active" && startMs <= nowMs && endMs > nowMs) return "active";
-  if (subscription.status === "scheduled" && startMs > nowMs) return "scheduled";
+  if (startMs <= nowMs && endMs > nowMs) return "active";
+  if (startMs > nowMs) return "scheduled";
   if (endMs <= nowMs) return "expired";
   return subscription.status;
 }
@@ -161,10 +161,10 @@ export function InstituteWebinarFeaturedPageClient() {
       const current = grouped.get(subscription.webinar_id) ?? { active: null, scheduled: null };
       const startMs = new Date(subscription.starts_at).getTime();
       const endMs = new Date(subscription.ends_at).getTime();
-      if (subscription.status === "active" && startMs <= nowMs && endMs > nowMs) {
+      if (startMs <= nowMs && endMs > nowMs) {
         if (!current.active || new Date(current.active.ends_at).getTime() < endMs) current.active = subscription;
       }
-      if (subscription.status === "scheduled" && startMs > nowMs) {
+      if (startMs > nowMs) {
         if (!current.scheduled || new Date(current.scheduled.starts_at).getTime() > startMs) current.scheduled = subscription;
       }
       grouped.set(subscription.webinar_id, current);

@@ -25,7 +25,10 @@ export default async function HomePage() {
     .or("is_active.is.null,is_active.eq.true")
     .order("created_at", { ascending: false })
     .limit(18);
-  const { data: activeFeaturedCourseRows } = await dataClient.from("active_featured_courses").select("course_id");
+  const [{ data: activeFeaturedCourseRows }, { data: courseFeaturedSummaryRows }] = await Promise.all([
+    dataClient.from("active_featured_courses").select("course_id"),
+    dataClient.from("course_featured_subscription_summary").select("course_id,starts_at,ends_at"),
+  ]);
   const [{ data: featuredWebinarRows }, { data: listedWebinars }] = await Promise.all([
     dataClient.from("active_featured_webinars").select("webinar_id"),
     dataClient
@@ -218,6 +221,13 @@ export default async function HomePage() {
       .map((item) => item.course_id)
       .filter((item): item is string => typeof item === "string" && item.length > 0),
   );
+  const nowMs = Date.now();
+  for (const row of (courseFeaturedSummaryRows ?? []) as Array<{ course_id: string | null; starts_at: string; ends_at: string }>) {
+    if (!row.course_id) continue;
+    const startsAt = new Date(row.starts_at).getTime();
+    const endsAt = new Date(row.ends_at).getTime();
+    if (startsAt <= nowMs && endsAt > nowMs) activeFeaturedCourseIds.add(row.course_id);
+  }
   const rankedCourses = [...courses].sort((left, right) => Number(activeFeaturedCourseIds.has(right.id)) - Number(activeFeaturedCourseIds.has(left.id)));
   const featuredCourses = rankedCourses.filter((course) => activeFeaturedCourseIds.has(course.id)).slice(0, 3);
   const featuredWebinarIdSet = new Set(
@@ -225,9 +235,17 @@ export default async function HomePage() {
       .map((row) => row.webinar_id)
       .filter((id): id is string => typeof id === "string" && id.length > 0),
   );
+  const { data: webinarFeaturedSummaryRows } = await dataClient.from("webinar_featured_subscription_summary").select("webinar_id,starts_at,ends_at");
+  for (const row of (webinarFeaturedSummaryRows ?? []) as Array<{ webinar_id: string | null; starts_at: string; ends_at: string }>) {
+    if (!row.webinar_id) continue;
+    const startsAt = new Date(row.starts_at).getTime();
+    const endsAt = new Date(row.ends_at).getTime();
+    if (startsAt <= nowMs && endsAt > nowMs) featuredWebinarIdSet.add(row.webinar_id);
+  }
   const rankedWebinars = [...(listedWebinars ?? [])].sort(
     (left, right) => Number(featuredWebinarIdSet.has(right.id)) - Number(featuredWebinarIdSet.has(left.id)),
   );
+  const featuredWebinars = rankedWebinars.filter((webinar) => featuredWebinarIdSet.has(webinar.id)).slice(0, 3);
   const homeWebinars = rankedWebinars.slice(0, 3);
   const courseCategoryGroups = Object.entries(
     rankedCourses.reduce<Record<string, typeof rankedCourses>>((acc, course) => {
@@ -375,6 +393,37 @@ export default async function HomePage() {
         </div>
         {courseCategoryGroups.length === 0 ? <p className="mt-4 text-sm text-slate-600">No course categories available yet.</p> : null}
       </section>
+
+      {featuredWebinars.length > 0 ? (
+        <section className="mt-14">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-semibold">Featured Webinars</h2>
+              <p className="text-sm text-slate-600">Promoted live and upcoming sessions from approved institutes.</p>
+            </div>
+            <Link href="/webinars" className="text-sm text-brand-700">
+              Browse webinars
+            </Link>
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            {featuredWebinars.map((webinar) => (
+              <Link
+                key={webinar.id}
+                href={`/webinars/${webinar.id}`}
+                className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
+              >
+                {webinar.thumbnail_url ? <img src={webinar.thumbnail_url} alt={webinar.title} className="h-40 w-full object-cover" /> : null}
+                <div className="p-4">
+                  <h3 className="font-semibold">{webinar.title}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
+                  <p className="mt-1 text-sm text-slate-600">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
+                  <p className="mt-3 text-sm text-brand-700 group-hover:underline">View webinar</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {homeWebinars.length > 0 ? (
         <section className="mt-14">
