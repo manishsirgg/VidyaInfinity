@@ -291,7 +291,7 @@ export function InstituteCourseFeaturedPageClient() {
             const activePlan = plans.find((plan) => plan.code === state.active?.plan_code);
             const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
             const isUpgrade = Boolean(state.active && selectedPlan && activePlan && selectedPlan.tierRank > activePlan.tierRank);
-            const actionText = isUpgrade ? "Upgrade Feature" : state.active ? "Extend Feature" : "Feature Course";
+            const actionText = "Upgrade the plan";
 
             return (
               <div key={course.id} className="rounded border p-4">

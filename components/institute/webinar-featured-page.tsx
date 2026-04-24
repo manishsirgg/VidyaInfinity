@@ -294,7 +294,7 @@ export function InstituteWebinarFeaturedPageClient() {
             const activePlan = plans.find((plan) => plan.code === state.active?.plan_code);
             const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
             const isUpgrade = Boolean(state.active && selectedPlan && activePlan && selectedPlan.tierRank > activePlan.tierRank);
-            const actionText = isUpgrade ? "Upgrade Promotion" : state.active ? "Extend Promotion" : "Promote Webinar";
+            const actionText = "Upgrade the plan";
 
             return (
               <div key={webinar.id} className="rounded border p-4">
