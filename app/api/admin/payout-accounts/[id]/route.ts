@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const [instituteResult, requestsResult] = await Promise.all([
     account.institute_id ? admin.data.from("institutes").select("id,name,user_id").eq("id", account.institute_id).maybeSingle() : { data: null, error: null },
-    admin.data.from("institute_payout_requests").select("id,status,amount,created_at,paid_at,payment_reference").eq("payout_account_id", id).order("created_at", { ascending: false }).limit(50),
+    admin.data.from("institute_payout_requests").select("id,status,requested_amount,approved_amount,created_at,paid_at,payment_reference").eq("payout_account_id", id).order("created_at", { ascending: false }).limit(50),
   ]);
 
   if (instituteResult.error) return NextResponse.json({ error: instituteResult.error.message }, { status: 500 });
