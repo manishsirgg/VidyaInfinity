@@ -36,6 +36,27 @@ function toNumber(value: unknown) {
   return 0;
 }
 
+function resolveWindowStatus(window: { startsAt: string; endsAt: string; queuedFromPrevious: boolean }, nowIso: string) {
+  const startsAtMs = new Date(window.startsAt).getTime();
+  const nowMs = new Date(nowIso).getTime();
+  const hasValidStartsAt = Number.isFinite(startsAtMs);
+  const shouldStartNow = !hasValidStartsAt || startsAtMs <= nowMs;
+
+  if (shouldStartNow) {
+    return {
+      startsAt: nowIso,
+      endsAt: window.endsAt,
+      queuedFromPrevious: false,
+      status: "active" as const,
+    };
+  }
+
+  return {
+    ...window,
+    status: "scheduled" as const,
+  };
+}
+
 export async function POST(request: Request) {
   const auth = await requireApiUser("institute");
   if ("error" in auth) return auth.error;
@@ -239,7 +260,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const status = window.queuedFromPrevious ? "scheduled" : "active";
+  const windowWithStatus = resolveWindowStatus(window, nowIso);
 
   const { error: subscriptionInsertError } = await admin.data.from("course_featured_subscriptions").insert({
     institute_id: instituteId,
@@ -251,11 +272,11 @@ export async function POST(request: Request) {
     amount: existingOrder.amount,
     currency: existingOrder.currency,
     duration_days: existingOrder.duration_days,
-    starts_at: window.startsAt,
-    ends_at: window.endsAt,
-    queued_from_previous: window.queuedFromPrevious,
-    status,
-    activated_at: status === "active" ? nowIso : null,
+    starts_at: windowWithStatus.startsAt,
+    ends_at: windowWithStatus.endsAt,
+    queued_from_previous: windowWithStatus.queuedFromPrevious,
+    status: windowWithStatus.status,
+    activated_at: windowWithStatus.status === "active" ? nowIso : null,
     updated_at: nowIso,
   });
 
@@ -264,29 +285,29 @@ export async function POST(request: Request) {
   await createAccountNotification({
     userId: auth.user.id,
     type: "approval",
-    title: status === "active" ? "Course featuring activated" : "Course featuring scheduled",
+    title: windowWithStatus.status === "active" ? "Course featuring activated" : "Course featuring scheduled",
     message:
-      status === "active"
+      windowWithStatus.status === "active"
         ? `${course.title ?? "Course"} is now live in featured listings.`
         : `${course.title ?? "Course"} featured extension is confirmed and scheduled.`,
   }).catch(() => undefined);
   await notifyInstituteAndAdmins({
     admin: admin.data,
     instituteUserId: auth.user.id,
-    title: status === "active" ? "Course featuring activated" : "Course featuring scheduled",
+    title: windowWithStatus.status === "active" ? "Course featuring activated" : "Course featuring scheduled",
     message:
-      status === "active"
+      windowWithStatus.status === "active"
         ? `${course.title ?? "Course"} is now live in featured listings.`
         : `${course.title ?? "Course"} featured extension is confirmed and scheduled.`,
-    metadata: { courseId: existingOrder.course_id, orderId: existingOrder.id, status },
+    metadata: { courseId: existingOrder.course_id, orderId: existingOrder.id, status: windowWithStatus.status },
   });
 
   return NextResponse.json({
     ok: true,
     idempotent: false,
-    status,
-    startsAt: window.startsAt,
-    endsAt: window.endsAt,
-    queuedFromPrevious: window.queuedFromPrevious,
+    status: windowWithStatus.status,
+    startsAt: windowWithStatus.startsAt,
+    endsAt: windowWithStatus.endsAt,
+    queuedFromPrevious: windowWithStatus.queuedFromPrevious,
   });
 }
