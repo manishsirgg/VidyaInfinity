@@ -18,7 +18,7 @@ export async function GET() {
   const snapshotResult = await loadInstituteWalletSnapshot(instituteId);
   if (snapshotResult.error || !snapshotResult.data) return NextResponse.json({ error: snapshotResult.error ?? "Unable to load wallet summary." }, { status: 500 });
 
-  const { summary, ledger, recent_payout_history: recentPayoutHistory } = snapshotResult.data;
+  const { summary, ledger, recent_payout_history: recentPayoutHistory, payout_requests: payoutRequests } = snapshotResult.data;
   const { data: auditLogs, error: auditError } = await admin.data
     .from("institute_wallet_audit_logs")
     .select("*")
@@ -38,6 +38,9 @@ export async function GET() {
     pending_clearance: Number(summary.pending_clearance ?? 0),
     locked_balance: Number(summary.locked_balance ?? 0),
     paid_out: Number(summary.paid_out ?? 0),
+    payout_holds: Number(summary.locked_balance ?? 0),
+    reconciliation: summary.reconciliation ?? null,
+    payout_requests: payoutRequests,
     recent_payout_history: recentPayoutHistory,
     ledger,
     recent_activity: auditLogs ?? [],
