@@ -5,7 +5,7 @@ import { jsonError, parseAmount, runRpcWithFallback } from "@/lib/institute/payo
 import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-const VALID_STATUSES = ["under_review", "approved", "processing", "processed", "failed", "rejected", "cancelled"] as const;
+const VALID_STATUSES = ["under_review", "approved", "processing", "paid", "failed", "rejected", "cancelled"] as const;
 
 type TransitionPayload = {
   next_status?: string;
@@ -19,7 +19,7 @@ const EVENT_BY_STATUS: Partial<Record<(typeof VALID_STATUSES)[number], string>> 
   approved: "payout_request_approved",
   rejected: "payout_request_rejected",
   processing: "payout_processing_started",
-  processed: "payout_marked_paid",
+  paid: "payout_marked_paid",
   failed: "payout_failed",
   cancelled: "payout_cancelled",
 };
@@ -32,7 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const payload = (await request.json()) as TransitionPayload;
 
   const nextStatusRaw = String(payload.next_status ?? "").trim().toLowerCase();
-  const nextStatus = nextStatusRaw === "paid" ? "processed" : nextStatusRaw;
+  const nextStatus = nextStatusRaw === "processed" ? "paid" : nextStatusRaw;
   if (!VALID_STATUSES.includes(nextStatus as (typeof VALID_STATUSES)[number])) {
     return jsonError(`next_status must be one of: ${VALID_STATUSES.join(", ")}.`);
   }
@@ -42,8 +42,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const adminNote = payload.admin_note?.trim() || null;
   const approvedAmount = payload.approved_amount === null || typeof payload.approved_amount === "undefined" ? null : parseAmount(payload.approved_amount);
 
-  if (nextStatus === "processed" && !paymentReference) {
-    return jsonError("payment_reference (UTR) is required when marking payout as processed.");
+  if (nextStatus === "paid" && !paymentReference) {
+    return jsonError("payment_reference (UTR) is required when marking payout as paid.");
   }
 
   if (nextStatus === "failed" && !failureReason) {
@@ -106,7 +106,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (nextStatus === "approved") {
     updatePayload.approved_amount = resolvedApprovedAmount;
   }
-  if (nextStatus === "processed" && paymentReference) {
+  if (nextStatus === "paid" && paymentReference) {
     updatePayload.payment_reference = paymentReference;
   }
   if (nextStatus === "failed" && failureReason) {

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import type { User } from "@supabase/supabase-js";
 
-export type CanonicalPayoutStatus = "pending" | "available" | "locked" | "processed" | "reversed" | "failed";
+export type CanonicalPayoutStatus = "pending" | "available" | "locked" | "paid" | "reversed" | "failed";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -79,7 +79,7 @@ function normalizePayoutStatus(status: unknown, availableAt?: unknown) {
   const value = String(status ?? "pending").trim().toLowerCase();
   if (value === "available") return "available" as CanonicalPayoutStatus;
   if (value === "locked") return "locked" as CanonicalPayoutStatus;
-  if (value === "processed") return "processed" as CanonicalPayoutStatus;
+  if (value === "paid" || value === "processed") return "paid" as CanonicalPayoutStatus;
   if (value === "reversed" || value === "cancelled") return "reversed" as CanonicalPayoutStatus;
   if (value === "failed") return "failed" as CanonicalPayoutStatus;
   if (value === "processing") return "locked" as CanonicalPayoutStatus;
@@ -129,7 +129,7 @@ function computeSummaryFromLedger(instituteId: string, ledger: AnyRecord[]): Ins
     if (status === "pending") next.pending_clearance += payoutAmount;
     if (status === "available") next.available_balance += payoutAmount;
     if (status === "locked") next.locked_balance += payoutAmount;
-    if (status === "processed") next.paid_out += payoutAmount;
+    if (status === "paid") next.paid_out += payoutAmount;
     if (status === "reversed" && toNumber(row.refund_amount) === 0) next.refunded_amount += Math.max(payoutAmount, 0);
   }
 
