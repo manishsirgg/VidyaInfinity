@@ -1,4 +1,4 @@
-export type PayoutRequestStatus = "requested" | "under_review" | "approved" | "processing" | "processed" | "failed" | "rejected" | "cancelled";
+export type PayoutRequestStatus = "requested" | "under_review" | "approved" | "processing" | "paid" | "failed" | "rejected" | "cancelled";
 
 export type InstitutePayoutAccount = {
   id: string;

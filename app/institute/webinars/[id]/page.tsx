@@ -52,7 +52,7 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
   const platformFee = paidOrders.reduce((sum, row) => sum + Number(row.platform_fee_amount ?? 0), 0);
   const instituteShare = paidOrders.reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
   const payoutPending = (payouts ?? [])
-    .filter((item) => !["processed"].includes(String(item.payout_status ?? "").toLowerCase()))
+    .filter((item) => !["paid"].includes(String(item.payout_status ?? "").toLowerCase()))
     .reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
 
   return (

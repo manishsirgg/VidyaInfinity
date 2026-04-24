@@ -24,6 +24,13 @@ function statusLabel(status: unknown) {
   return "Under review";
 }
 
+function payoutStatusLabel(status: unknown) {
+  const value = String(status ?? "").trim().toLowerCase();
+  if (!value) return "-";
+  if (value === "paid" || value === "processed") return "Paid";
+  return value.replaceAll("_", " ");
+}
+
 function isAccountEligible(account: AnyRecord) {
   const status = String(account.verification_status ?? "pending").toLowerCase();
   return status === "approved" && !Boolean(account.is_disabled);
@@ -398,7 +405,7 @@ export function InstituteWalletManagement() {
             <div className="mt-2 space-y-2 text-sm">
               {recentPayoutHistory.map((row, index) => (
                 <div key={String(row.id ?? index)} className="rounded border px-3 py-2">
-                  <p className="font-medium">Requested: {money(Number(row.requested_amount ?? 0))} · Approved: {money(Number(row.approved_amount ?? 0))} · {String(row.status ?? "-")}</p>
+                  <p className="font-medium">Requested: {money(Number(row.requested_amount ?? 0))} · Approved: {money(Number(row.approved_amount ?? 0))} · {payoutStatusLabel(row.status)}</p>
                   <p className="text-xs text-slate-500">Requested: {formatDate(String(row.created_at ?? ""))}</p>
                   <p className="text-xs text-slate-500">Reference: {String(row.payment_reference ?? "-")}</p>
                 </div>
@@ -423,7 +430,7 @@ export function InstituteWalletManagement() {
                 <tr key={String(row.id ?? index)} className="border-b last:border-0">
                   <td className="px-2 py-2">{String(row.id ?? "-")}</td>
                   <td className="px-2 py-2">Req {money(Number(row.requested_amount ?? 0))} · Appr {money(Number(row.approved_amount ?? 0))}</td>
-                  <td className="px-2 py-2">{String(row.status ?? "-")}</td>
+                  <td className="px-2 py-2">{payoutStatusLabel(row.status)}</td>
                   <td className="px-2 py-2">{String(row.payment_reference ?? "-")}</td>
                   <td className="px-2 py-2 text-xs text-slate-500">Created: {formatDate(String(row.created_at ?? ""))}<br />Updated: {formatDate(String(row.updated_at ?? ""))}</td>
                 </tr>
@@ -441,7 +448,7 @@ export function InstituteWalletManagement() {
             <div key={String(row.id ?? index)} className="rounded border px-3 py-2">
               <p className="font-medium">{String(row.event_type ?? "-")}</p>
               <p className="text-xs text-slate-500">
-                Amount: {money(Number(row.amount ?? 0))} · Status: {String(row.previous_status ?? "-")} → {String(row.new_status ?? "-")}
+                Amount: {money(Number(row.amount ?? 0))} · Status: {payoutStatusLabel(row.previous_status)} → {payoutStatusLabel(row.new_status)}
               </p>
               <p className="text-xs text-slate-500">At: {formatDate(String(row.created_at ?? ""))}</p>
             </div>
@@ -466,7 +473,7 @@ export function InstituteWalletManagement() {
                   <td className="px-2 py-2">{money(Number(row.gross_amount ?? row.amount ?? 0))}</td>
                   <td className="px-2 py-2">{money(Number(row.platform_fee_amount ?? row.fee_amount ?? 0))}</td>
                   <td className="px-2 py-2">{money(Number(row.refund_amount ?? 0))}</td>
-                  <td className="px-2 py-2">{String(row.payout_status ?? row.status ?? "-")}</td>
+                  <td className="px-2 py-2">{payoutStatusLabel(row.payout_status ?? row.status)}</td>
                   <td className="px-2 py-2 text-xs text-slate-500">Created: {formatDate(String(row.created_at ?? ""))}<br />Updated: {formatDate(String(row.updated_at ?? ""))}</td>
                 </tr>
               ))}

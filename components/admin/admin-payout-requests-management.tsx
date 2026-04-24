@@ -8,7 +8,7 @@ import type { InstitutePayoutRequest } from "@/lib/institute/payout-types";
 type AnyRecord = Record<string, unknown>;
 type PayoutRequestView = InstitutePayoutRequest & { institutes?: AnyRecord | null };
 
-const STATUSES = ["under_review", "approved", "processing", "processed", "failed", "rejected", "cancelled"] as const;
+const STATUSES = ["under_review", "approved", "processing", "paid", "failed", "rejected", "cancelled"] as const;
 
 function money(value: number) {
   return `₹${Number(value ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -20,6 +20,13 @@ function formatDate(value: unknown) {
   const parsed = new Date(input);
   if (Number.isNaN(parsed.getTime())) return input;
   return parsed.toLocaleString("en-IN");
+}
+
+function formatPayoutStatusLabel(status: unknown) {
+  const value = String(status ?? "").trim().toLowerCase();
+  if (!value) return "-";
+  if (value === "paid" || value === "processed") return "Paid";
+  return value.replaceAll("_", " ");
 }
 
 export function AdminPayoutRequestsManagement({ initialRequests }: { initialRequests: PayoutRequestView[] }) {
@@ -62,7 +69,7 @@ export function AdminPayoutRequestsManagement({ initialRequests }: { initialRequ
 
   async function transition() {
     if (!selectedId || transitioning) return;
-    if (nextStatus === "processed" && !paymentReference.trim()) {
+    if (nextStatus === "paid" && !paymentReference.trim()) {
       setToast({ type: "error", text: "UTR/payment reference is required for paid status." });
       return;
     }
@@ -135,7 +142,7 @@ export function AdminPayoutRequestsManagement({ initialRequests }: { initialRequ
           {requests.map((row) => (
             <button key={String(row.id)} type="button" onClick={() => loadDetail(String(row.id))} className={`w-full rounded border px-3 py-2 text-left ${selectedId === String(row.id) ? "border-brand-400 bg-brand-50" : ""}`}>
               <p className="font-medium">{String((row.institutes as AnyRecord | null)?.name ?? "Institute")} · {money(Number(row.requested_amount ?? 0))}</p>
-              <p className="text-xs text-slate-500">{String(row.status ?? "-")} · {formatDate(row.created_at)}</p>
+              <p className="text-xs text-slate-500">{formatPayoutStatusLabel(row.status)} · {formatDate(row.created_at)}</p>
             </button>
           ))}
           {requests.length === 0 ? <p className="text-slate-600">No payout requests found.</p> : null}
@@ -150,7 +157,7 @@ export function AdminPayoutRequestsManagement({ initialRequests }: { initialRequ
             <div className="rounded border p-3">
               <p className="font-medium">Institute: {String((selected.institutes as AnyRecord | null)?.name ?? "-")}</p>
               <p className="text-xs text-slate-500">
-                Requested: {money(Number(selected.requested_amount ?? 0))} · Approved: {money(Number(selected.approved_amount ?? 0))} · Status: {String(selected.status ?? "-")}
+                Requested: {money(Number(selected.requested_amount ?? 0))} · Approved: {money(Number(selected.approved_amount ?? 0))} · Status: {formatPayoutStatusLabel(selected.status)}
               </p>
               <p className="text-xs text-slate-500">Created at: {formatDate(selected.created_at)}</p>
             </div>
@@ -179,7 +186,7 @@ export function AdminPayoutRequestsManagement({ initialRequests }: { initialRequ
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} className="rounded border px-2 py-1">
                   {STATUSES.map((status) => (
-                    <option key={status} value={status}>{status}</option>
+                    <option key={status} value={status}>{status === "paid" ? "Paid" : status}</option>
                   ))}
                 </select>
                 <input value={approvedAmount} onChange={(event) => setApprovedAmount(event.target.value)} placeholder="Approved amount (optional)" className="rounded border px-2 py-1" />

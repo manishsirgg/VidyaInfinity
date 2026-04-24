@@ -183,7 +183,7 @@ export default async function Page() {
   const totalFeaturedRevenue = [...featuredListingOrders, ...courseFeaturedOrders, ...webinarFeaturedOrders]
     .filter((row) => row.payment_status === "paid")
     .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
-  const pendingPayoutTotal = payouts.filter((row) => row.payout_status !== "processed").reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
+  const pendingPayoutTotal = payouts.filter((row) => row.payout_status !== "paid").reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
 
   const appPayments: AppPaymentTransaction[] = [
     ...transactions.map((row) => ({

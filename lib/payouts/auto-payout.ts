@@ -163,14 +163,14 @@ export async function attemptAutoPayout({ payoutRequestId, adminUserId }: { payo
   const transition = await runRpcWithFallback("admin_transition_payout_request", [
     {
       p_payout_request_id: payoutRequestId,
-      p_next_status: "processed",
+      p_next_status: "paid",
       p_payment_reference: providerResult.providerReference ?? `AUTO-${payoutRequestId}`,
       p_admin_note: "Paid via auto payout provider",
       p_admin_user_id: adminUserId,
     },
     {
       payout_request_id: payoutRequestId,
-      next_status: "processed",
+      next_status: "paid",
       payment_reference: providerResult.providerReference ?? `AUTO-${payoutRequestId}`,
       admin_note: "Paid via auto payout provider",
       admin_user_id: adminUserId,
