@@ -320,7 +320,7 @@ export async function POST(request: Request) {
             .eq("webinar_order_id", updatedRefund.webinar_order_id);
         }
 
-        const payoutOrderKind = updatedRefund.course_order_id ? "course" : updatedRefund.webinar_order_id ? "webinar" : null;
+        const payoutOrderKind = updatedRefund.course_order_id ? "course_order" : updatedRefund.webinar_order_id ? "webinar_order" : null;
         const payoutOrderId = updatedRefund.course_order_id ?? updatedRefund.webinar_order_id;
         const payoutRefundReference = String(refundEntity.id ?? updatedRefund.id);
 

@@ -119,7 +119,7 @@ async function createInstitutePayoutForWebinarOrder({
 }) {
   const { data: paidOrder, error: paidOrderError } = await supabase
     .from("webinar_orders")
-    .select("id,institute_id,amount,platform_fee_amount,payout_amount,paid_at")
+    .select("id,institute_id,amount,platform_fee_amount,payout_amount,paid_at,created_at")
     .eq("id", orderId)
     .maybeSingle<{
       id: string;
@@ -128,6 +128,7 @@ async function createInstitutePayoutForWebinarOrder({
       platform_fee_amount: number | null;
       payout_amount: number | null;
       paid_at: string | null;
+      created_at: string | null;
     }>();
 
   if (paidOrderError || !paidOrder) {
@@ -144,7 +145,7 @@ async function createInstitutePayoutForWebinarOrder({
   const grossAmount = Number(paidOrder.amount ?? 0);
   const platformFeeAmount = Number(paidOrder.platform_fee_amount ?? 0);
   const payoutAmount = Number(paidOrder.payout_amount ?? Math.max(grossAmount - platformFeeAmount, 0));
-  const availableAt = paidOrder.paid_at ?? new Date().toISOString();
+  const availableAt = paidOrder.paid_at ?? paidOrder.created_at ?? new Date().toISOString();
 
   const { error: payoutInsertError } = await supabase.from("institute_payouts").upsert(
     {
@@ -160,7 +161,7 @@ async function createInstitutePayoutForWebinarOrder({
       available_at: availableAt,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "webinar_order_id", ignoreDuplicates: true }
+    { onConflict: "webinar_order_id" }
   );
 
   if (payoutInsertError) {
