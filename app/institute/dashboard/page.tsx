@@ -72,7 +72,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, walletSnapshotResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, instituteFeaturedOrdersResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, walletSnapshotResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarPaidRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, instituteFeaturedOrdersResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -119,7 +119,8 @@ export default async function InstituteDashboardPage() {
       .select("id,title,status,approval_status,starts_at,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    dataClient.from("webinar_registrations").select("id,webinar_id", { count: "exact", head: false }).eq("institute_id", institute.id),
+    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("institute_id", institute.id),
+    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("institute_id", institute.id).eq("payment_status", "paid"),
     dataClient
       .from("webinar_orders")
       .select("id,payment_status,payout_amount,created_at")
@@ -167,7 +168,8 @@ export default async function InstituteDashboardPage() {
   const recentNotifications = recentNotificationsResult.data ?? [];
   const activeFeaturedStatus = featuredStatusResult.data ?? null;
   const webinars = webinarsResult.data ?? [];
-  const webinarRegistrations = webinarRegistrationsResult.data ?? [];
+  const webinarRegistrationsCount = webinarRegistrationsResult.count ?? 0;
+  const webinarPaidRegistrationsCount = webinarPaidRegistrationsResult.count ?? 0;
   const webinarOrders = webinarOrdersResult.data ?? [];
   const courseFeaturedRows =
     (courseFeaturedSummaryResult.data as Array<{ course_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
@@ -297,8 +299,8 @@ export default async function InstituteDashboardPage() {
         </Link>
         <Link href="/institute/webinars" className="rounded border bg-white p-4 transition hover:border-brand-300">
           <p className="text-xs uppercase tracking-wide text-slate-500">Webinar registrations</p>
-          <p className="mt-1 text-2xl font-semibold">{webinarRegistrations.length}</p>
-          <p className="mt-1 text-xs text-slate-600">Paid webinar payouts: {money(webinarPayoutTotal)}</p>
+          <p className="mt-1 text-2xl font-semibold">{webinarRegistrationsCount}</p>
+          <p className="mt-1 text-xs text-slate-600">Paid registrations: {webinarPaidRegistrationsCount} · Webinar payouts: {money(webinarPayoutTotal)}</p>
         </Link>
       </div>
 
@@ -412,11 +414,11 @@ export default async function InstituteDashboardPage() {
             </div>
             <div className="flex items-center justify-between">
               <dt className="text-slate-600">Registrations</dt>
-              <dd className="font-medium">{webinarRegistrations.length}</dd>
+              <dd className="font-medium">{webinarRegistrationsCount}</dd>
             </div>
             <div className="flex items-center justify-between">
-              <dt className="text-slate-600">Paid webinar orders</dt>
-              <dd className="font-medium">{webinarPaidOrders.length}</dd>
+              <dt className="text-slate-600">Paid webinar registrations</dt>
+              <dd className="font-medium">{webinarPaidRegistrationsCount}</dd>
             </div>
             <div className="flex items-center justify-between">
               <dt className="text-slate-600">Webinar payout total</dt>

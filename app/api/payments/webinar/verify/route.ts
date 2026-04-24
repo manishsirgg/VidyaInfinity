@@ -51,10 +51,6 @@ export async function POST(request: Request) {
     .eq("razorpay_payment_id", paymentId)
     .maybeSingle();
 
-  if (duplicateTransaction) {
-    return NextResponse.json({ ok: true, idempotent: true, duplicate: true });
-  }
-
   const { data: order } = await admin.data
     .from("webinar_orders")
     .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,order_status,access_status")
@@ -74,6 +70,51 @@ export async function POST(request: Request) {
 
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
   if (order.order_status === "cancelled") return NextResponse.json({ error: "Order is cancelled" }, { status: 409 });
+
+  if (duplicateTransaction) {
+    const { data: registration } = await admin.data
+      .from("webinar_registrations")
+      .select("id")
+      .eq("webinar_id", order.webinar_id)
+      .eq("student_id", order.student_id)
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+
+    if (!registration) {
+      console.warn("[payments/webinar/verify] paid_transaction_without_registration_reconciling", {
+        event: "paid_transaction_without_registration_reconciling",
+        order_id: order.id,
+        webinar_id: order.webinar_id,
+        student_id: order.student_id,
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+      });
+
+      const reconciled = await reconcileWebinarWithRetry({
+        supabase: admin.data,
+        order,
+        razorpayOrderId: orderId,
+        razorpayPaymentId: paymentId,
+        source: "verify_api",
+        paymentEventType: "payment.verify",
+      });
+
+      if (reconciled.error) {
+        console.error("[payments/webinar/verify] paid_transaction_registration_self_heal_failed", {
+          event: "paid_transaction_registration_self_heal_failed",
+          order_id: order.id,
+          webinar_id: order.webinar_id,
+          student_id: order.student_id,
+          razorpay_order_id: orderId,
+          razorpay_payment_id: paymentId,
+          error: reconciled.error,
+        });
+        return NextResponse.json({ error: reconciled.error }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ ok: true, idempotent: true, duplicate: true, selfHealedRegistration: !registration });
+  }
 
   const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
   if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
