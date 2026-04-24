@@ -44,6 +44,138 @@ function isOnePaidPerStudentCourseViolation(error: { message?: string | null; de
   return text.includes("idx_course_orders_one_paid_per_student_course");
 }
 
+async function createInstitutePayoutForCourseOrder({
+  supabase,
+  orderId,
+  source,
+}: {
+  supabase: SupabaseClient;
+  orderId: string;
+  source: "verify_api" | "webhook";
+}) {
+  const { data: paidOrder, error: paidOrderError } = await supabase
+    .from("course_orders")
+    .select("id,institute_id,gross_amount,platform_fee_amount,institute_receivable_amount,paid_at")
+    .eq("id", orderId)
+    .maybeSingle<{
+      id: string;
+      institute_id: string;
+      gross_amount: number;
+      platform_fee_amount: number | null;
+      institute_receivable_amount: number;
+      paid_at: string | null;
+    }>();
+
+  if (paidOrderError || !paidOrder) {
+    const errorMessage = paidOrderError?.message ?? "Unable to load paid course order for payout creation.";
+    console.error("[payments/reconcile] institute_payout_course_load_failed", {
+      event: "institute_payout_course_load_failed",
+      course_order_id: orderId,
+      source,
+      error: errorMessage,
+    });
+    return { error: errorMessage };
+  }
+
+  const availableAt = paidOrder.paid_at ?? new Date().toISOString();
+  const { error: payoutInsertError } = await supabase.from("institute_payouts").upsert(
+    {
+      institute_id: paidOrder.institute_id,
+      course_order_id: paidOrder.id,
+      source_reference_id: paidOrder.id,
+      source_reference_type: "course_order",
+      payout_source: "course",
+      gross_amount: paidOrder.gross_amount,
+      platform_fee_amount: paidOrder.platform_fee_amount ?? 0,
+      payout_amount: paidOrder.institute_receivable_amount,
+      payout_status: "available",
+      available_at: availableAt,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "course_order_id", ignoreDuplicates: true }
+  );
+
+  if (payoutInsertError) {
+    console.error("[payments/reconcile] institute_payout_course_insert_failed", {
+      event: "institute_payout_course_insert_failed",
+      course_order_id: orderId,
+      source,
+      error: payoutInsertError.message,
+    });
+    return { error: payoutInsertError.message };
+  }
+
+  return { error: null as string | null };
+}
+
+async function createInstitutePayoutForWebinarOrder({
+  supabase,
+  orderId,
+  source,
+}: {
+  supabase: SupabaseClient;
+  orderId: string;
+  source: "verify_api" | "webhook";
+}) {
+  const { data: paidOrder, error: paidOrderError } = await supabase
+    .from("webinar_orders")
+    .select("id,institute_id,amount,platform_fee_amount,payout_amount,paid_at")
+    .eq("id", orderId)
+    .maybeSingle<{
+      id: string;
+      institute_id: string;
+      amount: number;
+      platform_fee_amount: number | null;
+      payout_amount: number | null;
+      paid_at: string | null;
+    }>();
+
+  if (paidOrderError || !paidOrder) {
+    const errorMessage = paidOrderError?.message ?? "Unable to load paid webinar order for payout creation.";
+    console.error("[payments/reconcile] institute_payout_webinar_load_failed", {
+      event: "institute_payout_webinar_load_failed",
+      webinar_order_id: orderId,
+      source,
+      error: errorMessage,
+    });
+    return { error: errorMessage };
+  }
+
+  const grossAmount = Number(paidOrder.amount ?? 0);
+  const platformFeeAmount = Number(paidOrder.platform_fee_amount ?? 0);
+  const payoutAmount = Number(paidOrder.payout_amount ?? Math.max(grossAmount - platformFeeAmount, 0));
+  const availableAt = paidOrder.paid_at ?? new Date().toISOString();
+
+  const { error: payoutInsertError } = await supabase.from("institute_payouts").upsert(
+    {
+      institute_id: paidOrder.institute_id,
+      webinar_order_id: paidOrder.id,
+      source_reference_id: paidOrder.id,
+      source_reference_type: "webinar_order",
+      payout_source: "webinar",
+      gross_amount: grossAmount,
+      platform_fee_amount: platformFeeAmount,
+      payout_amount: payoutAmount,
+      payout_status: "available",
+      available_at: availableAt,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "webinar_order_id", ignoreDuplicates: true }
+  );
+
+  if (payoutInsertError) {
+    console.error("[payments/reconcile] institute_payout_webinar_insert_failed", {
+      event: "institute_payout_webinar_insert_failed",
+      webinar_order_id: orderId,
+      source,
+      error: payoutInsertError.message,
+    });
+    return { error: payoutInsertError.message };
+  }
+
+  return { error: null as string | null };
+}
+
 export async function reconcileCourseOrderPaid({
   supabase,
   order,
@@ -388,20 +520,12 @@ export async function reconcileCourseOrderPaid({
     return { error: errorMessage };
   }
 
-  const { error: payoutError } = await supabase.from("institute_payouts").upsert(
-    {
-      institute_id: order.institute_id,
-      course_order_id: canonicalPaidOrderId,
-      gross_amount: order.gross_amount,
-      platform_fee_amount: order.gross_amount - order.institute_receivable_amount,
-      payout_amount: order.institute_receivable_amount,
-      payout_status: "pending",
-      scheduled_at: now,
-      updated_at: now,
-    },
-    { onConflict: "course_order_id" },
-  );
-  if (payoutError) return { error: payoutError.message };
+  const payoutCreation = await createInstitutePayoutForCourseOrder({
+    supabase,
+    orderId: canonicalPaidOrderId,
+    source,
+  });
+  if (payoutCreation.error) return payoutCreation;
 
   const [{ data: course }, { data: student }, { data: institute }, { data: admins }] = await Promise.all([
     supabase.from("courses").select("title").eq("id", order.course_id).maybeSingle(),
@@ -977,44 +1101,12 @@ export async function reconcileWebinarOrderPaid({
     source,
   });
 
-  const { data: existingPayout, error: existingPayoutError } = await supabase
-    .from("institute_payouts")
-    .select("id")
-    .eq("webinar_order_id", canonicalPaidOrderId)
-    .maybeSingle<{ id: string }>();
-
-  if (existingPayoutError) return { error: existingPayoutError.message };
-
-  if (existingPayout?.id) {
-    const { error: payoutUpdateError } = await supabase
-      .from("institute_payouts")
-      .update({
-        gross_amount: commission.grossAmount,
-        platform_fee_amount: commission.commissionAmount,
-        payout_amount: commission.instituteReceivable,
-        payout_status: "pending",
-        updated_at: now,
-      })
-      .eq("id", existingPayout.id);
-
-    if (payoutUpdateError) return { error: payoutUpdateError.message };
-  } else {
-    const { error: payoutInsertError } = await supabase.from("institute_payouts").insert({
-      institute_id: order.institute_id,
-      webinar_order_id: canonicalPaidOrderId,
-      payout_source: "webinar",
-      gross_amount: commission.grossAmount,
-      platform_fee_amount: commission.commissionAmount,
-      payout_amount: commission.instituteReceivable,
-      payout_status: "pending",
-      source_reference_id: canonicalPaidOrderId,
-      source_reference_type: "webinar_order",
-      scheduled_at: now,
-      updated_at: now,
-    });
-
-    if (payoutInsertError) return { error: payoutInsertError.message };
-  }
+  const webinarPayoutCreation = await createInstitutePayoutForWebinarOrder({
+    supabase,
+    orderId: canonicalPaidOrderId,
+    source,
+  });
+  if (webinarPayoutCreation.error) return webinarPayoutCreation;
 
   await notifyWebinarEnrollment({
     supabase,
