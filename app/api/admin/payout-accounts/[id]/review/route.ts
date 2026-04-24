@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { jsonError } from "@/lib/institute/payouts";
+import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const NEXT_STATUSES = ["pending", "approved", "rejected", "disabled"] as const;
@@ -38,6 +39,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { data, error } = await admin.data.from("institute_payout_accounts").update(updatePayload).eq("id", id).select("*").maybeSingle();
   if (error) return jsonError(error.message, 400);
   if (!data) return jsonError("Payout account not found.", 404);
+
+  if (data.institute_id) {
+    await logInstituteWalletEvent(
+      {
+        instituteId: String(data.institute_id),
+        eventType: nextStatus === "approved" ? "payout_account_approved" : nextStatus === "rejected" ? "payout_account_rejected" : "payout_account_status_changed",
+        sourceTable: "institute_payout_accounts",
+        sourceId: id,
+        newStatus: nextStatus,
+        actorUserId: auth.user.id,
+        actorRole: "admin",
+        idempotencyKey: `payout_account:${id}:transition:${nextStatus}`,
+        metadata: { rejection_reason: rejectionReason, admin_notes: payload.admin_notes ?? null },
+      },
+      admin.data
+    );
+  }
 
   return NextResponse.json({ payout_account: data });
 }

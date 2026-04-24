@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 
 export type RefundPayoutInput = {
   orderKind: string;
@@ -9,7 +10,7 @@ export type RefundPayoutInput = {
 
 type RpcResult = { error: { message?: string | null } | null };
 
-type RpcClient = Pick<SupabaseClient, "rpc">;
+type RpcClient = Pick<SupabaseClient, "rpc" | "from">;
 
 const ORDER_KIND_ALIASES: Record<string, string> = {
   course: "course",
@@ -52,10 +53,63 @@ export async function applyRefundToInstitutePayout(
   ];
 
   let lastError = "Unable to apply refund to institute payout.";
+  let payoutInstituteId: string | null = null;
+  let payoutId: string | null = null;
+
+  const sourceColumn = orderKind === "course" ? "course_order_id" : "webinar_order_id";
+  const { data: payoutRow } = await adminClient
+    .from("institute_payouts")
+    .select("id,institute_id")
+    .eq(sourceColumn, orderId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; institute_id: string }>();
+  payoutInstituteId = payoutRow?.institute_id ?? null;
+  payoutId = payoutRow?.id ?? null;
+
   for (const args of argVariants) {
     const { error } = (await adminClient.rpc("apply_refund_to_institute_payout", args)) as RpcResult;
-    if (!error) return { ok: true };
+    if (!error) {
+      if (payoutInstituteId) {
+        await logInstituteWalletEvent(
+          {
+            instituteId: payoutInstituteId,
+            eventType: "refund_applied",
+            sourceTable: "institute_payouts",
+            sourceId: payoutId,
+            payoutId,
+            orderId,
+            orderKind,
+            amount: refundAmount,
+            actorRole: "system",
+            idempotencyKey: `refund:${refundReference}`,
+            metadata: { refund_reference: refundReference },
+          },
+          adminClient
+        );
+      }
+      return { ok: true };
+    }
     lastError = error.message ?? lastError;
+  }
+
+  if (payoutInstituteId) {
+    await logInstituteWalletEvent(
+      {
+        instituteId: payoutInstituteId,
+        eventType: "wallet_sync_failed",
+        sourceTable: "institute_payouts",
+        sourceId: payoutId,
+        payoutId,
+        orderId,
+        orderKind,
+        amount: refundAmount,
+        actorRole: "system",
+        idempotencyKey: `wallet_sync_failed:refund:${refundReference}`,
+        metadata: { refund_reference: refundReference, reason: lastError },
+      },
+      adminClient
+    );
   }
 
   return { ok: false, error: lastError };
