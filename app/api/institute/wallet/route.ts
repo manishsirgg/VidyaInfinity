@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { getInstituteIdForUser } from "@/lib/institute/payouts";
+import { getInstituteIdForUser, loadInstituteWalletSnapshot } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function GET() {
@@ -15,24 +15,23 @@ export async function GET() {
   if (instituteError) return NextResponse.json({ error: instituteError }, { status: 500 });
   if (!instituteId) return NextResponse.json({ error: "Institute profile not found." }, { status: 404 });
 
-  const [summaryResult, payoutsResult, ledgerResult] = await Promise.all([
-    admin.data.from("institute_wallet_summary").select("*").eq("institute_id", instituteId).maybeSingle(),
-    admin.data.from("institute_payout_requests").select("*").eq("institute_id", instituteId).order("created_at", { ascending: false }).limit(20),
-    admin.data.from("institute_payouts").select("*").eq("institute_id", instituteId).order("created_at", { ascending: false }).limit(100),
-  ]);
+  const snapshotResult = await loadInstituteWalletSnapshot(instituteId);
+  if (snapshotResult.error || !snapshotResult.data) return NextResponse.json({ error: snapshotResult.error ?? "Unable to load wallet summary." }, { status: 500 });
 
-  if (summaryResult.error) return NextResponse.json({ error: summaryResult.error.message }, { status: 500 });
-  if (payoutsResult.error) return NextResponse.json({ error: payoutsResult.error.message }, { status: 500 });
-  if (ledgerResult.error) return NextResponse.json({ error: ledgerResult.error.message }, { status: 500 });
-
-  const summary = summaryResult.data ?? {};
-  const availableBalance = Number((summary as Record<string, unknown>).available_balance ?? 0);
+  const { summary, ledger, recent_payout_history: recentPayoutHistory } = snapshotResult.data;
 
   return NextResponse.json({
     institute_id: instituteId,
     summary,
-    available_balance: availableBalance,
-    recent_payout_history: payoutsResult.data ?? [],
-    ledger: ledgerResult.data ?? [],
+    available_balance: Number(summary.available_balance ?? 0),
+    gross_revenue: Number(summary.gross_revenue ?? 0),
+    platform_fee: Number(summary.platform_fee ?? 0),
+    refunded_amount: Number(summary.refunded_amount ?? 0),
+    net_earnings: Number(summary.net_earnings ?? 0),
+    pending_clearance: Number(summary.pending_clearance ?? 0),
+    locked_balance: Number(summary.locked_balance ?? 0),
+    paid_out: Number(summary.paid_out ?? 0),
+    recent_payout_history: recentPayoutHistory,
+    ledger,
   });
 }

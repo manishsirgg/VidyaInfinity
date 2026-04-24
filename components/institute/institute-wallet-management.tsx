@@ -260,7 +260,7 @@ export function InstituteWalletManagement() {
           ["Platform fee", Number(summary.platform_fee ?? 0)],
           ["Refunded", Number(summary.refunded_amount ?? 0)],
           ["Net earnings", Number(summary.net_earnings ?? 0)],
-          ["Locked", Number(summary.locked_amount ?? 0)],
+          ["Locked", Number(summary.locked_balance ?? summary.locked_amount ?? 0)],
           ["Paid out", Number(summary.paid_out ?? 0)],
         ].map(([label, value]) => (
           <div key={String(label)} className="rounded border bg-white p-3">

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
+import { loadInstituteWalletSnapshot } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -71,7 +72,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, instituteFeaturedOrdersResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, walletSnapshotResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, instituteFeaturedOrdersResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -88,11 +89,7 @@ export default async function InstituteDashboardPage() {
       .select("id,course_id,payment_status,gross_amount,platform_fee_amount,institute_receivable_amount,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    dataClient
-      .from("institute_payouts")
-      .select("id,payout_amount,payout_status,created_at,processed_at")
-      .eq("institute_id", institute.id)
-      .order("created_at", { ascending: false }),
+    loadInstituteWalletSnapshot(institute.id, { ledgerLimit: 10, payoutHistoryLimit: 5 }),
     dataClient.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
     dataClient
       .from("notifications")
@@ -151,7 +148,22 @@ export default async function InstituteDashboardPage() {
   const courses = coursesResult.data ?? [];
   const leads = leadsResult.data ?? [];
   const orderRows = orderResult.data ?? [];
-  const payouts = payoutsResult.data ?? [];
+  const walletSummary = walletSnapshotResult.data?.summary ?? {
+    gross_revenue: 0,
+    platform_fee: 0,
+    refunded_amount: 0,
+    net_earnings: 0,
+    pending_clearance: 0,
+    available_balance: 0,
+    locked_balance: 0,
+    paid_out: 0,
+  };
+  if (walletSnapshotResult.error) {
+    console.error("Failed to load institute wallet summary for dashboard", {
+      instituteId: institute.id,
+      error: walletSnapshotResult.error,
+    });
+  }
   const recentNotifications = recentNotificationsResult.data ?? [];
   const activeFeaturedStatus = featuredStatusResult.data ?? null;
   const webinars = webinarsResult.data ?? [];
@@ -176,18 +188,13 @@ export default async function InstituteDashboardPage() {
   const rejectedCourses = courses.filter((course) => course.status === "rejected");
 
   const paidOrders = orderRows.filter((order) => order.payment_status === "paid");
-  const totalGrossRevenue = paidOrders.reduce((sum, order) => sum + Number(order.gross_amount ?? 0), 0);
-  const totalCommission = paidOrders.reduce((sum, order) => sum + Number(order.platform_fee_amount ?? 0), 0);
-  const totalNetEarnings = paidOrders.reduce((sum, order) => sum + Number(order.institute_receivable_amount ?? 0), 0);
-
-  const totalPayoutsPaid = payouts
-    .filter((payout) => payout.payout_status === "paid")
-    .reduce((sum, payout) => sum + Number(payout.payout_amount ?? 0), 0);
-  const pendingPayouts = payouts
-    .filter((payout) => payout.payout_status === "pending" || payout.payout_status === "processing")
-    .reduce((sum, payout) => sum + Number(payout.payout_amount ?? 0), 0);
-
-  const walletBalance = Math.max(totalNetEarnings - totalPayoutsPaid, 0);
+  const totalGrossRevenue = Number(walletSummary.gross_revenue ?? 0);
+  const totalCommission = Number(walletSummary.platform_fee ?? 0);
+  const totalRefundedAmount = Number(walletSummary.refunded_amount ?? 0);
+  const totalNetEarnings = Number(walletSummary.net_earnings ?? 0);
+  const totalPayoutsPaid = Number(walletSummary.paid_out ?? 0);
+  const pendingPayouts = Number(walletSummary.locked_balance ?? 0);
+  const walletBalance = Number(walletSummary.available_balance ?? 0);
 
   const leadsThisMonth = leads.filter((lead) => now - new Date(lead.created_at).getTime() <= days30).length;
   const paidOrdersThisMonth = paidOrders.filter((order) => now - new Date(order.created_at).getTime() <= days30).length;
@@ -310,6 +317,10 @@ export default async function InstituteDashboardPage() {
             <div className="flex items-center justify-between">
               <dt className="text-slate-600">Net earnings</dt>
               <dd className="font-medium">{money(totalNetEarnings)}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-slate-600">Refunded amount</dt>
+              <dd className="font-medium">{money(totalRefundedAmount)}</dd>
             </div>
             <div className="flex items-center justify-between">
               <dt className="text-slate-600">Payouts released</dt>
