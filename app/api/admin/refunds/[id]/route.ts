@@ -258,6 +258,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     razorpayStatus: razorpayRefund.data.status ?? "unknown",
   });
 
+  const latestRazorpayRefundCreatedAt = razorpayRefund.data.created_at ?? null;
   const mappedStatus = mapRazorpayRefundStatus(razorpayRefund.data.status);
   const finalStatus: RefundDbStatus = mappedStatus === "processing" ? "processing" : mappedStatus;
 
@@ -275,7 +276,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         approved_at: new Date().toISOString(),
         razorpay_refund_status: razorpayRefund.data.status ?? "unknown",
         razorpay_refund_amount_subunits: razorpayRefund.data.amount ?? null,
-        razorpay_refund_created_at: razorpayRefund.data.created_at ?? null,
+        razorpay_refund_created_at: latestRazorpayRefundCreatedAt,
         razorpay_refund_payment_id: razorpayRefund.data.payment_id ?? currentRefund.razorpay_payment_id,
       },
     })
