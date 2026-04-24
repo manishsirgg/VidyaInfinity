@@ -1185,7 +1185,17 @@ export async function reconcileWebinarOrderPaid({
     { onConflict: "webinar_id,student_id" }
   );
 
-  if (registrationError) return { error: registrationError.message };
+  if (registrationError) {
+    console.error("[payments/reconcile] webinar_registration_upsert_failed", {
+      event: "webinar_registration_upsert_failed",
+      orderId: canonicalPaidOrderId,
+      webinarId: order.webinar_id,
+      studentId: order.student_id,
+      source,
+      error: registrationError.message,
+    });
+    return { error: registrationError.message };
+  }
 
   console.info("[payments/reconcile] entitlement_row_updated", {
     event: existingRegistration ? "entitlement_row_updated" : "entitlement_row_created",
@@ -1206,7 +1216,16 @@ export async function reconcileWebinarOrderPaid({
     .maybeSingle<{ id: string; access_status: string; payment_status: string }>();
 
   if (!convergedRegistration) {
-    return { error: "Webinar entitlement convergence failed: granted registration row missing." };
+    const errorMessage = "Webinar entitlement convergence failed: granted registration row missing.";
+    console.error("[payments/reconcile] webinar_registration_convergence_failed", {
+      event: "webinar_registration_convergence_failed",
+      orderId: canonicalPaidOrderId,
+      webinarId: order.webinar_id,
+      studentId: order.student_id,
+      source,
+      error: errorMessage,
+    });
+    return { error: errorMessage };
   }
   console.info("[payments/reconcile] webinar_registration_updated", {
     event: existingRegistration ? "webinar_registration_updated" : "webinar_registration_created",
