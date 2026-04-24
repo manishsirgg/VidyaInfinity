@@ -90,9 +90,9 @@ type RefundItem = {
   created_at: string;
 };
 
-const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["enrolled", "pending", "active", "suspended", "completed"] as const;
 const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 const REFUND_OPEN_STATUSES = ["requested", "processing"] as const;
+const INACTIVE_COURSE_ENROLLMENT_STATUSES = new Set(["cancelled", "canceled", "refunded", "expired", "revoked", "inactive"]);
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -136,6 +136,12 @@ function isConfirmedPayment(status: string | null | undefined, paidAt?: string |
   return Boolean(paidAt);
 }
 
+function isActiveCourseEnrollmentStatus(status: string | null | undefined) {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (!normalized) return true;
+  return !INACTIVE_COURSE_ENROLLMENT_STATUSES.has(normalized);
+}
+
 export default async function StudentDashboardPage() {
   const { user, profile } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
@@ -145,7 +151,7 @@ export default async function StudentDashboardPage() {
   const [
     { data: courseOrderRows },
     { count: paidPsychometricOrders },
-    { data: activeEnrollmentRows, count: activeEnrollmentCount },
+    { data: enrollmentRowsRaw },
     { count: inquiryCount },
     { count: unreadNotificationCount },
     { data: latestIdentityDocument },
@@ -164,9 +170,8 @@ export default async function StudentDashboardPage() {
     supabase.from("psychometric_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
     dataClient
       .from("course_enrollments")
-      .select("id,course_id,enrollment_status,created_at,access_end_at", { count: "exact" })
-      .eq("student_id", user.id)
-      .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES]),
+      .select("id,course_id,enrollment_status,created_at,access_end_at")
+      .eq("student_id", user.id),
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("email", profile.email),
     supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
     supabase
@@ -253,9 +258,8 @@ export default async function StudentDashboardPage() {
   ]);
 
   const allCourseOrders = (courseOrderRows ?? []) as CourseOrderItem[];
-  const enrollmentRows = ((activeEnrollmentRows ?? []) as EnrollmentItem[]).filter(Boolean);
+  const enrollmentRows = ((enrollmentRowsRaw ?? []) as EnrollmentItem[]).filter((row) => isActiveCourseEnrollmentStatus(row?.enrollment_status));
   const confirmedCourseOrders = allCourseOrders.filter((order) => isConfirmedPayment(order.payment_status, order.paid_at));
-  const paidCourseOrders = confirmedCourseOrders.length;
   const courseIds = Array.from(new Set(allCourseOrders.map((item) => item.course_id).filter((value): value is string => Boolean(value))));
   const { data: courseRows } =
     courseIds.length > 0 ? await supabase.from("courses").select("id,title").in("id", courseIds) : { data: [] as { id: string; title: string | null }[] };
@@ -273,7 +277,7 @@ export default async function StudentDashboardPage() {
       access_end_at: null,
     }));
   const mergedRecentEnrollments = [...((recentEnrollments ?? []) as EnrollmentItem[]), ...fallbackRecentEnrollments].slice(0, 3);
-  const normalizedActiveEnrollments = activeEnrollmentCount ?? enrollmentRows.length;
+  const normalizedActiveEnrollments = enrollmentRows.length;
   const webinarMetricItems = webinarMetricRows ?? [];
   const paidWebinarOrdersCount = webinarMetricItems.filter((item) => item.payment_status === "paid").length;
   const normalizedActiveWebinarRegistrations = webinarMetricItems.filter((item) => item.registration_status === "registered").length;
@@ -361,7 +365,6 @@ export default async function StudentDashboardPage() {
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Overview</h2>
         <div className="mt-3 grid gap-4 md:grid-cols-7">
-          <Link href="/student/purchases?kind=course" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Course Orders: <span className="font-semibold">{paidCourseOrders ?? 0}</span></Link>
           <Link href="/student/purchases?kind=psychometric" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Psychometric Orders: <span className="font-semibold">{paidPsychometricOrders ?? 0}</span></Link>
           <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{normalizedActiveEnrollments}</span></Link>
           <Link href="/student/webinar-registrations?filter=all" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Webinar Registrations: <span className="font-semibold">{normalizedActiveWebinarRegistrations}</span></Link>
