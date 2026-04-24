@@ -18,16 +18,20 @@ type InstituteWebinar = {
 };
 
 type SubscriptionSummary = {
-  id: string;
+  subscription_id: string;
   webinar_id: string;
   plan_code: string | null;
-  plan_name: string | null;
   starts_at: string;
   ends_at: string;
   status: string;
+};
+
+type SubscriptionDetails = {
+  id: string;
+  plan_id: string | null;
+  amount: number | null;
+  currency: string | null;
   queued_from_previous: boolean | null;
-  amount: number;
-  currency: string;
 };
 
 type WebinarFeaturedOrderRow = {
@@ -70,11 +74,7 @@ export async function GET() {
       .select("id,title,starts_at,ends_at,webinar_mode,price,currency,approval_status,status")
       .eq("institute_id", instituteId)
       .order("starts_at", { ascending: false }),
-    admin.data
-      .from("webinar_featured_subscription_summary")
-      .select("id,webinar_id,plan_code,plan_name,starts_at,ends_at,status,queued_from_previous,amount,currency")
-      .eq("institute_id", instituteId)
-      .order("starts_at", { ascending: false }),
+    admin.data.from("webinar_featured_subscription_summary").select("subscription_id,webinar_id,plan_code,starts_at,ends_at,status").eq("institute_id", instituteId).order("starts_at", { ascending: false }),
     admin.data
       .from("webinar_featured_orders")
       .select("id,webinar_id,plan_id,amount,currency,duration_days,payment_status,order_status,paid_at,created_at,razorpay_order_id,razorpay_payment_id")
@@ -87,6 +87,13 @@ export async function GET() {
   const webinarTitleById = new Map(allWebinars.map((webinar) => [webinar.id, webinar.title]));
 
   const subscriptions = (subscriptionsResult.data ?? []) as SubscriptionSummary[];
+  const subscriptionIds = subscriptions.map((item) => item.subscription_id).filter((id): id is string => typeof id === "string" && id.length > 0);
+  const subscriptionDetailsResult = subscriptionIds.length
+    ? await admin.data.from("webinar_featured_subscriptions").select("id,plan_id,amount,currency,queued_from_previous").in("id", subscriptionIds)
+    : { data: [] as SubscriptionDetails[] };
+  const subscriptionDetailsById = new Map<string, SubscriptionDetails>(
+    ((subscriptionDetailsResult.data ?? []) as SubscriptionDetails[]).map((row) => [row.id, row]),
+  );
   const orders = (ordersResult.data ?? []) as WebinarFeaturedOrderRow[];
 
   const historicalPlanRowsResult = await admin.data.from("webinar_featured_plans").select("id,name,plan_code,code");
@@ -100,11 +107,18 @@ export async function GET() {
   }
 
   const nowMs = Date.now();
+  const isWindowActive = (item: Pick<SubscriptionSummary, "starts_at" | "ends_at">) => {
+    const startMs = new Date(item.starts_at).getTime();
+    const endMs = new Date(item.ends_at).getTime();
+    return startMs <= nowMs && endMs > nowMs;
+  };
+  const isWindowScheduled = (item: Pick<SubscriptionSummary, "starts_at">) => new Date(item.starts_at).getTime() > nowMs;
+
   const summary = {
-    activeCount: subscriptions.filter((item) => item.status === "active" && new Date(item.starts_at).getTime() <= nowMs && new Date(item.ends_at).getTime() > nowMs).length,
-    scheduledCount: subscriptions.filter((item) => item.status === "scheduled" && new Date(item.starts_at).getTime() > nowMs).length,
+    activeCount: subscriptions.filter((item) => isWindowActive(item)).length,
+    scheduledCount: subscriptions.filter((item) => !isWindowActive(item) && isWindowScheduled(item)).length,
     expiringSoonCount: subscriptions.filter((item) => {
-      if (item.status !== "active") return false;
+      if (!isWindowActive(item)) return false;
       const endMs = new Date(item.ends_at).getTime();
       const diff = endMs - nowMs;
       return diff > 0 && diff <= 7 * 24 * 60 * 60 * 1000;
@@ -115,9 +129,18 @@ export async function GET() {
     plans: parseWebinarFeaturedPlans((plansResult.data ?? []) as Array<Record<string, unknown>>),
     webinars: eligibleWebinars,
     subscriptions: subscriptions.map((item) => ({
-      ...item,
+      id: item.subscription_id,
+      webinar_id: item.webinar_id,
+      plan_id: subscriptionDetailsById.get(item.subscription_id)?.plan_id ?? null,
+      plan_code: item.plan_code,
       webinar_title: webinarTitleById.get(item.webinar_id) ?? "Webinar",
-      plan_name: item.plan_name ?? item.plan_code ?? "Plan",
+      plan_name: item.plan_code ?? "Plan",
+      starts_at: item.starts_at,
+      ends_at: item.ends_at,
+      status: item.status,
+      queued_from_previous: subscriptionDetailsById.get(item.subscription_id)?.queued_from_previous ?? false,
+      amount: Number(subscriptionDetailsById.get(item.subscription_id)?.amount ?? 0),
+      currency: subscriptionDetailsById.get(item.subscription_id)?.currency ?? "INR",
     })),
     orders: orders.map((item) => ({
       ...item,
