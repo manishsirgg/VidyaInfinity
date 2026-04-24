@@ -136,6 +136,9 @@ export default async function AdminDashboardPage() {
         <Link href="/admin/payout-requests" className="vi-card p-4">
           Manage payout requests
         </Link>
+        <Link href="/admin/payout-accounts" className="vi-card p-4">
+          Review payout accounts
+        </Link>
         <Link href="/admin/blogs" className="vi-card p-4">
           Blogs: {blogs ?? 0}
         </Link>
