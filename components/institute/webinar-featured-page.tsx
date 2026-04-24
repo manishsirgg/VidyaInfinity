@@ -109,6 +109,14 @@ export function InstituteWebinarFeaturedPageClient() {
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error" | "info">("info");
 
+  async function trackCheckoutEvent(orderId: string, event: "checkout_opened" | "checkout_dismissed" | "payment_failed", payload?: { reason?: string; paymentId?: string }) {
+    await fetch("/api/institute/webinar-featured/payment-status", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ orderId, event, reason: payload?.reason, paymentId: payload?.paymentId }),
+    }).catch(() => null);
+  }
+
   async function loadData() {
     setLoading(true);
     const response = await fetch("/api/institute/webinar-featured", { cache: "no-store" });
@@ -197,6 +205,7 @@ export function InstituteWebinarFeaturedPageClient() {
 
       const order = createBody.order as { id: string; amount: number; currency: string };
       const selectedPlan = plans.find((plan) => plan.id === planId);
+      void trackCheckoutEvent(order.id, "checkout_opened");
 
       const razorpay = new window.Razorpay({
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
@@ -230,11 +239,22 @@ export function InstituteWebinarFeaturedPageClient() {
         },
         modal: {
           ondismiss: () => {
+            void trackCheckoutEvent(order.id, "checkout_dismissed", { reason: "modal_dismissed" });
             setMessageType("info");
             setMessage("Payment checkout was closed before completion.");
             setBusyWebinarId(null);
           },
         },
+      });
+
+      ((razorpay as unknown as { on?: (event: string, handler: (payload: unknown) => void) => void }).on)?.("payment.failed", (response: unknown) => {
+        const failed = (response ?? {}) as { error?: { description?: string; reason?: string; metadata?: { payment_id?: string } } };
+        const reason = failed.error?.description ?? failed.error?.reason ?? "payment_failed";
+        const paymentId = failed.error?.metadata?.payment_id;
+        void trackCheckoutEvent(order.id, "payment_failed", { reason, paymentId });
+        setMessageType("error");
+        setMessage(`Payment failed: ${reason}. You can retry safely.`);
+        setBusyWebinarId(null);
       });
 
       razorpay.open();
