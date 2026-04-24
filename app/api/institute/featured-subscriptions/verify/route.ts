@@ -136,7 +136,7 @@ export async function POST(request: Request) {
   if (!signatureResult.valid) {
     await admin.data
       .from("featured_listing_orders")
-      .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
+      .update({ payment_status: "failed", order_status: "cancelled", failed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq("id", existingOrder.id);
 
     return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
