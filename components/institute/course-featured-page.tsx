@@ -94,6 +94,12 @@ function getSubscriptionDisplayStatus(subscription: Subscription) {
   return subscription.status;
 }
 
+function isHigherTierPlan(candidate: Plan, baseline: Plan) {
+  if (candidate.tierRank !== baseline.tierRank) return candidate.tierRank > baseline.tierRank;
+  if (candidate.durationDays !== baseline.durationDays) return candidate.durationDays > baseline.durationDays;
+  return candidate.amount > baseline.amount;
+}
+
 export function InstituteCourseFeaturedPageClient() {
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -317,17 +323,17 @@ export function InstituteCourseFeaturedPageClient() {
           {courses.map((course) => {
             const state = subscriptionByCourse.get(course.id) ?? { active: null, scheduled: null };
             const selectedPlanId = selectedPlanByCourse[course.id] ?? "";
-            const activePlan = plans.find((plan) => plan.code === state.active?.plan_code);
+            const activePlan = plans.find((plan) => plan.id === state.active?.plan_id) ?? plans.find((plan) => plan.code === state.active?.plan_code);
             const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
-            const isUpgrade = Boolean(state.active && selectedPlan && activePlan && selectedPlan.tierRank > activePlan.tierRank);
+            const isUpgrade = Boolean(state.active && selectedPlan && activePlan && isHigherTierPlan(selectedPlan, activePlan));
             const hasActivePlan = Boolean(state.active);
-            const disableForNonUpgradeWhileActive = Boolean(hasActivePlan && selectedPlan && activePlan && selectedPlan.tierRank <= activePlan.tierRank);
+            const disableForNonUpgradeWhileActive = Boolean(hasActivePlan && selectedPlan && activePlan && !isHigherTierPlan(selectedPlan, activePlan));
             const hasScheduledPlan = Boolean(state.active !== null && state.scheduled !== null);
             const isButtonDisabled = Boolean(busyCourseId) || plans.length === 0 || disableForNonUpgradeWhileActive || (hasScheduledPlan && !isUpgrade);
             const actionText = hasActivePlan
               ? isUpgrade
                 ? "Upgrade to bigger plan"
-                : selectedPlan && activePlan && selectedPlan.tierRank < activePlan.tierRank
+                : selectedPlan && activePlan && !isHigherTierPlan(selectedPlan, activePlan)
                   ? "Choose higher plan to upgrade"
                   : "Current plan active (choose higher to upgrade)"
               : "Feature this course";

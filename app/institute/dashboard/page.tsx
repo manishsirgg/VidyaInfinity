@@ -196,8 +196,8 @@ export default async function InstituteDashboardPage() {
   const webinarPayoutTotal = webinarPaidOrders.reduce((sum, order) => sum + Number(order.payout_amount ?? 0), 0);
   const paidCourseFeaturedOrders = courseFeaturedOrders.filter((order) => order.payment_status === "paid");
   const paidWebinarFeaturedOrders = webinarFeaturedOrders.filter((order) => order.payment_status === "paid");
-  const courseFeaturedRevenue = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
-  const webinarFeaturedRevenue = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
+  const courseFeaturedSpend = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
+  const webinarFeaturedSpend = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const currentlyFeaturedCourseIds = Array.from(
     new Set(
       courseFeaturedRows
@@ -428,9 +428,9 @@ export default async function InstituteDashboardPage() {
         <h2 className="text-base font-semibold">Course & webinar featured metrics</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
           <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Course featured paid orders: <span className="font-semibold">{paidCourseFeaturedOrders.length}</span></p>
-          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Course featured revenue: <span className="font-semibold">{money(courseFeaturedRevenue)}</span></p>
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Course featured spend: <span className="font-semibold">{money(courseFeaturedSpend)}</span></p>
           <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Webinar featured paid orders: <span className="font-semibold">{paidWebinarFeaturedOrders.length}</span></p>
-          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Webinar featured revenue: <span className="font-semibold">{money(webinarFeaturedRevenue)}</span></p>
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Webinar featured spend: <span className="font-semibold">{money(webinarFeaturedSpend)}</span></p>
         </div>
         <div className="mt-3 grid gap-3 lg:grid-cols-2 text-sm">
           <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2">
