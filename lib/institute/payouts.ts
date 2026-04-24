@@ -79,7 +79,7 @@ function normalizePayoutStatus(status: unknown, availableAt?: unknown) {
   const value = String(status ?? "pending").trim().toLowerCase();
   if (value === "available") return "available" as CanonicalPayoutStatus;
   if (value === "locked") return "locked" as CanonicalPayoutStatus;
-  if (value === "processed" || value === "paid") return "processed" as CanonicalPayoutStatus;
+  if (value === "processed") return "processed" as CanonicalPayoutStatus;
   if (value === "reversed" || value === "cancelled") return "reversed" as CanonicalPayoutStatus;
   if (value === "failed") return "failed" as CanonicalPayoutStatus;
   if (value === "processing") return "locked" as CanonicalPayoutStatus;
