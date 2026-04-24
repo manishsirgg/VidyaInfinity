@@ -325,7 +325,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         .eq("webinar_order_id", refund.webinar_order_id);
     }
 
-    const payoutOrderKind = refund.course_order_id ? "course" : refund.webinar_order_id ? "webinar" : null;
+    const payoutOrderKind = refund.course_order_id ? "course_order" : refund.webinar_order_id ? "webinar_order" : null;
     const payoutOrderId = refund.course_order_id ?? refund.webinar_order_id;
 
     if (payoutOrderKind && payoutOrderId) {
