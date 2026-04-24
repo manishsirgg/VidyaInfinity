@@ -4,7 +4,7 @@ import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { applyRefundToInstitutePayout } from "@/lib/payments/institute-payout-refunds";
-import { createRazorpayRefund, mapRazorpayRefundStatus } from "@/lib/payments/refunds";
+import { createRazorpayRefund, fetchRazorpayRefund, mapRazorpayRefundStatus } from "@/lib/payments/refunds";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type RefundDbStatus = "requested" | "processing" | "refunded" | "failed" | "cancelled";
@@ -258,7 +258,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     razorpayStatus: razorpayRefund.data.status ?? "unknown",
   });
 
-  const mappedStatus = mapRazorpayRefundStatus(razorpayRefund.data.status);
+  let latestRazorpayRefundStatus = razorpayRefund.data.status ?? "pending";
+  let latestRazorpayRefundAmountSubunits = razorpayRefund.data.amount ?? null;
+  let latestRazorpayRefundCreatedAt = razorpayRefund.data.created_at ?? null;
+
+  let mappedStatus = mapRazorpayRefundStatus(latestRazorpayRefundStatus);
+  if (mappedStatus === "processing" && razorpayRefund.data.id) {
+    const latestRefund = await fetchRazorpayRefund(razorpayRefund.data.id);
+    if (latestRefund.ok) {
+      latestRazorpayRefundStatus = latestRefund.data.status ?? latestRazorpayRefundStatus;
+      latestRazorpayRefundAmountSubunits =
+        typeof latestRefund.data.amount === "number"
+          ? latestRefund.data.amount
+          : latestRazorpayRefundAmountSubunits;
+      mappedStatus = mapRazorpayRefundStatus(latestRazorpayRefundStatus);
+    }
+  }
+
   const finalStatus: RefundDbStatus = mappedStatus === "processing" ? "processing" : mappedStatus;
 
   const { data: refund, error: updateError } = await admin.data
@@ -273,9 +289,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         ...(currentRefund.metadata ?? {}),
         approved_by: auth.user.id,
         approved_at: new Date().toISOString(),
-        razorpay_refund_status: razorpayRefund.data.status ?? "unknown",
-        razorpay_refund_amount_subunits: razorpayRefund.data.amount ?? null,
-        razorpay_refund_created_at: razorpayRefund.data.created_at ?? null,
+        razorpay_refund_status: latestRazorpayRefundStatus ?? "unknown",
+        razorpay_refund_amount_subunits: latestRazorpayRefundAmountSubunits,
+        razorpay_refund_created_at: latestRazorpayRefundCreatedAt,
         razorpay_refund_payment_id: razorpayRefund.data.payment_id ?? currentRefund.razorpay_payment_id,
       },
     })
