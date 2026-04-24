@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { jsonError, runRpcWithFallback } from "@/lib/institute/payouts";
+import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const VALID_STATUSES = ["under_review", "approved", "processing", "processed", "failed", "rejected"] as const;
 
@@ -41,5 +43,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   ]);
 
   if (rpcResult.error) return jsonError(rpcResult.error, 400);
+
+  const admin = getSupabaseAdmin();
+  if (admin.ok) {
+    const { data: payoutRequest } = await admin.data.from("institute_payout_requests").select("institute_id,status,amount").eq("id", id).maybeSingle<{
+      institute_id: string;
+      status: string | null;
+      amount: number | null;
+    }>();
+    if (payoutRequest?.institute_id) {
+      await logInstituteWalletEvent(
+        {
+          instituteId: payoutRequest.institute_id,
+          eventType: nextStatus === "processed" ? "payout_processed" : nextStatus === "approved" ? "payout_approved" : "payout_status_changed",
+          sourceTable: "institute_payout_requests",
+          sourceId: id,
+          payoutRequestId: id,
+          amount: Number(payoutRequest.amount ?? 0),
+          newStatus: String(payoutRequest.status ?? nextStatus),
+          actorUserId: auth.user.id,
+          actorRole: "admin",
+          idempotencyKey: `payout_request:${id}:transition:${nextStatus}`,
+          metadata: { payment_reference: paymentReference, admin_note: payload.admin_note ?? null },
+        },
+        admin.data
+      );
+    }
+  }
+
   return NextResponse.json({ ok: true, payout_request: rpcResult.data });
 }

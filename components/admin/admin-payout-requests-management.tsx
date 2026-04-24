@@ -150,6 +150,21 @@ export function AdminPayoutRequestsManagement({ initialRequests }: { initialRequ
                   <p className="text-xs uppercase text-slate-500">Auto payout attempts</p>
                   <pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-xs text-slate-700">{JSON.stringify((selectedDetail.institute_payout_transfer_attempts as AnyRecord[] | null) ?? [], null, 2)}</pre>
                 </div>
+                <div className="rounded border p-3">
+                  <p className="text-xs uppercase text-slate-500">Financial timeline</p>
+                  <div className="mt-2 space-y-2">
+                    {((selectedDetail.audit_timeline as AnyRecord[] | null) ?? []).map((event, index) => (
+                      <div key={String(event.id ?? index)} className="rounded border px-2 py-1 text-xs">
+                        <p className="font-medium">{String(event.event_type ?? "-")}</p>
+                        <p className="text-slate-600">
+                          {String(event.previous_status ?? "-")} → {String(event.new_status ?? "-")} · ₹{Number(event.amount ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-slate-500">{formatDate(event.created_at)}</p>
+                      </div>
+                    ))}
+                    {(((selectedDetail.audit_timeline as AnyRecord[] | null) ?? []).length === 0) ? <p className="text-xs text-slate-500">No timeline events yet.</p> : null}
+                  </div>
+                </div>
               </>
             ) : null}
 

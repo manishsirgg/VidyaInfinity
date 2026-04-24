@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 function money(value: number) {
   return `₹${Number(value ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
@@ -84,9 +85,59 @@ export function InstituteWalletManagement() {
     void loadAll();
   }, [loadAll]);
 
+  useEffect(() => {
+    const instituteId = String(wallet?.institute_id ?? "").trim();
+    if (!instituteId) return;
+
+    const supabase = createClient();
+    let realtimeHealthy = false;
+    let pollTimer: number | null = null;
+    let fallbackTimer: number | null = null;
+
+    const startPolling = () => {
+      if (pollTimer !== null) return;
+      pollTimer = window.setInterval(() => {
+        void loadAll();
+      }, 45000);
+    };
+    const stopPolling = () => {
+      if (pollTimer === null) return;
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    };
+
+    const channel = supabase
+      .channel(`wallet-live-${instituteId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "institute_payouts", filter: `institute_id=eq.${instituteId}` }, () => void loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "institute_payout_requests", filter: `institute_id=eq.${instituteId}` }, () => void loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "institute_payout_accounts", filter: `institute_id=eq.${instituteId}` }, () => void loadAll())
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          realtimeHealthy = true;
+          stopPolling();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          realtimeHealthy = false;
+          startPolling();
+        }
+      });
+
+    fallbackTimer = window.setTimeout(() => {
+      if (!realtimeHealthy) startPolling();
+    }, 12000);
+
+    return () => {
+      if (fallbackTimer !== null) window.clearTimeout(fallbackTimer);
+      stopPolling();
+      void supabase.removeChannel(channel);
+    };
+  }, [loadAll, wallet?.institute_id]);
+
   const summary = useMemo(() => (wallet?.summary as AnyRecord) ?? {}, [wallet?.summary]);
   const ledger = useMemo(() => (wallet?.ledger as AnyRecord[]) ?? [], [wallet?.ledger]);
   const recentPayoutHistory = useMemo(() => (wallet?.recent_payout_history as AnyRecord[]) ?? [], [wallet?.recent_payout_history]);
+  const recentActivity = useMemo(() => (wallet?.recent_activity as AnyRecord[]) ?? [], [wallet?.recent_activity]);
   const approvedAccounts = useMemo(() => accounts.filter((row) => isAccountEligible(row)), [accounts]);
 
   async function uploadProof(accountId: string) {
@@ -380,6 +431,22 @@ export function InstituteWalletManagement() {
             </tbody>
           </table>
           {requests.length === 0 ? <p className="py-3 text-sm text-slate-600">No payout requests found.</p> : null}
+        </div>
+      </section>
+
+      <section className="rounded border bg-white p-4">
+        <h2 className="text-base font-semibold">Recent activity</h2>
+        <div className="mt-3 space-y-2 text-sm">
+          {recentActivity.map((row, index) => (
+            <div key={String(row.id ?? index)} className="rounded border px-3 py-2">
+              <p className="font-medium">{String(row.event_type ?? "-")}</p>
+              <p className="text-xs text-slate-500">
+                Amount: {money(Number(row.amount ?? 0))} · Status: {String(row.previous_status ?? "-")} → {String(row.new_status ?? "-")}
+              </p>
+              <p className="text-xs text-slate-500">At: {formatDate(String(row.created_at ?? ""))}</p>
+            </div>
+          ))}
+          {recentActivity.length === 0 ? <p className="text-slate-600">No wallet activity yet.</p> : null}
         </div>
       </section>
 

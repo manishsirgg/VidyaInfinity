@@ -28,6 +28,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (allocationsResult.error) return NextResponse.json({ error: allocationsResult.error.message }, { status: 500 });
   if (transferAttemptsResult.error) return NextResponse.json({ error: transferAttemptsResult.error.message }, { status: 500 });
 
+  const auditQuery = admin.data
+    .from("institute_wallet_audit_logs")
+    .select("*")
+    .eq("payout_request_id", id)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const { data: auditLogs, error: auditError } = await auditQuery;
+  if (auditError) return NextResponse.json({ error: auditError.message }, { status: 500 });
+
   return NextResponse.json({
     payout_request: {
       ...payoutRequest,
@@ -35,6 +44,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       institute_payout_accounts: accountResult.data ?? null,
       institute_payout_request_allocations: allocationsResult.data ?? [],
       institute_payout_transfer_attempts: transferAttemptsResult.data ?? [],
+      audit_timeline: auditLogs ?? [],
     },
   });
 }

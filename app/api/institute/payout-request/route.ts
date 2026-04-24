@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { isApprovedAndActiveAccount, normalizePayoutAccountStatus, resolvePayoutAccountBlockingReason } from "@/lib/institute/payout-account";
+import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { getInstituteIdForUser, jsonError, loadInstituteWalletSnapshot, parseAmount, runRpcWithFallback } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -85,6 +86,24 @@ export async function POST(request: Request) {
     }
     return jsonError(rpcResult.error, 400);
   }
+
+  const payoutRequest = (rpcResult.data ?? {}) as Record<string, unknown>;
+  await logInstituteWalletEvent(
+    {
+      instituteId,
+      eventType: "payout_requested",
+      sourceTable: "institute_payout_requests",
+      sourceId: String(payoutRequest.id ?? ""),
+      payoutRequestId: String(payoutRequest.id ?? ""),
+      amount,
+      newStatus: String(payoutRequest.status ?? "requested"),
+      actorUserId: auth.user.id,
+      actorRole: "institute",
+      idempotencyKey: `payout_request:${String(payoutRequest.id ?? "")}`,
+      metadata: { payout_account_id: payoutAccountId },
+    },
+    admin.data
+  );
 
   return NextResponse.json({ ok: true, payout_request: rpcResult.data });
 }

@@ -1,4 +1,5 @@
 import { runRpcWithFallback } from "@/lib/institute/payouts";
+import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type AnyRecord = Record<string, unknown>;
@@ -123,6 +124,25 @@ export async function attemptAutoPayout({ payoutRequestId, adminUserId }: { payo
         admin_user_id: adminUserId,
       },
     ]);
+
+    if (payoutRequest.institute_id) {
+      await logInstituteWalletEvent(
+        {
+          instituteId: String(payoutRequest.institute_id),
+          eventType: "payout_failed",
+          sourceTable: "institute_payout_transfer_attempts",
+          sourceId: String(attempt?.id ?? ""),
+          payoutRequestId,
+          amount: Number(payoutRequest.amount ?? 0),
+          newStatus: "failed",
+          actorUserId: adminUserId,
+          actorRole: "admin",
+          idempotencyKey: `payout_request:${payoutRequestId}:transition:failed`,
+          metadata: { provider: process.env.AUTO_PAYOUT_PROVIDER ?? null, reason: providerResult.error ?? "Auto payout failed" },
+        },
+        admin.data
+      );
+    }
 
     return { ok: false, error: providerResult.error ?? "Auto payout failed." };
   }

@@ -5,6 +5,7 @@ import { notifyCoursePurchase } from "@/lib/marketplace/course-notifications";
 import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications";
 import { deliverWebinarAccess } from "@/lib/webinars/access-delivery";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 function resolveAccessEndAt(startAtIso: string, durationValue: number | null, durationUnit: string | null) {
@@ -96,6 +97,21 @@ async function createInstitutePayoutForCourseOrder({
   );
 
   if (payoutInsertError) {
+    await logInstituteWalletEvent(
+      {
+        instituteId: paidOrder.institute_id,
+        eventType: "wallet_sync_failed",
+        sourceTable: "course_orders",
+        sourceId: paidOrder.id,
+        orderId: paidOrder.id,
+        orderKind: "course",
+        amount: paidOrder.institute_receivable_amount,
+        actorRole: "system",
+        idempotencyKey: `wallet_sync_failed:course:${paidOrder.id}:${source}`,
+        metadata: { source, reason: payoutInsertError.message },
+      },
+      supabase
+    );
     console.error("[payments/reconcile] institute_payout_course_insert_failed", {
       event: "institute_payout_course_insert_failed",
       course_order_id: orderId,
@@ -104,6 +120,29 @@ async function createInstitutePayoutForCourseOrder({
     });
     return { error: payoutInsertError.message };
   }
+
+  const { data: payoutRow } = await supabase
+    .from("institute_payouts")
+    .select("id")
+    .eq("course_order_id", paidOrder.id)
+    .maybeSingle<{ id: string }>();
+
+  await logInstituteWalletEvent(
+    {
+      instituteId: paidOrder.institute_id,
+      eventType: "payment_credited",
+      sourceTable: "course_orders",
+      sourceId: paidOrder.id,
+      payoutId: payoutRow?.id ?? null,
+      orderId: paidOrder.id,
+      orderKind: "course",
+      amount: paidOrder.institute_receivable_amount,
+      actorRole: "system",
+      idempotencyKey: `course_payout:${paidOrder.id}`,
+      metadata: { source, available_at: availableAt },
+    },
+    supabase
+  );
 
   return { error: null as string | null };
 }
@@ -165,6 +204,21 @@ async function createInstitutePayoutForWebinarOrder({
   );
 
   if (payoutInsertError) {
+    await logInstituteWalletEvent(
+      {
+        instituteId: paidOrder.institute_id,
+        eventType: "wallet_sync_failed",
+        sourceTable: "webinar_orders",
+        sourceId: paidOrder.id,
+        orderId: paidOrder.id,
+        orderKind: "webinar",
+        amount: payoutAmount,
+        actorRole: "system",
+        idempotencyKey: `wallet_sync_failed:webinar:${paidOrder.id}:${source}`,
+        metadata: { source, reason: payoutInsertError.message },
+      },
+      supabase
+    );
     console.error("[payments/reconcile] institute_payout_webinar_insert_failed", {
       event: "institute_payout_webinar_insert_failed",
       webinar_order_id: orderId,
@@ -173,6 +227,29 @@ async function createInstitutePayoutForWebinarOrder({
     });
     return { error: payoutInsertError.message };
   }
+
+  const { data: payoutRow } = await supabase
+    .from("institute_payouts")
+    .select("id")
+    .eq("webinar_order_id", paidOrder.id)
+    .maybeSingle<{ id: string }>();
+
+  await logInstituteWalletEvent(
+    {
+      instituteId: paidOrder.institute_id,
+      eventType: "payment_credited",
+      sourceTable: "webinar_orders",
+      sourceId: paidOrder.id,
+      payoutId: payoutRow?.id ?? null,
+      orderId: paidOrder.id,
+      orderKind: "webinar",
+      amount: payoutAmount,
+      actorRole: "system",
+      idempotencyKey: `webinar_payout:${paidOrder.id}`,
+      metadata: { source, available_at: availableAt },
+    },
+    supabase
+  );
 
   return { error: null as string | null };
 }

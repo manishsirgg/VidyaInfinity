@@ -46,6 +46,15 @@ type UserDocWithLink = {
   created_at: string;
   signedUrl: string | null;
 };
+type WalletAuditEvent = {
+  id: string;
+  institute_id: string;
+  event_type: string;
+  amount: number | null;
+  previous_status: string | null;
+  new_status: string | null;
+  created_at: string;
+};
 
 function disabledReasonFromStatus(status: string) {
   if (status === "approved") return "Already approved";
@@ -144,6 +153,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const paginatedInstitutes = sortedInstitutes.slice(startIndex, startIndex + PAGE_SIZE);
   const paginatedPendingInstitutes = paginatedInstitutes.filter((institute) => institute.status === "pending");
   const paginatedReviewedInstitutes = paginatedInstitutes.filter((institute) => institute.status !== "pending");
+  const paginatedInstituteIds = paginatedInstitutes.map((item) => item.id);
+
+  const { data: walletAuditLogs } = paginatedInstituteIds.length
+    ? await supabase
+        .from("institute_wallet_audit_logs")
+        .select("id,institute_id,event_type,amount,previous_status,new_status,created_at")
+        .in("institute_id", paginatedInstituteIds)
+        .order("created_at", { ascending: false })
+        .limit(200)
+    : { data: [] };
+  const walletAuditByInstitute = new Map<string, WalletAuditEvent[]>();
+  for (const event of (walletAuditLogs ?? []) as WalletAuditEvent[]) {
+    const list = walletAuditByInstitute.get(event.institute_id) ?? [];
+    if (list.length < 6) list.push(event);
+    walletAuditByInstitute.set(event.institute_id, list);
+  }
 
   function renderInstituteDoc(doc: InstituteDocWithLink) {
     return (
@@ -186,6 +211,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
 
     const instituteHistory = instituteAllDocs.filter((doc) => doc.id !== activeInstituteDoc?.id);
     const ownerDocHistory = ownerAllDocs.filter((doc) => doc.id !== activeOwnerIdentityDoc?.id);
+    const walletEvents = walletAuditByInstitute.get(institute.id) ?? [];
 
     const hasActivePendingSubmission =
       institute.status === "pending" &&
@@ -250,6 +276,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             ) : null}
           </details>
         ) : null}
+
+        <div className="mt-2 rounded border border-slate-200 bg-slate-50 p-2">
+          <p className="text-xs font-medium text-slate-700">Financial activity timeline</p>
+          <div className="mt-1 space-y-1">
+            {walletEvents.map((event) => (
+              <div key={event.id} className="rounded border bg-white px-2 py-1 text-xs">
+                <p className="font-medium">{event.event_type}</p>
+                <p className="text-slate-600">₹{Number(event.amount ?? 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })} · {event.previous_status ?? "-"} → {event.new_status ?? "-"}</p>
+                <p className="text-slate-500">{new Date(event.created_at).toLocaleString()}</p>
+              </div>
+            ))}
+            {walletEvents.length === 0 ? <p className="text-xs text-slate-500">No financial events yet.</p> : null}
+          </div>
+        </div>
 
         <ModerationActions
           targetType="institutes"

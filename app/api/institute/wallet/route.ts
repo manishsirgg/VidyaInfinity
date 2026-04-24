@@ -19,6 +19,13 @@ export async function GET() {
   if (snapshotResult.error || !snapshotResult.data) return NextResponse.json({ error: snapshotResult.error ?? "Unable to load wallet summary." }, { status: 500 });
 
   const { summary, ledger, recent_payout_history: recentPayoutHistory } = snapshotResult.data;
+  const { data: auditLogs, error: auditError } = await admin.data
+    .from("institute_wallet_audit_logs")
+    .select("*")
+    .eq("institute_id", instituteId)
+    .order("created_at", { ascending: false })
+    .limit(25);
+  if (auditError) return NextResponse.json({ error: auditError.message }, { status: 500 });
 
   return NextResponse.json({
     institute_id: instituteId,
@@ -33,5 +40,6 @@ export async function GET() {
     paid_out: Number(summary.paid_out ?? 0),
     recent_payout_history: recentPayoutHistory,
     ledger,
+    recent_activity: auditLogs ?? [],
   });
 }
