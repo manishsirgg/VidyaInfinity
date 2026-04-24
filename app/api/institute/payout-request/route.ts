@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { isApprovedAndActiveAccount, normalizePayoutAccountStatus, resolvePayoutAccountBlockingReason } from "@/lib/institute/payout-account";
-import { getInstituteIdForUser, jsonError, parseAmount, runRpcWithFallback } from "@/lib/institute/payouts";
+import { getInstituteIdForUser, jsonError, loadInstituteWalletSnapshot, parseAmount, runRpcWithFallback } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const MIN_PAYOUT_AMOUNT = 500;
@@ -25,8 +25,8 @@ export async function POST(request: Request) {
   if (!payoutAccountId) return jsonError("payout_account_id is required.");
   if (amount === null || amount < MIN_PAYOUT_AMOUNT) return jsonError(`Minimum payout amount is ₹${MIN_PAYOUT_AMOUNT}.`);
 
-  const [walletResult, activeRequestResult] = await Promise.all([
-    admin.data.from("institute_wallet_summary").select("available_balance").eq("institute_id", instituteId).maybeSingle(),
+  const [walletSnapshotResult, activeRequestResult] = await Promise.all([
+    loadInstituteWalletSnapshot(instituteId, { ledgerLimit: 1, payoutHistoryLimit: 1 }),
     admin.data
       .from("institute_payout_requests")
       .select("id,status")
@@ -37,14 +37,14 @@ export async function POST(request: Request) {
       .maybeSingle(),
   ]);
 
-  if (walletResult.error) return jsonError(walletResult.error.message, 500);
+  if (walletSnapshotResult.error || !walletSnapshotResult.data) return jsonError(walletSnapshotResult.error ?? "Unable to load wallet balance.", 500);
   if (activeRequestResult.error) return jsonError(activeRequestResult.error.message, 500);
 
   if (activeRequestResult.data?.id) {
     return jsonError("An active payout request already exists. Please wait for admin action.", 409);
   }
 
-  const availableBalance = Number((walletResult.data as { available_balance?: number } | null)?.available_balance ?? 0);
+  const availableBalance = Number(walletSnapshotResult.data.summary.available_balance ?? 0);
   if (amount > availableBalance) return jsonError("Insufficient available balance for this payout request.", 400);
 
   const { data: payoutAccount, error: accountError } = await admin.data

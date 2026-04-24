@@ -389,7 +389,7 @@ export async function POST(request: Request) {
       gross_amount: -walletAdjustmentAmount,
       platform_fee_amount: 0,
       payout_amount: -walletAdjustmentAmount,
-      payout_status: "paid",
+      payout_status: "processed",
       due_at: nowIso,
       scheduled_at: nowIso,
       paid_at: nowIso,

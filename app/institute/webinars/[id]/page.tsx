@@ -51,7 +51,9 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
   const gross = paidOrders.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
   const platformFee = paidOrders.reduce((sum, row) => sum + Number(row.platform_fee_amount ?? 0), 0);
   const instituteShare = paidOrders.reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
-  const payoutPending = (payouts ?? []).filter((item) => item.payout_status !== "paid").reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
+  const payoutPending = (payouts ?? [])
+    .filter((item) => !["processed", "paid"].includes(String(item.payout_status ?? "").toLowerCase()))
+    .reduce((sum, row) => sum + Number(row.payout_amount ?? 0), 0);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
