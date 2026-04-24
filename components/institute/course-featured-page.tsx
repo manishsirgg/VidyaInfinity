@@ -322,10 +322,14 @@ export function InstituteCourseFeaturedPageClient() {
             const isUpgrade = Boolean(state.active && selectedPlan && activePlan && selectedPlan.tierRank > activePlan.tierRank);
             const hasActivePlan = Boolean(state.active);
             const disableForNonUpgradeWhileActive = Boolean(hasActivePlan && selectedPlan && activePlan && selectedPlan.tierRank <= activePlan.tierRank);
+            const hasScheduledPlan = Boolean(state.active !== null && state.scheduled !== null);
+            const isButtonDisabled = Boolean(busyCourseId) || plans.length === 0 || disableForNonUpgradeWhileActive || (hasScheduledPlan && !isUpgrade);
             const actionText = hasActivePlan
               ? isUpgrade
                 ? "Upgrade to bigger plan"
-                : "Current plan active"
+                : selectedPlan && activePlan && selectedPlan.tierRank < activePlan.tierRank
+                  ? "Choose higher plan to upgrade"
+                  : "Current plan active (choose higher to upgrade)"
               : "Feature this course";
 
             return (
@@ -361,10 +365,15 @@ export function InstituteCourseFeaturedPageClient() {
                       type="button"
                       className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                       onClick={() => void purchase(course.id)}
-                      disabled={Boolean(busyCourseId) || plans.length === 0 || disableForNonUpgradeWhileActive || (state.active !== null && state.scheduled !== null && !isUpgrade)}
+                      disabled={isButtonDisabled}
                     >
                       {busyCourseId === course.id ? "Processing..." : actionText}
                     </button>
+                    {hasActivePlan ? (
+                      <p className="text-xs text-slate-500">
+                        {isUpgrade ? "Upgrade is enabled for this bigger plan." : "Current plan stays active. Pick a bigger plan to upgrade."}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
