@@ -85,7 +85,7 @@ export async function attemptAutoPayout({ payoutRequestId, adminUserId }: { payo
       provider: process.env.AUTO_PAYOUT_PROVIDER ?? null,
       status: "attempting",
       initiated_by: adminUserId,
-      requested_amount: payoutRequest.amount,
+      requested_amount: payoutRequest.requested_amount ?? payoutRequest.approved_amount ?? 0,
       attempted_at: startedAt,
     })
     .select("id")
@@ -133,7 +133,7 @@ export async function attemptAutoPayout({ payoutRequestId, adminUserId }: { payo
           sourceTable: "institute_payout_transfer_attempts",
           sourceId: String(attempt?.id ?? ""),
           payoutRequestId,
-          amount: Number(payoutRequest.amount ?? 0),
+          amount: Number(payoutRequest.approved_amount ?? payoutRequest.requested_amount ?? 0),
           newStatus: "failed",
           actorUserId: adminUserId,
           actorRole: "admin",

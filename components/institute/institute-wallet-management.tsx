@@ -398,7 +398,7 @@ export function InstituteWalletManagement() {
             <div className="mt-2 space-y-2 text-sm">
               {recentPayoutHistory.map((row, index) => (
                 <div key={String(row.id ?? index)} className="rounded border px-3 py-2">
-                  <p className="font-medium">{money(Number(row.amount ?? row.requested_amount ?? 0))} · {String(row.status ?? "-")}</p>
+                  <p className="font-medium">Requested: {money(Number(row.requested_amount ?? 0))} · Approved: {money(Number(row.approved_amount ?? 0))} · {String(row.status ?? "-")}</p>
                   <p className="text-xs text-slate-500">Requested: {formatDate(String(row.created_at ?? ""))}</p>
                   <p className="text-xs text-slate-500">Reference: {String(row.payment_reference ?? "-")}</p>
                 </div>
@@ -422,7 +422,7 @@ export function InstituteWalletManagement() {
               {requests.map((row, index) => (
                 <tr key={String(row.id ?? index)} className="border-b last:border-0">
                   <td className="px-2 py-2">{String(row.id ?? "-")}</td>
-                  <td className="px-2 py-2">{money(Number(row.amount ?? row.requested_amount ?? 0))}</td>
+                  <td className="px-2 py-2">Req {money(Number(row.requested_amount ?? 0))} · Appr {money(Number(row.approved_amount ?? 0))}</td>
                   <td className="px-2 py-2">{String(row.status ?? "-")}</td>
                   <td className="px-2 py-2">{String(row.payment_reference ?? "-")}</td>
                   <td className="px-2 py-2 text-xs text-slate-500">Created: {formatDate(String(row.created_at ?? ""))}<br />Updated: {formatDate(String(row.updated_at ?? ""))}</td>
