@@ -293,6 +293,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     razorpayRefundId: razorpayRefund.data.id,
   });
 
+  let payoutSyncWarning: string | null = null;
+
   if (refund.refund_status === "refunded") {
     if (refund.course_order_id) {
       await admin.data
@@ -337,20 +339,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       });
 
       if (!payoutRefundResult.ok) {
+        payoutSyncWarning = payoutRefundResult.error;
         logRefundAdminEvent("refund_wallet_adjustment_failed", {
           refundId: refund.id,
           orderKind: payoutOrderKind,
           orderId: payoutOrderId,
           reason: payoutRefundResult.error,
         });
-        return NextResponse.json({ error: payoutRefundResult.error }, { status: 500 });
+      } else {
+        logRefundAdminEvent("refund_wallet_adjustment_applied", {
+          refundId: refund.id,
+          orderKind: payoutOrderKind,
+          orderId: payoutOrderId,
+        });
       }
-
-      logRefundAdminEvent("refund_wallet_adjustment_applied", {
-        refundId: refund.id,
-        orderKind: payoutOrderKind,
-        orderId: payoutOrderId,
-      });
     }
   }
 
@@ -399,6 +401,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       refund.refund_status === "refunded"
         ? "Refund was successfully processed."
         : "Refund initiation succeeded and is now processing.",
+    warning: payoutSyncWarning,
     refund,
   });
 }
