@@ -221,6 +221,13 @@ export async function POST(request: Request) {
     .maybeSingle<{ id: string; plan_id: string | null; starts_at: string; ends_at: string; status: string }>();
 
   let window = await getNextWebinarFeaturedWindow(admin.data, existingOrder.webinar_id, Number(existingOrder.duration_days));
+  if (!currentActiveSubscription?.id) {
+    window = {
+      startsAt: nowIso,
+      endsAt: new Date(new Date(nowIso).getTime() + Number(existingOrder.duration_days) * 24 * 60 * 60 * 1000).toISOString(),
+      queuedFromPrevious: false,
+    };
+  }
   if (currentActiveSubscription?.id && currentActiveSubscription.plan_id) {
     const { data: currentPlan } = await admin.data
       .from("webinar_featured_plans")

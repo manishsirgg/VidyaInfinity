@@ -56,6 +56,10 @@ export default async function AdminDashboardPage() {
     { count: instituteFeaturedSubscriptionsCount },
     { count: courseFeaturedSubscriptionsCount },
     { count: webinarFeaturedSubscriptionsCount },
+    { data: courseFeaturedOrders },
+    { data: webinarFeaturedOrders },
+    { count: activeFeaturedCoursesCount },
+    { count: activeFeaturedWebinarsCount },
     { data: recentNotifications },
     { data: recentPendingCourses },
   ] = await Promise.all([
@@ -78,6 +82,10 @@ export default async function AdminDashboardPage() {
     supabase.from("institute_featured_subscriptions").select("id", { count: "exact", head: true }),
     supabase.from("course_featured_subscriptions").select("id", { count: "exact", head: true }),
     supabase.from("webinar_featured_subscriptions").select("id", { count: "exact", head: true }),
+    supabase.from("course_featured_orders").select("id,payment_status,amount"),
+    supabase.from("webinar_featured_orders").select("id,payment_status,amount"),
+    supabase.from("active_featured_courses").select("course_id", { count: "exact", head: true }),
+    supabase.from("active_featured_webinars").select("webinar_id", { count: "exact", head: true }),
     supabase
       .from("notifications")
       .select("id,title,message,type,is_read,created_at")
@@ -101,6 +109,10 @@ export default async function AdminDashboardPage() {
   const recentNotificationFeed = [...(recentNotifications ?? []), ...moderationNotifications]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 5);
+  const paidCourseFeaturedOrders = (courseFeaturedOrders ?? []).filter((order) => order.payment_status === "paid");
+  const paidWebinarFeaturedOrders = (webinarFeaturedOrders ?? []).filter((order) => order.payment_status === "paid");
+  const paidCourseFeaturedRevenue = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
+  const paidWebinarFeaturedRevenue = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
 
   return (
     <div className="vi-page">
@@ -159,6 +171,18 @@ export default async function AdminDashboardPage() {
         </Link>
         <Link href="/admin/featured-listings" className="vi-card p-4">
           Webinar featured promotions: {webinarFeaturedSubscriptionsCount ?? 0}
+        </Link>
+        <Link href="/admin/featured-listings" className="vi-card p-4">
+          Active featured courses: {activeFeaturedCoursesCount ?? 0}
+        </Link>
+        <Link href="/admin/featured-listings" className="vi-card p-4">
+          Active featured webinars: {activeFeaturedWebinarsCount ?? 0}
+        </Link>
+        <Link href="/admin/featured-listings" className="vi-card p-4">
+          Course featured revenue: ₹{paidCourseFeaturedRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+        </Link>
+        <Link href="/admin/featured-listings" className="vi-card p-4">
+          Webinar featured revenue: ₹{paidWebinarFeaturedRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
         </Link>
       </div>
 
