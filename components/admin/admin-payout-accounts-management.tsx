@@ -22,6 +22,14 @@ function statusLabel(status: unknown) {
   return "Under review";
 }
 
+function maskAccountNumber(value: unknown) {
+  const raw = String(value ?? "").replace(/\s+/g, "");
+  if (!raw) return "-";
+  const last4 = raw.slice(-4);
+  const maskedPrefix = "*".repeat(Math.max(raw.length - 4, 4));
+  return `${maskedPrefix}${last4}`;
+}
+
 export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAccounts: AnyRecord[] }) {
   const [accounts, setAccounts] = useState(initialAccounts);
   const [selectedId, setSelectedId] = useState<string | null>(initialAccounts[0]?.id ? String(initialAccounts[0]?.id) : null);
@@ -39,6 +47,9 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
     setSelectedId(id);
     setLoading(true);
     setToast(null);
+    setNextStatus("approved");
+    setReason("");
+    setAdminNotes("");
     try {
       const response = await fetch(`/api/admin/payout-accounts/${id}`, { cache: "no-store" });
       const body = await response.json();
@@ -75,6 +86,8 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
       setToast({ type: "success", text: `Payout account moved to ${nextStatus}.` });
       setAccounts((prev) => prev.map((item) => (String(item.id) === selectedId ? { ...item, verification_status: nextStatus } : item)));
       await loadDetail(selectedId);
+      setReason("");
+      setAdminNotes("");
     } catch (error) {
       setToast({ type: "error", text: error instanceof Error ? error.message : "Unable to review payout account." });
     } finally {
@@ -117,7 +130,56 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
               <>
                 <div className="rounded border p-3">
                   <p className="text-xs uppercase text-slate-500">Payout account</p>
-                  <pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-xs text-slate-700">{JSON.stringify(selectedDetail, null, 2)}</pre>
+                  <dl className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+                    <div>
+                      <dt className="text-xs text-slate-500">Institute name</dt>
+                      <dd className="font-medium">{String((selectedDetail.institutes as AnyRecord | null)?.name ?? (selected.institutes as AnyRecord | null)?.name ?? "-")}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Account type</dt>
+                      <dd className="font-medium">{String(selectedDetail.account_type ?? "-").toUpperCase()}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Bank/account holder name</dt>
+                      <dd className="font-medium">{String(selectedDetail.account_holder_name ?? "-")}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Account number</dt>
+                      <dd className="font-medium">{maskAccountNumber(selectedDetail.account_number)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">IFSC code</dt>
+                      <dd className="font-medium">{String(selectedDetail.ifsc_code ?? "-")}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">UPI ID</dt>
+                      <dd className="font-medium">{String(selectedDetail.upi_id ?? "-")}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Verification status</dt>
+                      <dd className="font-medium">{statusLabel(selectedDetail.verification_status)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Submitted at</dt>
+                      <dd className="font-medium">{formatDate(selectedDetail.created_at)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-slate-500">Reviewed at</dt>
+                      <dd className="font-medium">{formatDate(selectedDetail.reviewed_at)}</dd>
+                    </div>
+                    {String(selectedDetail.rejection_reason ?? "") ? (
+                      <div className="sm:col-span-2">
+                        <dt className="text-xs text-slate-500">Rejection reason</dt>
+                        <dd className="font-medium text-rose-700">{String(selectedDetail.rejection_reason)}</dd>
+                      </div>
+                    ) : null}
+                    {String(selectedDetail.admin_notes ?? "") ? (
+                      <div className="sm:col-span-2">
+                        <dt className="text-xs text-slate-500">Admin notes</dt>
+                        <dd className="font-medium">{String(selectedDetail.admin_notes)}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
                 </div>
                 {String(selectedDetail.proof_document_signed_url ?? "") ? (
                   <a href={String(selectedDetail.proof_document_signed_url)} target="_blank" rel="noreferrer" className="inline-flex rounded border px-3 py-2 text-xs hover:bg-slate-50">
