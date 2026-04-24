@@ -173,6 +173,23 @@ export function InstituteWebinarFeaturedPageClient() {
     return grouped;
   }, [subscriptions]);
 
+  const activeWebinarPlanRows = useMemo(
+    () =>
+      webinars
+        .map((webinar) => {
+          const state = subscriptionByWebinar.get(webinar.id) ?? { active: null, scheduled: null };
+          if (!state.active) return null;
+          return {
+            webinarId: webinar.id,
+            webinarTitle: webinar.title,
+            planName: state.active.plan_name ?? state.active.plan_code ?? "Plan",
+            endsAt: state.active.ends_at,
+          };
+        })
+        .filter((row): row is { webinarId: string; webinarTitle: string; planName: string; endsAt: string } => row !== null),
+    [webinars, subscriptionByWebinar],
+  );
+
   async function purchase(webinarId: string) {
     const planId = selectedPlanByWebinar[webinarId];
     if (!planId || busyWebinarId) return;
@@ -283,6 +300,18 @@ export function InstituteWebinarFeaturedPageClient() {
         <div className="rounded border bg-white p-4"><p className="text-xs uppercase text-slate-500">Expiring in 7 days</p><p className="mt-1 text-2xl font-semibold">{summary.expiringSoonCount}</p></div>
       </section>
 
+      <section className="mt-4 rounded-xl border bg-white p-4">
+        <h2 className="text-sm font-semibold text-slate-900">Current active webinar-feature plans</h2>
+        {activeWebinarPlanRows.length === 0 ? <p className="mt-2 text-sm text-slate-500">No active webinar feature plans yet.</p> : null}
+        <div className="mt-2 space-y-2">
+          {activeWebinarPlanRows.map((row) => (
+            <p key={row.webinarId} className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              {row.webinarTitle}: <span className="font-semibold">{row.planName}</span> active until {when(row.endsAt)}.
+            </p>
+          ))}
+        </div>
+      </section>
+
       <section className="mt-6 rounded-xl border bg-white p-4">
         <h2 className="text-lg font-semibold">Eligible Webinars</h2>
         {loading ? <p className="mt-3 text-sm text-slate-500">Loading webinars...</p> : null}
@@ -294,7 +323,13 @@ export function InstituteWebinarFeaturedPageClient() {
             const activePlan = plans.find((plan) => plan.code === state.active?.plan_code);
             const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
             const isUpgrade = Boolean(state.active && selectedPlan && activePlan && selectedPlan.tierRank > activePlan.tierRank);
-            const actionText = "Upgrade the plan";
+            const hasActivePlan = Boolean(state.active);
+            const disableForNonUpgradeWhileActive = Boolean(hasActivePlan && selectedPlan && activePlan && selectedPlan.tierRank <= activePlan.tierRank);
+            const actionText = hasActivePlan
+              ? isUpgrade
+                ? "Upgrade to bigger plan"
+                : "Current plan active"
+              : "Feature this webinar";
 
             return (
               <div key={webinar.id} className="rounded border p-4">
@@ -330,7 +365,7 @@ export function InstituteWebinarFeaturedPageClient() {
                       type="button"
                       className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                       onClick={() => void purchase(webinar.id)}
-                      disabled={Boolean(busyWebinarId) || plans.length === 0 || (state.active !== null && state.scheduled !== null && !isUpgrade)}
+                      disabled={Boolean(busyWebinarId) || plans.length === 0 || disableForNonUpgradeWhileActive || (state.active !== null && state.scheduled !== null && !isUpgrade)}
                     >
                       {busyWebinarId === webinar.id ? "Processing..." : actionText}
                     </button>

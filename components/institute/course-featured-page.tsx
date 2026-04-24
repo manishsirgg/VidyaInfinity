@@ -170,6 +170,23 @@ export function InstituteCourseFeaturedPageClient() {
     return grouped;
   }, [subscriptions]);
 
+  const activeCoursePlanRows = useMemo(
+    () =>
+      courses
+        .map((course) => {
+          const state = subscriptionByCourse.get(course.id) ?? { active: null, scheduled: null };
+          if (!state.active) return null;
+          return {
+            courseId: course.id,
+            courseTitle: course.title,
+            planName: state.active.plan_name ?? state.active.plan_code ?? "Plan",
+            endsAt: state.active.ends_at,
+          };
+        })
+        .filter((row): row is { courseId: string; courseTitle: string; planName: string; endsAt: string } => row !== null),
+    [courses, subscriptionByCourse],
+  );
+
   async function purchase(courseId: string) {
     const planId = selectedPlanByCourse[courseId];
     if (!planId || busyCourseId) return;
@@ -280,6 +297,18 @@ export function InstituteCourseFeaturedPageClient() {
         <div className="rounded border bg-white p-4"><p className="text-xs uppercase text-slate-500">Expiring in 7 days</p><p className="mt-1 text-2xl font-semibold">{summary.expiringSoonCount}</p></div>
       </section>
 
+      <section className="mt-4 rounded-xl border bg-white p-4">
+        <h2 className="text-sm font-semibold text-slate-900">Current active course-feature plans</h2>
+        {activeCoursePlanRows.length === 0 ? <p className="mt-2 text-sm text-slate-500">No active course feature plans yet.</p> : null}
+        <div className="mt-2 space-y-2">
+          {activeCoursePlanRows.map((row) => (
+            <p key={row.courseId} className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              {row.courseTitle}: <span className="font-semibold">{row.planName}</span> active until {when(row.endsAt)}.
+            </p>
+          ))}
+        </div>
+      </section>
+
       <section className="mt-6 rounded-xl border bg-white p-4">
         <h2 className="text-lg font-semibold">Eligible Courses</h2>
         {loading ? <p className="mt-3 text-sm text-slate-500">Loading courses...</p> : null}
@@ -291,7 +320,13 @@ export function InstituteCourseFeaturedPageClient() {
             const activePlan = plans.find((plan) => plan.code === state.active?.plan_code);
             const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
             const isUpgrade = Boolean(state.active && selectedPlan && activePlan && selectedPlan.tierRank > activePlan.tierRank);
-            const actionText = "Upgrade the plan";
+            const hasActivePlan = Boolean(state.active);
+            const disableForNonUpgradeWhileActive = Boolean(hasActivePlan && selectedPlan && activePlan && selectedPlan.tierRank <= activePlan.tierRank);
+            const actionText = hasActivePlan
+              ? isUpgrade
+                ? "Upgrade to bigger plan"
+                : "Current plan active"
+              : "Feature this course";
 
             return (
               <div key={course.id} className="rounded border p-4">
@@ -300,7 +335,9 @@ export function InstituteCourseFeaturedPageClient() {
                     <p className="font-medium">{course.title}</p>
                     <p className="text-xs text-slate-500">{course.category ?? "General"} · {course.level ?? "-"} · {course.status}</p>
                     {state.active ? (
-                      <p className="mt-2 text-xs text-emerald-700">Currently Featured · Expires On {when(state.active.ends_at)}</p>
+                      <p className="mt-2 text-xs text-emerald-700">
+                        Currently Featured ({state.active.plan_name ?? state.active.plan_code ?? "Plan"}) · Expires On {when(state.active.ends_at)}
+                      </p>
                     ) : (
                       <p className="mt-2 text-xs text-slate-500">Not currently featured</p>
                     )}
@@ -324,7 +361,7 @@ export function InstituteCourseFeaturedPageClient() {
                       type="button"
                       className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                       onClick={() => void purchase(course.id)}
-                      disabled={Boolean(busyCourseId) || plans.length === 0 || (state.active !== null && state.scheduled !== null && !isUpgrade)}
+                      disabled={Boolean(busyCourseId) || plans.length === 0 || disableForNonUpgradeWhileActive || (state.active !== null && state.scheduled !== null && !isUpgrade)}
                     >
                       {busyCourseId === course.id ? "Processing..." : actionText}
                     </button>

@@ -71,7 +71,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, payoutsResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -131,6 +131,16 @@ export default async function InstituteDashboardPage() {
     dataClient.from("featured_listing_plans").select("id,name,label,plan_code,code,price,amount,currency,duration_days,sort_order,tier_rank").eq("is_active", true).order("sort_order", { ascending: true }),
     dataClient.from("course_featured_plans").select("id,name,plan_code,code,price,amount,currency,duration_days,sort_order,tier_rank").eq("is_active", true).order("sort_order", { ascending: true }),
     dataClient.from("webinar_featured_plans").select("id,name,plan_code,code,price,amount,currency,duration_days,sort_order,tier_rank").eq("is_active", true).order("sort_order", { ascending: true }),
+    dataClient
+      .from("course_featured_orders")
+      .select("id,course_id,payment_status,amount,created_at")
+      .eq("institute_id", institute.id)
+      .order("created_at", { ascending: false }),
+    dataClient
+      .from("webinar_featured_orders")
+      .select("id,webinar_id,payment_status,amount,created_at")
+      .eq("institute_id", institute.id)
+      .order("created_at", { ascending: false }),
   ]);
 
   const courses = coursesResult.data ?? [];
@@ -149,6 +159,8 @@ export default async function InstituteDashboardPage() {
   const instituteFeaturedPlans = parseFeaturedPlanRows(instituteFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Institute Featured");
   const courseFeaturedPlans = parseFeaturedPlanRows(courseFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Course Featured");
   const webinarFeaturedPlans = parseFeaturedPlanRows(webinarFeaturedPlansResult.data as Array<Record<string, unknown>> | null, "Webinar Featured");
+  const courseFeaturedOrders = (courseFeaturedOrdersResult.data ?? []) as Array<{ id: string; course_id: string; payment_status: string; amount: number | null; created_at: string }>;
+  const webinarFeaturedOrders = (webinarFeaturedOrdersResult.data ?? []) as Array<{ id: string; webinar_id: string; payment_status: string; amount: number | null; created_at: string }>;
 
   const now = Date.now();
   const days30 = 30 * 24 * 60 * 60 * 1000;
@@ -182,6 +194,32 @@ export default async function InstituteDashboardPage() {
   const liveWebinars = webinars.filter((webinar) => webinar.status === "live").length;
   const webinarPaidOrders = webinarOrders.filter((order) => order.payment_status === "paid");
   const webinarPayoutTotal = webinarPaidOrders.reduce((sum, order) => sum + Number(order.payout_amount ?? 0), 0);
+  const paidCourseFeaturedOrders = courseFeaturedOrders.filter((order) => order.payment_status === "paid");
+  const paidWebinarFeaturedOrders = webinarFeaturedOrders.filter((order) => order.payment_status === "paid");
+  const courseFeaturedRevenue = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
+  const webinarFeaturedRevenue = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
+  const currentlyFeaturedCourseIds = Array.from(
+    new Set(
+      courseFeaturedRows
+        .filter((row) => row.status === "active" && new Date(row.starts_at).getTime() <= now && new Date(row.ends_at).getTime() > now)
+        .map((row) => row.course_id),
+    ),
+  );
+  const currentlyFeaturedWebinarIds = Array.from(
+    new Set(
+      webinarFeaturedRows
+        .filter((row) => row.status === "active" && new Date(row.starts_at).getTime() <= now && new Date(row.ends_at).getTime() > now)
+        .map((row) => row.webinar_id),
+    ),
+  );
+  const featuredCourseTitles = courses
+    .filter((course) => currentlyFeaturedCourseIds.includes(course.id))
+    .map((course) => course.title)
+    .slice(0, 5);
+  const featuredWebinarTitles = webinars
+    .filter((webinar) => currentlyFeaturedWebinarIds.includes(webinar.id))
+    .map((webinar) => webinar.title)
+    .slice(0, 5);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
@@ -385,6 +423,26 @@ export default async function InstituteDashboardPage() {
           </div>
         </div>
       </div>
+
+      <section className="mt-6 rounded border bg-white p-4">
+        <h2 className="text-base font-semibold">Course & webinar featured metrics</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Course featured paid orders: <span className="font-semibold">{paidCourseFeaturedOrders.length}</span></p>
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Course featured revenue: <span className="font-semibold">{money(courseFeaturedRevenue)}</span></p>
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Webinar featured paid orders: <span className="font-semibold">{paidWebinarFeaturedOrders.length}</span></p>
+          <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2">Webinar featured revenue: <span className="font-semibold">{money(webinarFeaturedRevenue)}</span></p>
+        </div>
+        <div className="mt-3 grid gap-3 lg:grid-cols-2 text-sm">
+          <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <p className="font-medium text-emerald-900">Currently featured courses ({currentlyFeaturedCourseIds.length})</p>
+            <p className="mt-1 text-emerald-800">{featuredCourseTitles.length > 0 ? featuredCourseTitles.join(", ") : "None currently active."}</p>
+          </div>
+          <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <p className="font-medium text-emerald-900">Currently featured webinars ({currentlyFeaturedWebinarIds.length})</p>
+            <p className="mt-1 text-emerald-800">{featuredWebinarTitles.length > 0 ? featuredWebinarTitles.join(", ") : "None currently active."}</p>
+          </div>
+        </div>
+      </section>
 
       <section className="mt-6 rounded border bg-white p-4">
         <h2 className="text-base font-semibold">Featured listing plans</h2>
