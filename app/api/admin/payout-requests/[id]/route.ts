@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { loadInstituteWalletSnapshot } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -16,17 +17,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!payoutRequest) return NextResponse.json({ error: "Payout request not found." }, { status: 404 });
 
-  const [instituteResult, accountResult, allocationsResult, transferAttemptsResult] = await Promise.all([
+  const [instituteResult, accountResult, allocationsResult, transferAttemptsResult, walletSnapshotResult] = await Promise.all([
     payoutRequest.institute_id ? admin.data.from("institutes").select("*").eq("id", payoutRequest.institute_id).maybeSingle() : { data: null, error: null },
     payoutRequest.payout_account_id ? admin.data.from("institute_payout_accounts").select("*").eq("id", payoutRequest.payout_account_id).maybeSingle() : { data: null, error: null },
     admin.data.from("institute_payout_request_allocations").select("*").eq("payout_request_id", id),
     admin.data.from("institute_payout_transfer_attempts").select("*").eq("payout_request_id", id).order("attempted_at", { ascending: false }).limit(10),
+    payoutRequest.institute_id ? loadInstituteWalletSnapshot(String(payoutRequest.institute_id), { ledgerLimit: 200, payoutHistoryLimit: 200 }) : Promise.resolve({ data: null, error: null }),
   ]);
 
   if (instituteResult.error) return NextResponse.json({ error: instituteResult.error.message }, { status: 500 });
   if (accountResult.error) return NextResponse.json({ error: accountResult.error.message }, { status: 500 });
   if (allocationsResult.error) return NextResponse.json({ error: allocationsResult.error.message }, { status: 500 });
   if (transferAttemptsResult.error) return NextResponse.json({ error: transferAttemptsResult.error.message }, { status: 500 });
+  if (walletSnapshotResult.error) return NextResponse.json({ error: walletSnapshotResult.error }, { status: 500 });
 
   const auditQuery = admin.data
     .from("institute_wallet_audit_logs")
@@ -45,6 +48,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       institute_payout_request_allocations: allocationsResult.data ?? [],
       institute_payout_transfer_attempts: transferAttemptsResult.data ?? [],
       audit_timeline: auditLogs ?? [],
+      reconciliation: walletSnapshotResult.data?.summary?.reconciliation ?? null,
     },
   });
 }

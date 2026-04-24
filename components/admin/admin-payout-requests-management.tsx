@@ -25,7 +25,8 @@ function formatDate(value: unknown) {
 function formatPayoutStatusLabel(status: unknown) {
   const value = String(status ?? "").trim().toLowerCase();
   if (!value) return "-";
-  if (value === "paid" || value === "processed") return "Paid";
+  if (value === "paid") return "Paid";
+  if (value === "processed") return "Paid (legacy)";
   return value.replaceAll("_", " ");
 }
 
@@ -170,6 +171,24 @@ export function AdminPayoutRequestsManagement({ initialRequests }: { initialRequ
                   <p className="text-xs uppercase text-slate-500">Payout account snapshot</p>
                   <pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-xs text-slate-700">{JSON.stringify((selectedDetail.institute_payout_accounts as AnyRecord | null) ?? {}, null, 2)}</pre>
                 </div>
+
+            {selectedDetail?.reconciliation ? (
+              <div className="rounded border bg-amber-50 p-3">
+                <p className="text-xs uppercase text-slate-500">Wallet reconciliation diagnostics</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {[ 
+                    ["Gross earnings", Number((selectedDetail.reconciliation as AnyRecord).gross_earnings ?? 0)],
+                    ["Commission deducted", Number((selectedDetail.reconciliation as AnyRecord).platform_commission ?? 0)],
+                    ["Net earnings", Number((selectedDetail.reconciliation as AnyRecord).net_institute_earnings ?? 0)],
+                    ["Paid payouts", Number((selectedDetail.reconciliation as AnyRecord).paid_payouts ?? 0)],
+                    ["Held payouts", Number((selectedDetail.reconciliation as AnyRecord).payout_holds ?? 0)],
+                    ["Available balance", Number((selectedDetail.reconciliation as AnyRecord).available_payout_balance ?? 0)],
+                  ].map(([label, value]) => (
+                    <p key={String(label)} className="text-xs text-slate-700">{String(label)}: <span className="font-semibold">{money(Number(value))}</span></p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
                 <div className="rounded border p-3">
                   <p className="text-xs uppercase text-slate-500">Ledger allocations</p>
                   <pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-xs text-slate-700">{JSON.stringify((selectedDetail.institute_payout_request_allocations as AnyRecord[] | null) ?? [], null, 2)}</pre>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { jsonError, parseAmount, runRpcWithFallback } from "@/lib/institute/payouts";
+import { calculatePayoutHolds, jsonError, loadInstituteWalletSnapshot, parseAmount, runRpcWithFallback } from "@/lib/institute/payouts";
 import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -31,8 +31,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const payload = (await request.json()) as TransitionPayload;
 
-  const nextStatusRaw = String(payload.next_status ?? "").trim().toLowerCase();
-  const nextStatus = nextStatusRaw === "processed" ? "paid" : nextStatusRaw;
+  const nextStatus = String(payload.next_status ?? "").trim().toLowerCase();
+  if (nextStatus === "processed") {
+    return jsonError("next_status=processed is not allowed. Use next_status=paid for completed payouts.");
+  }
   if (!VALID_STATUSES.includes(nextStatus as (typeof VALID_STATUSES)[number])) {
     return jsonError(`next_status must be one of: ${VALID_STATUSES.join(", ")}.`);
   }
@@ -59,7 +61,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { data: existingRequest, error: existingError } = await admin.data
     .from("institute_payout_requests")
-    .select("id,institute_id,status,requested_amount,approved_amount")
+    .select("id,institute_id,status,requested_amount,approved_amount,payment_reference,paid_at")
     .eq("id", id)
     .maybeSingle<{
       id: string;
@@ -67,16 +69,49 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       status: string | null;
       requested_amount: number | null;
       approved_amount: number | null;
+      payment_reference: string | null;
+      paid_at: string | null;
     }>();
 
   if (existingError) return jsonError(existingError.message, 500);
   if (!existingRequest) return jsonError("Payout request not found.", 404);
+
+  const currentStatus = String(existingRequest.status ?? "").trim().toLowerCase();
+  if (currentStatus === "paid" && nextStatus !== "paid") {
+    return jsonError("Paid payout requests are immutable and cannot transition to another status.", 409);
+  }
+
+  if (currentStatus === "paid" && nextStatus === "paid") {
+    if (existingRequest.payment_reference && paymentReference && paymentReference !== existingRequest.payment_reference) {
+      return jsonError("payment_reference is locked once payout is paid.", 409);
+    }
+    if (existingRequest.paid_at) {
+      return jsonError("paid_at is already set; paid payout cannot be modified.", 409);
+    }
+  }
 
   const requestedAmount = Number(existingRequest.requested_amount ?? 0);
   const resolvedApprovedAmount = approvedAmount ?? Number(existingRequest.approved_amount ?? requestedAmount);
 
   if (nextStatus === "approved" && resolvedApprovedAmount > requestedAmount) {
     return jsonError("approved_amount cannot exceed requested_amount.");
+  }
+
+  if (nextStatus === "approved" || nextStatus === "processing" || nextStatus === "paid") {
+    const walletSnapshotResult = await loadInstituteWalletSnapshot(existingRequest.institute_id, { ledgerLimit: 500, payoutHistoryLimit: 100 });
+    if (walletSnapshotResult.error || !walletSnapshotResult.data) {
+      return jsonError(walletSnapshotResult.error ?? "Unable to load institute wallet snapshot.", 500);
+    }
+
+    const payoutRequests = walletSnapshotResult.data.payout_requests;
+    const holdExcludingCurrent = calculatePayoutHolds(payoutRequests, { includeUnderReview: true, excludePayoutRequestId: id });
+    const netEarnings = Number(walletSnapshotResult.data.summary.net_earnings ?? 0);
+    const paidOut = Number(walletSnapshotResult.data.summary.paid_out ?? 0);
+    const availableAtApprovalTime = Math.max(0, netEarnings - paidOut - holdExcludingCurrent);
+
+    if (resolvedApprovedAmount > availableAtApprovalTime) {
+      return jsonError("Approved amount exceeds available payout balance at approval time.", 409);
+    }
   }
 
   const transitionNote = [adminNote, nextStatus === "failed" && failureReason ? `Failure reason: ${failureReason}` : null]
@@ -106,10 +141,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (nextStatus === "approved") {
     updatePayload.approved_amount = resolvedApprovedAmount;
   }
-  if (nextStatus === "paid" && paymentReference) {
+  if (nextStatus === "paid") {
     updatePayload.payment_reference = paymentReference;
+    updatePayload.paid_at = new Date().toISOString();
   }
-  if (nextStatus === "failed" && failureReason) {
+  if (nextStatus === "failed") {
     updatePayload.failure_reason = failureReason;
   }
 

@@ -27,7 +27,8 @@ function statusLabel(status: unknown) {
 function payoutStatusLabel(status: unknown) {
   const value = String(status ?? "").trim().toLowerCase();
   if (!value) return "-";
-  if (value === "paid" || value === "processed") return "Paid";
+  if (value === "paid") return "Paid";
+  if (value === "processed") return "Paid (legacy)";
   return value.replaceAll("_", " ");
 }
 
@@ -273,6 +274,10 @@ export function InstituteWalletManagement() {
       setToast({ type: "error", text: "Minimum payout amount is ₹500." });
       return;
     }
+    if (amount > Number(wallet?.available_balance ?? 0)) {
+      setToast({ type: "error", text: "Requested payout exceeds available balance." });
+      return;
+    }
     if (!payoutForm.payout_account_id) {
       setToast({ type: "error", text: "Add and approve a payout account before requesting payout." });
       return;
@@ -327,6 +332,16 @@ export function InstituteWalletManagement() {
           </div>
         ))}
       </div>
+
+      <section className="rounded border bg-white p-4">
+        <h2 className="text-base font-semibold">Payout breakdown</h2>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 text-sm">
+          <p>Earned amount: <span className="font-semibold">{money(Number(summary.net_earnings ?? 0))}</span></p>
+          <p>Already paid: <span className="font-semibold">{money(Number(summary.paid_out ?? 0))}</span></p>
+          <p>Pending/approved holds: <span className="font-semibold">{money(Number(summary.locked_balance ?? summary.locked_amount ?? 0))}</span></p>
+          <p>Available to withdraw: <span className="font-semibold">{money(Number(wallet?.available_balance ?? 0))}</span></p>
+        </div>
+      </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded border bg-white p-4">

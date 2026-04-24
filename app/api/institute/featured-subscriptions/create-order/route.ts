@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
+import { loadInstituteWalletSnapshot } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type PlanRow = Record<string, unknown>;
@@ -206,12 +207,11 @@ export async function POST(request: Request) {
 
   const payableAfterUpgradeCredit = Math.max(0, baseAmount - creditAdjustmentAmount);
 
-  const { data: walletSummary } = await admin.data
-    .from("institute_wallet_summary")
-    .select("available_balance")
-    .eq("institute_id", institute.id)
-    .maybeSingle<{ available_balance: number | null }>();
-  const walletAvailable = Math.max(0, toNumber(walletSummary?.available_balance));
+  const walletSnapshot = await loadInstituteWalletSnapshot(institute.id, { ledgerLimit: 1, payoutHistoryLimit: 1 });
+  if (walletSnapshot.error || !walletSnapshot.data) {
+    return NextResponse.json({ error: walletSnapshot.error ?? "Unable to load institute wallet snapshot." }, { status: 500 });
+  }
+  const walletAvailable = Math.max(0, toNumber(walletSnapshot.data.summary.available_balance));
   const walletAdjustmentAmount = Math.min(walletAvailable, payableAfterUpgradeCredit);
   const finalPayableAmount = Math.max(0, payableAfterUpgradeCredit - walletAdjustmentAmount);
   const totalCreditAdjustmentAmount = Math.max(0, creditAdjustmentAmount + walletAdjustmentAmount);
