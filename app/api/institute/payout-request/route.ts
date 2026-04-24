@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { isApprovedAndActiveAccount, normalizePayoutAccountStatus, resolvePayoutAccountBlockingReason } from "@/lib/institute/payout-account";
 import { getInstituteIdForUser, jsonError, parseAmount, runRpcWithFallback } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -45,6 +46,22 @@ export async function POST(request: Request) {
 
   const availableBalance = Number((walletResult.data as { available_balance?: number } | null)?.available_balance ?? 0);
   if (amount > availableBalance) return jsonError("Insufficient available balance for this payout request.", 400);
+
+  const { data: payoutAccount, error: accountError } = await admin.data
+    .from("institute_payout_accounts")
+    .select("*")
+    .eq("id", payoutAccountId)
+    .eq("institute_id", instituteId)
+    .maybeSingle<Record<string, unknown>>();
+  if (accountError) return jsonError(accountError.message, 500);
+  if (!payoutAccount) return jsonError("Payout account not found.", 404);
+
+  const status = normalizePayoutAccountStatus(payoutAccount.verification_status);
+  if (!isApprovedAndActiveAccount(payoutAccount)) {
+    const reason = resolvePayoutAccountBlockingReason(status);
+    if (reason) return jsonError(reason, 400);
+    return jsonError("Add and approve a payout account before requesting payout.", 400);
+  }
 
   const rpcResult = await runRpcWithFallback<Record<string, unknown> | string>("create_institute_payout_request", [
     {

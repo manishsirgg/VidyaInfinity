@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { normalizePayoutMode } from "@/lib/institute/payout-account";
 import { getInstituteIdForUser, jsonError } from "@/lib/institute/payouts";
+import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function GET() {
@@ -23,7 +25,22 @@ export async function GET() {
     .order("created_at", { ascending: false });
 
   if (fetchError) return jsonError(fetchError.message, 500);
-  return NextResponse.json({ accounts: data ?? [] });
+
+  const accounts = await Promise.all(
+    (data ?? []).map(async (item) => {
+      const signedProofUrl = await getSignedPrivateFileUrl({
+        bucket: "institute-documents",
+        fileRef: String(item.proof_document_path ?? item.proof_document_url ?? ""),
+      });
+
+      return {
+        ...item,
+        proof_document_signed_url: signedProofUrl,
+      };
+    })
+  );
+
+  return NextResponse.json({ accounts });
 }
 
 export async function POST(request: Request) {
@@ -51,8 +68,10 @@ export async function POST(request: Request) {
     account_number: String(payload.account_number ?? "").trim() || null,
     ifsc_code: String(payload.ifsc_code ?? "").trim().toUpperCase() || null,
     upi_id: String(payload.upi_id ?? "").trim() || null,
-    verification_status: String(payload.verification_status ?? "pending").trim() || "pending",
+    verification_status: "pending",
     is_default: Boolean(payload.is_default),
+    payout_mode: normalizePayoutMode(payload.payout_mode),
+    auto_payout_enabled: normalizePayoutMode(payload.payout_mode) === "auto",
     metadata: payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
   };
 

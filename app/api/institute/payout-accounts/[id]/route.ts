@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { normalizePayoutMode } from "@/lib/institute/payout-account";
 import { getInstituteIdForUser, jsonError } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -17,6 +18,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const payload = (await request.json()) as Record<string, unknown>;
+  const hasSensitiveUpdates =
+    payload.account_holder_name !== undefined ||
+    payload.bank_name !== undefined ||
+    payload.account_number !== undefined ||
+    payload.ifsc_code !== undefined ||
+    payload.upi_id !== undefined ||
+    payload.proof_document_path !== undefined;
 
   const updates: Record<string, unknown> = {
     account_holder_name: payload.account_holder_name,
@@ -24,10 +32,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     account_number: payload.account_number,
     ifsc_code: typeof payload.ifsc_code === "string" ? payload.ifsc_code.toUpperCase() : payload.ifsc_code,
     upi_id: payload.upi_id,
-    verification_status: payload.verification_status,
     is_default: payload.is_default,
+    payout_mode: payload.payout_mode !== undefined ? normalizePayoutMode(payload.payout_mode) : undefined,
+    auto_payout_enabled: payload.payout_mode !== undefined ? normalizePayoutMode(payload.payout_mode) === "auto" : undefined,
     updated_at: new Date().toISOString(),
   };
+  if (hasSensitiveUpdates) {
+    updates.verification_status = "pending";
+    updates.rejection_reason = null;
+    updates.admin_notes = null;
+    updates.reviewed_at = null;
+    updates.reviewed_by = null;
+  }
 
   const cleanUpdates = Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== undefined));
 
