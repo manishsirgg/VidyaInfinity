@@ -45,6 +45,33 @@ function isOnePaidPerStudentCourseViolation(error: { message?: string | null; de
   return text.includes("idx_course_orders_one_paid_per_student_course");
 }
 
+type EnrollmentMutationError = { code?: string | null; message?: string | null; details?: string | null };
+
+function isInvalidEnrollmentEnumValue(error: EnrollmentMutationError | null | undefined) {
+  if (!error) return false;
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return text.includes("invalid input value for enum enrollment_status") && text.includes("enrolled");
+}
+
+async function withEnrollmentStatusFallback(
+  operation: (enrollmentStatus: "enrolled" | "active") => PromiseLike<{ error: EnrollmentMutationError | null }>,
+  context: { source: "verify_api" | "webhook"; orderId: string; operation: string }
+) {
+  const firstTry = await operation("enrolled");
+  if (!firstTry.error || !isInvalidEnrollmentEnumValue(firstTry.error)) {
+    return firstTry;
+  }
+
+  console.warn("[payments/reconcile] enrollment_status_fallback_active", {
+    event: "enrollment_status_fallback_active",
+    source: context.source,
+    orderId: context.orderId,
+    operation: context.operation,
+  });
+
+  return operation("active");
+}
+
 async function createInstitutePayoutForCourseOrder({
   supabase,
   orderId,
@@ -432,19 +459,19 @@ export async function reconcileCourseOrderPaid({
     source,
   });
 
-  const enrollmentPayload = {
+  const buildEnrollmentPayload = (enrollmentStatus: "enrolled" | "active") => ({
     order_id: canonicalPaidOrderId,
     user_id: order.student_id,
     course_order_id: canonicalPaidOrderId,
     student_id: order.student_id,
     course_id: order.course_id,
     institute_id: order.institute_id,
-    enrollment_status: "enrolled",
+    enrollment_status: enrollmentStatus,
     enrolled_at: now,
     access_start_at: now,
     access_end_at: resolvedAccessEndAt,
     metadata: { source, reconciled: true },
-  };
+  });
 
   const reconcileEnrollmentRow = async (seedEnrollment: { id: string; course_order_id: string | null; enrollment_status: string | null } | null) => {
     if (seedEnrollment) {
@@ -459,10 +486,14 @@ export async function reconcileCourseOrderPaid({
         source,
       });
 
-      const { error: updateEnrollmentError } = await supabase
-        .from("course_enrollments")
-        .update(enrollmentPayload)
-        .eq("id", seedEnrollment.id);
+      const { error: updateEnrollmentError } = await withEnrollmentStatusFallback(
+        async (enrollmentStatus) =>
+          await supabase
+            .from("course_enrollments")
+            .update(buildEnrollmentPayload(enrollmentStatus))
+            .eq("id", seedEnrollment.id),
+        { source, orderId: canonicalPaidOrderId, operation: "update_existing_enrollment" }
+      );
 
       if (updateEnrollmentError) {
         console.error("[payments/reconcile] enrollment_upsert_failed", {
@@ -492,7 +523,10 @@ export async function reconcileCourseOrderPaid({
       return { error: null };
     }
 
-    const { error: insertEnrollmentError } = await supabase.from("course_enrollments").insert(enrollmentPayload);
+    const { error: insertEnrollmentError } = await withEnrollmentStatusFallback(
+      async (enrollmentStatus) => await supabase.from("course_enrollments").insert(buildEnrollmentPayload(enrollmentStatus)),
+      { source, orderId: canonicalPaidOrderId, operation: "insert_new_enrollment" }
+    );
 
     if (!insertEnrollmentError) {
       console.info("[payments/reconcile] enrollment_row_created", {
@@ -547,10 +581,14 @@ export async function reconcileCourseOrderPaid({
       source,
     });
 
-    const { error: fallbackUpdateError } = await supabase
-      .from("course_enrollments")
-      .update(enrollmentPayload)
-      .eq("id", conflictingEnrollment.id);
+    const { error: fallbackUpdateError } = await withEnrollmentStatusFallback(
+      async (enrollmentStatus) =>
+        await supabase
+          .from("course_enrollments")
+          .update(buildEnrollmentPayload(enrollmentStatus))
+          .eq("id", conflictingEnrollment.id),
+      { source, orderId: canonicalPaidOrderId, operation: "update_conflicting_enrollment" }
+    );
 
     if (fallbackUpdateError) {
       console.error("[payments/reconcile] enrollment_upsert_failed", {
