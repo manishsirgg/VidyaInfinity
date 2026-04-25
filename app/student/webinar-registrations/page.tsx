@@ -158,7 +158,6 @@ export default async function StudentWebinarRegistrationsPage({
       .from("webinar_orders")
       .select("id,webinar_id,payment_status,paid_at,created_at,access_status,webinars(title,starts_at,ends_at,timezone,webinar_mode,meeting_provider,institutes(name))")
       .eq("student_id", user.id)
-      .eq("payment_status", "paid")
       .order("created_at", { ascending: false })
       .returns<WebinarOrderRow[]>(),
   ]);
