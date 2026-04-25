@@ -224,6 +224,13 @@ export function InstituteCourseFeaturedPageClient() {
         return;
       }
 
+      if (createBody?.payment_required !== true) {
+        setMessageType("error");
+        setMessage("Invalid payment response from server.");
+        setBusyCourseId(null);
+        return;
+      }
+
       if (!createBody?.order?.id) {
         setMessageType("error");
         setMessage("Unable to initiate Razorpay order.");
