@@ -55,6 +55,23 @@ async function revokeCourseEnrollment(supabase: SupabaseClient, courseOrderId: s
   }
 }
 
+async function markCourseOrderRefunded(supabase: SupabaseClient, courseOrderId: string, refundedAt: string) {
+  const patchWithOrderStatus = {
+    payment_status: "refunded",
+    order_status: "refunded",
+    updated_at: refundedAt,
+  };
+
+  const { error } = await supabase.from("course_orders").update(patchWithOrderStatus).eq("id", courseOrderId);
+  if (!error) return;
+
+  const normalized = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  const canFallback = normalized.includes("order_status") || normalized.includes("column");
+  if (!canFallback) return;
+
+  await supabase.from("course_orders").update({ payment_status: "refunded", updated_at: refundedAt }).eq("id", courseOrderId);
+}
+
 export async function reconcileRefundAccessAndOrderState({
   supabase,
   targets,
@@ -67,10 +84,7 @@ export async function reconcileRefundAccessAndOrderState({
   const effectiveRefundedAt = refundedAt ?? new Date().toISOString();
 
   if (targets.course_order_id) {
-    await supabase
-      .from("course_orders")
-      .update({ payment_status: "refunded", updated_at: effectiveRefundedAt })
-      .eq("id", targets.course_order_id);
+    await markCourseOrderRefunded(supabase, targets.course_order_id, effectiveRefundedAt);
     await revokeCourseEnrollment(supabase, targets.course_order_id, effectiveRefundedAt);
   }
 

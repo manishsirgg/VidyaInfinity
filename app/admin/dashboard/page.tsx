@@ -63,6 +63,7 @@ export default async function AdminDashboardPage() {
     { count: activeFeaturedWebinarsCount },
     { data: recentNotifications },
     { data: recentPendingCourses },
+    { data: payoutLedgerRows },
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("institutes").select("id", { count: "exact", head: true }),
@@ -96,6 +97,7 @@ export default async function AdminDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(5),
     supabase.from("courses").select("id,title,created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(5),
+    supabase.from("institute_payouts").select("id,payout_source,gross_amount,platform_fee_amount,payout_amount,refund_amount,payout_status"),
   ]);
 
   const moderationNotifications = (recentPendingCourses ?? []).map((course) => ({
@@ -114,6 +116,23 @@ export default async function AdminDashboardPage() {
   const paidWebinarFeaturedOrders = (webinarFeaturedOrders ?? []).filter((order) => isSuccessfulPaymentStatus(order.payment_status));
   const paidCourseFeaturedRevenue = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const paidWebinarFeaturedRevenue = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
+  const payoutLedger = (payoutLedgerRows ?? []) as Array<{
+    payout_source: string | null;
+    gross_amount: number | null;
+    platform_fee_amount: number | null;
+    payout_amount: number | null;
+    refund_amount: number | null;
+    payout_status: string | null;
+  }>;
+  const paidEarningsRows = payoutLedger.filter((row) => (row.payout_source ?? "").toLowerCase() !== "refund_adjustment" && (row.payout_status ?? "").toLowerCase() !== "failed");
+  const refundRows = payoutLedger.filter((row) => (row.payout_source ?? "").toLowerCase() === "refund_adjustment");
+  const adminGrossRevenue = paidEarningsRows.reduce((sum, row) => sum + Number(row.gross_amount ?? 0), 0);
+  const adminRefundReversals = refundRows.reduce(
+    (sum, row) => sum + Math.max(Number(row.refund_amount ?? 0), Number(row.payout_amount ?? 0) < 0 ? Math.abs(Number(row.payout_amount ?? 0)) : 0),
+    0
+  );
+  const adminNetRevenue = Math.max(0, adminGrossRevenue - adminRefundReversals);
+  const adminPlatformRevenue = paidEarningsRows.reduce((sum, row) => sum + Number(row.platform_fee_amount ?? 0), 0);
 
   return (
     <div className="vi-page">
@@ -187,6 +206,18 @@ export default async function AdminDashboardPage() {
         </Link>
         <Link href="/admin/featured-listings" className="vi-card p-4">
           Webinar featured revenue: ₹{paidWebinarFeaturedRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+        </Link>
+        <Link href="/admin/transactions" className="vi-card p-4">
+          Paid gross revenue: ₹{adminGrossRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+        </Link>
+        <Link href="/admin/refunds" className="vi-card p-4">
+          Refund reversals: ₹{adminRefundReversals.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+        </Link>
+        <Link href="/admin/transactions" className="vi-card p-4">
+          Net revenue (after refunds): ₹{adminNetRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+        </Link>
+        <Link href="/admin/commission" className="vi-card p-4">
+          Platform fee revenue: ₹{adminPlatformRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
         </Link>
       </div>
 

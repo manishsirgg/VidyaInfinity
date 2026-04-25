@@ -132,9 +132,10 @@ const requiredStatusCompatibilityChecks: Array<{
   column: string;
   values: string[];
 }> = [
-  { table: "course_orders", column: "payment_status", values: ["paid", "captured", "success", "confirmed", "failed", "created", "refunded"] },
-  { table: "webinar_orders", column: "payment_status", values: ["paid", "captured", "success", "confirmed", "failed", "pending", "refunded"] },
-  { table: "psychometric_orders", column: "payment_status", values: ["paid", "captured", "success", "confirmed", "failed", "created"] },
+  { table: "course_orders", column: "payment_status", values: ["created", "paid", "failed", "refunded"] },
+  { table: "webinar_orders", column: "payment_status", values: ["pending", "paid", "failed", "refunded"] },
+  { table: "psychometric_orders", column: "payment_status", values: ["created", "paid", "failed", "refunded"] },
+  { table: "razorpay_transactions", column: "order_kind", values: ["course_enrollment", "psychometric_test", "webinar_registration"] },
   { table: "institute_payout_requests", column: "status", values: ["requested", "under_review", "approved", "processing", "paid", "failed", "rejected", "cancelled"] },
   { table: "institute_payout_accounts", column: "verification_status", values: ["pending", "approved", "rejected", "disabled"] },
 ];
