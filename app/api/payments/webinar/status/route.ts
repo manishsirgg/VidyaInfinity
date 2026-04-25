@@ -148,12 +148,30 @@ export async function GET(request: Request) {
           currency?: string;
         };
 
-        const capturedAndMatching =
-          normalize(payment.status) === "captured" &&
-          payment.id === effectivePaymentId &&
-          payment.order_id === (order.razorpay_order_id ?? orderId ?? "");
+        const expectedOrderId = order.razorpay_order_id ?? orderId ?? "";
+        const expectedAmountInPaise = Math.round(Number(order.amount ?? 0) * 100);
+        const expectedCurrency = String(order.currency ?? "INR").toUpperCase();
+        const matchesCapturedPayment = (candidate: { id?: string; order_id?: string; status?: string; amount?: number; currency?: string } | null | undefined) =>
+          Boolean(candidate?.id) &&
+          normalize(candidate?.status) === "captured" &&
+          candidate?.order_id === expectedOrderId &&
+          Number(candidate?.amount ?? 0) === expectedAmountInPaise &&
+          String(candidate?.currency ?? "").toUpperCase() === expectedCurrency;
 
-        if (capturedAndMatching) {
+        let resolvedCapturedPayment = matchesCapturedPayment(payment) ? payment : null;
+
+        if (!resolvedCapturedPayment) {
+          const paymentList = (await razorpay.data.orders.fetchPayments(expectedOrderId)) as {
+            items?: Array<{ id?: string; order_id?: string; status?: string; amount?: number; currency?: string }>;
+          };
+          resolvedCapturedPayment =
+            (paymentList.items ?? []).find((item) => matchesCapturedPayment(item)) ??
+            (paymentList.items ?? []).find((item) => Boolean(item.id) && normalize(item.status) === "captured" && item.order_id === expectedOrderId) ??
+            null;
+        }
+
+        if (resolvedCapturedPayment?.id) {
+          effectivePaymentId = resolvedCapturedPayment.id;
           console.info("[payments/webinar/status] captured_payment_found_for_pending_order", {
             event: "captured_payment_found_for_pending_order",
             webinar_order_id: order.id,
