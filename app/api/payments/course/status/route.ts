@@ -4,7 +4,7 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { buildCoursePaymentRedirect, resolveCoursePollingState } from "@/lib/payments/course-payment-status";
 import { detectPaymentSchemaMismatches } from "@/lib/supabase/schema-guard";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
-import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
+import { finalizeCoursePaymentFromRazorpay } from "@/lib/payments/finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const COURSE_ENROLLMENT_ACTIVE_STATUSES = ["enrolled", "pending", "active", "suspended", "completed"] as const;
@@ -210,29 +210,21 @@ export async function GET(request: Request) {
       const razorpay = getRazorpayClient();
 
       if (hasPaidMarker) {
-        const reconciled = await reconcileCourseOrderPaid({
+        const finalized = await finalizeCoursePaymentFromRazorpay({
           supabase: admin.data,
-          order: {
-            id: resolvedOrder.id,
-            student_id: resolvedOrder.student_id,
-            course_id: resolvedOrder.course_id,
-            institute_id: resolvedOrder.institute_id,
-            gross_amount: resolvedOrder.gross_amount,
-            institute_receivable_amount: resolvedOrder.institute_receivable_amount,
-            currency: resolvedOrder.currency,
-            payment_status: normalizedOrderStatus || "created",
-          },
           razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? "",
           razorpayPaymentId: effectivePaymentId,
+          razorpayStatus: "captured",
           source: "verify_api",
+          studentId: auth.user.id,
           gatewayResponse: { source: "status_poll_paid_marker" },
         });
 
-        if (reconciled.error) {
+        if (finalized.error) {
           console.error("[course/status] passive reconcile failed (paid marker)", {
             ...orderLogCtx,
             payment_id: effectivePaymentId,
-            error: reconciled.error,
+            error: finalized.error,
           });
         } else {
           const { data: refreshedEnrollment } = await admin.data
@@ -290,29 +282,21 @@ export async function GET(request: Request) {
 
           if (resolvedCapturedPayment?.id) {
             effectivePaymentId = resolvedCapturedPayment.id;
-            const reconciled = await reconcileCourseOrderPaid({
+            const finalized = await finalizeCoursePaymentFromRazorpay({
               supabase: admin.data,
-              order: {
-                id: resolvedOrder.id,
-                student_id: resolvedOrder.student_id,
-                course_id: resolvedOrder.course_id,
-                institute_id: resolvedOrder.institute_id,
-                gross_amount: resolvedOrder.gross_amount,
-                institute_receivable_amount: resolvedOrder.institute_receivable_amount,
-                currency: resolvedOrder.currency,
-                payment_status: resolvedOrder.payment_status ?? "created",
-              },
               razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? resolvedCapturedPayment.order_id ?? "",
               razorpayPaymentId: effectivePaymentId,
+              razorpayStatus: resolvedCapturedPayment.status,
               source: "verify_api",
+              studentId: auth.user.id,
               gatewayResponse: { source: "status_poll", method: resolvedCapturedPayment.method ?? null },
             });
 
-            if (reconciled.error) {
+            if (finalized.error) {
               console.error("[course/status] passive reconcile failed (gateway fetch)", {
                 ...orderLogCtx,
                 payment_id: effectivePaymentId,
-                error: reconciled.error,
+                error: finalized.error,
               });
             } else {
               const { data: refreshedEnrollment } = await admin.data

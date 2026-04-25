@@ -36,6 +36,7 @@ export function PendingPaymentClient({
   const [status, setStatus] = useState<"checking" | "waiting" | "timeout" | "error">("checking");
   const [message, setMessage] = useState(initialReason ? `Current status: ${initialReason.replaceAll("_", " ")}.` : "");
   const [lastResolvedState, setLastResolvedState] = useState<PollState | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const startedAtRef = useRef<number>(Date.now());
   const pollingRef = useRef<number | null>(null);
 
@@ -63,6 +64,7 @@ export function PendingPaymentClient({
       setLastResolvedState(nextState);
       if (nextState === "paid" || nextState === "enrolled") {
         router.replace(redirectTo || `/student/payments/success?kind=${encodeURIComponent(paymentKind)}&order_id=${encodeURIComponent(orderId)}`);
+        setRetrying(false);
         return;
       }
       if (nextState === "failed") {
@@ -78,6 +80,7 @@ export function PendingPaymentClient({
       setStatus("timeout");
       setMessage("This is taking longer than expected. UPI/QR confirmations can be delayed. You can retry status check.");
       clearPollTimer();
+      setRetrying(false);
       return;
     }
 
@@ -85,6 +88,7 @@ export function PendingPaymentClient({
       setStatus("error");
       setMessage("Missing order/payment reference. Please retry checkout from the course page.");
       clearPollTimer();
+      setRetrying(false);
       return;
     }
 
@@ -97,6 +101,7 @@ export function PendingPaymentClient({
           setStatus("error");
           setMessage(body?.error ?? "Order reference was not found. Please retry checkout.");
           clearPollTimer();
+          setRetrying(false);
           return;
         }
 
@@ -117,6 +122,7 @@ export function PendingPaymentClient({
       setMessage("Network issue while checking payment status. Retrying automatically…");
     }
 
+    setRetrying(false);
     clearPollTimer();
     pollingRef.current = window.setTimeout(() => {
       pollOnce().catch(() => undefined);
@@ -145,13 +151,19 @@ export function PendingPaymentClient({
           <button
             type="button"
             onClick={() => {
+              clearPollTimer();
               startedAtRef.current = Date.now();
               setStatus("checking");
-              pollOnce().catch(() => undefined);
+              setMessage("Retrying status check with backend finalization…");
+              setRetrying(true);
+              pollOnce().catch(() => {
+                setRetrying(false);
+              });
             }}
-            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white"
+            className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            disabled={retrying}
           >
-            Retry status check
+            {retrying ? "Retrying…" : "Retry status check"}
           </button>
           <Link href="/student/purchases" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">
             Go to purchases

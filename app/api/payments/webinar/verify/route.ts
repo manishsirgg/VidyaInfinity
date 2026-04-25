@@ -4,27 +4,8 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { isSuccessfulPaymentStatus, normalizePaymentStatus } from "@/lib/payments/payment-status";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
-import { reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
+import { finalizeWebinarPaymentFromRazorpay } from "@/lib/payments/finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-
-async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
-  let lastError: string | null = null;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const reconciled = await reconcileWebinarOrderPaid(payload);
-    if (!reconciled.error) return { error: null };
-    lastError = reconciled.error;
-    console.warn("[payments/webinar/verify] webinar_reconcile_retry", {
-      event: "webinar_reconcile_retry",
-      order_id: payload.order.id,
-      razorpay_order_id: payload.razorpayOrderId,
-      razorpay_payment_id: payload.razorpayPaymentId,
-      attempt,
-      attempts,
-      error: reconciled.error,
-    });
-  }
-  return { error: lastError ?? "Unable to reconcile webinar payment" };
-}
 
 export async function POST(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "webinar"]);
@@ -97,16 +78,17 @@ export async function POST(request: Request) {
         razorpay_payment_id: paymentId,
       });
 
-      const reconciled = await reconcileWebinarWithRetry({
+      const finalized = await finalizeWebinarPaymentFromRazorpay({
         supabase: admin.data,
-        order,
         razorpayOrderId: orderId,
         razorpayPaymentId: paymentId,
+        razorpayStatus: "captured",
         source: "verify_api",
         paymentEventType: "payment.verify",
+        studentId: auth.user.id,
       });
 
-      if (reconciled.error) {
+      if (finalized.error) {
         console.error("[payments/webinar/verify] paid_transaction_registration_self_heal_failed", {
           event: "paid_transaction_registration_self_heal_failed",
           order_id: order.id,
@@ -114,9 +96,9 @@ export async function POST(request: Request) {
           student_id: order.student_id,
           razorpay_order_id: orderId,
           razorpay_payment_id: paymentId,
-          error: reconciled.error,
+          error: finalized.error,
         });
-        return NextResponse.json({ error: reconciled.error }, { status: 500 });
+        return NextResponse.json({ error: finalized.error }, { status: 500 });
       }
     }
 
@@ -203,26 +185,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
   }
 
-  const reconciled = await reconcileWebinarWithRetry({
+  const finalized = await finalizeWebinarPaymentFromRazorpay({
     supabase: admin.data,
-    order,
     razorpayOrderId: orderId,
     razorpayPaymentId: paymentId,
+    razorpayStatus: payment.status,
     razorpaySignature: signature,
     source: "verify_api",
     paymentEventType: "payment.verify",
+    studentId: auth.user.id,
   });
 
-  if (reconciled.error) {
-    console.error("[payments/webinar/verify] reconciliation_failed", {
+  if (finalized.error) {
+    console.error("[payments/webinar/verify] finalization_failed", {
       webinar_order_id: order.id,
       webinar_id: order.webinar_id,
       student_id: order.student_id,
       razorpay_order_id: orderId,
       razorpay_payment_id: paymentId,
-      error: reconciled.error,
+      error: finalized.error,
     });
-    return NextResponse.json({ error: reconciled.error }, { status: 500 });
+    return NextResponse.json({ error: finalized.error }, { status: 500 });
   }
 
   console.info("[payments/webinar/verify] exit", {

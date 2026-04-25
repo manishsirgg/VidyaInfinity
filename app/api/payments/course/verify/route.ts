@@ -4,7 +4,7 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { buildCoursePaymentRedirect, resolveCourseVerifyState } from "@/lib/payments/course-payment-status";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
-import { reconcileCourseOrderPaid } from "@/lib/payments/reconcile";
+import { finalizeCoursePaymentFromRazorpay } from "@/lib/payments/finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type StudentProfileRow = {
@@ -111,21 +111,22 @@ export async function POST(request: Request) {
       if (!existingEnrollment || !existingTransaction) {
         const reconcilePaymentId = order.razorpay_payment_id ?? paymentId;
         if (reconcilePaymentId) {
-          const reconciled = await reconcileCourseOrderPaid({
+          const finalized = await finalizeCoursePaymentFromRazorpay({
             supabase: admin.data,
-            order,
             razorpayOrderId: orderId,
             razorpayPaymentId: reconcilePaymentId,
+            razorpayStatus: "captured",
             razorpaySignature: signature,
             source: "verify_api",
+            studentId,
             gatewayResponse: { source: "verify_paid_marker_self_heal" },
           });
 
-          if (reconciled.error) {
+          if (finalized.error) {
             console.error("[course/verify] paid marker self-heal failed", {
               orderId,
               paymentId: reconcilePaymentId,
-              error: reconciled.error,
+              error: finalized.error,
             });
           } else {
             const { data: refreshedEnrollment } = await admin.data
@@ -206,21 +207,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, state: "pending", redirectTo, message: "Payment captured event pending." }, { status: 202 });
     }
 
-    const reconciled = await reconcileCourseOrderPaid({
+    const finalized = await finalizeCoursePaymentFromRazorpay({
       supabase: admin.data,
-      order,
       razorpayOrderId: orderId,
       razorpayPaymentId: paymentId,
+      razorpayStatus: payment.status,
       razorpaySignature: signature,
       source: "verify_api",
+      studentId,
       gatewayResponse: {
         method: payment.method ?? null,
       },
     });
 
-    if (reconciled.error) {
-      console.error("[course/verify] reconciliation failed", { orderId, paymentId, error: reconciled.error });
-      return NextResponse.json({ error: reconciled.error }, { status: 500 });
+    if (finalized.error) {
+      console.error("[course/verify] finalization failed", { orderId, paymentId, error: finalized.error });
+      return NextResponse.json({ error: finalized.error }, { status: 500 });
     }
 
     await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", order.course_id);

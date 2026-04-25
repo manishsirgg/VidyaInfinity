@@ -6,7 +6,8 @@ import { getRazorpayClient, verifyRazorpayWebhookSignature } from "@/lib/payment
 import { applyRefundToInstitutePayout } from "@/lib/payments/institute-payout-refunds";
 import { mapRazorpayRefundStatus } from "@/lib/payments/refunds";
 import { reconcileRefundAccessAndOrderState } from "@/lib/payments/refund-reconciliation";
-import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
+import { reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
+import { finalizeCoursePaymentFromRazorpay, finalizeWebinarPaymentFromRazorpay } from "@/lib/payments/finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -90,25 +91,6 @@ async function updateWebhookLogBestEffort({
   }
 }
 
-async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
-  let lastError: string | null = null;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const reconciled = await reconcileWebinarOrderPaid(payload);
-    if (!reconciled.error) return { error: null };
-    lastError = reconciled.error;
-    console.warn("[razorpay/webhook] webinar_reconcile_retry", {
-      event: "webinar_reconcile_retry",
-      order_id: payload.order.id,
-      razorpay_order_id: payload.razorpayOrderId,
-      razorpay_payment_id: payload.razorpayPaymentId,
-      attempt,
-      attempts,
-      error: reconciled.error,
-    });
-  }
-  return { error: lastError ?? "Unable to reconcile webinar payment" };
-}
-
 export async function POST(request: Request) {
   const headerMap = await headers();
   const signature = headerMap.get("x-razorpay-signature") ?? "";
@@ -124,6 +106,10 @@ export async function POST(request: Request) {
     const eventId = refundEntity?.id ?? paymentEntity?.id ?? orderEntity?.id ?? null;
     const razorpayOrderId = paymentEntity?.order_id ?? orderEntity?.id ?? null;
     let razorpayPaymentId = paymentEntity?.id ?? refundEntity?.payment_id ?? null;
+    const paymentNotes = (paymentEntity?.notes ?? orderEntity?.notes ?? {}) as Record<string, unknown>;
+    const noteCourseOrderId = typeof paymentNotes.course_order_id === "string" ? paymentNotes.course_order_id : null;
+    const noteWebinarOrderId = typeof paymentNotes.webinar_order_id === "string" ? paymentNotes.webinar_order_id : null;
+    const noteOrderId = typeof paymentNotes.order_id === "string" ? paymentNotes.order_id : null;
 
     console.info("[razorpay/webhook] entry", {
       eventType,
@@ -131,6 +117,9 @@ export async function POST(request: Request) {
       order_id: razorpayOrderId,
       razorpay_order_id: razorpayOrderId,
       payment_id: razorpayPaymentId,
+      note_order_id: noteOrderId,
+      note_course_order_id: noteCourseOrderId,
+      note_webinar_order_id: noteWebinarOrderId,
     });
 
     const courseSchema = await detectPaymentSchemaMismatches(["common", "course"]);
@@ -366,10 +355,15 @@ export async function POST(request: Request) {
     const isPaidEvent = eventType === "payment.captured" || eventType === "order.paid";
     const isFailureEvent = eventType === "payment.failed" || paymentStatus === "failed";
 
+    const courseOrderLookupClauses = [`razorpay_order_id.eq.${razorpayOrderId}`];
+    if (noteCourseOrderId) courseOrderLookupClauses.push(`id.eq.${noteCourseOrderId}`);
+    else if (noteOrderId) courseOrderLookupClauses.push(`id.eq.${noteOrderId}`);
+
     const { data: courseOrder, error: courseOrderError } = await admin.data
       .from("course_orders")
-      .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status")
-      .eq("razorpay_order_id", razorpayOrderId)
+      .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,razorpay_order_id")
+      .or(courseOrderLookupClauses.join(","))
+      .limit(1)
       .maybeSingle();
 
     if (courseOrderError) {
@@ -490,32 +484,33 @@ export async function POST(request: Request) {
           return NextResponse.json({ ok: true, skipped: true, reason: "Missing payment id for paid event" });
         }
 
-        const reconciled = await reconcileCourseOrderPaid({
+        const finalized = await finalizeCoursePaymentFromRazorpay({
           supabase: admin.data,
-          order: courseOrder,
-          razorpayOrderId,
+          razorpayOrderId: courseOrder.razorpay_order_id ?? razorpayOrderId,
           razorpayPaymentId,
+          razorpayStatus: paymentStatus ?? "captured",
+          razorpaySignature: signature || undefined,
           source: "webhook",
           gatewayResponse: { webhookEventType: eventType, paymentStatus: paymentStatus ?? null },
         });
 
-        if (reconciled.error) {
+        if (finalized.error) {
           console.error("[razorpay/webhook] course reconciliation failed", {
             order_id: razorpayOrderId,
             razorpay_order_id: razorpayOrderId,
             payment_id: razorpayPaymentId,
             course_order_id: courseOrder.id,
-            error: reconciled.error,
+            error: finalized.error,
           });
           await updateWebhookLogBestEffort({
             admin: admin.data,
             enabled: webhookLogAvailable,
             logId: insertedLogId,
-            patch: { notes: `course_reconcile_failed:${reconciled.error}` },
+            patch: { notes: `course_reconcile_failed:${finalized.error}` },
             eventType,
             eventId,
           });
-          return NextResponse.json({ ok: false, code: "COURSE_RECONCILE_FAILED", error: reconciled.error }, { status: 202 });
+          return NextResponse.json({ ok: false, code: "COURSE_RECONCILE_FAILED", error: finalized.error }, { status: 202 });
         }
 
         await updateWebhookLogBestEffort({
@@ -595,10 +590,15 @@ export async function POST(request: Request) {
       }
     }
 
+    const webinarOrderLookupClauses = [`razorpay_order_id.eq.${razorpayOrderId}`];
+    if (noteWebinarOrderId) webinarOrderLookupClauses.push(`id.eq.${noteWebinarOrderId}`);
+    else if (noteOrderId) webinarOrderLookupClauses.push(`id.eq.${noteOrderId}`);
+
     const { data: webinarOrder, error: webinarOrderError } = await admin.data
       .from("webinar_orders")
-      .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,order_status,access_status")
-      .eq("razorpay_order_id", razorpayOrderId)
+      .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,order_status,access_status,razorpay_order_id")
+      .or(webinarOrderLookupClauses.join(","))
+      .limit(1)
       .maybeSingle();
 
     if (webinarOrderError) {
@@ -628,18 +628,18 @@ export async function POST(request: Request) {
     }
 
     if (webinarOrder && isPaidEvent && razorpayPaymentId) {
-      const reconciled = await reconcileWebinarWithRetry({
+      const finalized = await finalizeWebinarPaymentFromRazorpay({
         supabase: admin.data,
-        order: webinarOrder,
-        razorpayOrderId,
+        razorpayOrderId: webinarOrder.razorpay_order_id ?? razorpayOrderId,
         razorpayPaymentId,
+        razorpayStatus: paymentStatus ?? "captured",
         razorpaySignature: signature || undefined,
         source: "webhook",
         paymentEventType: eventType,
       });
 
-      if (reconciled.error) {
-        return NextResponse.json({ ok: false, code: "WEBINAR_RECONCILE_FAILED", error: reconciled.error }, { status: 202 });
+      if (finalized.error) {
+        return NextResponse.json({ ok: false, code: "WEBINAR_RECONCILE_FAILED", error: finalized.error }, { status: 202 });
       }
 
       await updateWebhookLogBestEffort({

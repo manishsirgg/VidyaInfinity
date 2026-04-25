@@ -451,6 +451,25 @@ export async function reconcileCourseOrderPaid({
       courseId: order.course_id,
       source,
     });
+
+    const { error: paidBackfillError } = await supabase
+      .from("course_orders")
+      .update({
+        razorpay_payment_id: razorpayPaymentId,
+        razorpay_signature: razorpaySignature ?? null,
+        paid_at: now,
+      })
+      .eq("id", order.id);
+
+    if (paidBackfillError) {
+      console.warn("[payments/reconcile] paid_order_backfill_failed", {
+        orderId: order.id,
+        razorpayOrderId,
+        razorpayPaymentId,
+        source,
+        error: paidBackfillError.message,
+      });
+    }
     effectivePaidAt = now;
   }
 
@@ -1159,6 +1178,29 @@ export async function reconcileWebinarOrderPaid({
       webinarId: order.webinar_id,
       source,
     });
+
+    const { error: paidBackfillError } = await supabase
+      .from("webinar_orders")
+      .update({
+        order_status: "confirmed",
+        access_status: "granted",
+        razorpay_payment_id: razorpayPaymentId,
+        razorpay_signature: razorpaySignature ?? null,
+        paid_at: now,
+        updated_at: now,
+      })
+      .eq("id", order.id)
+      .neq("order_status", "cancelled");
+
+    if (paidBackfillError) {
+      console.warn("[payments/reconcile] paid_order_backfill_failed", {
+        orderId: order.id,
+        razorpayOrderId,
+        razorpayPaymentId,
+        source,
+        error: paidBackfillError.message,
+      });
+    }
   }
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
