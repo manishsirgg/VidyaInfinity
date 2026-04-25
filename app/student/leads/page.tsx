@@ -1,7 +1,11 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
+import { getStudentInquiries } from "@/lib/leads/student-inquiries";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 function formatDate(value: string) {
   const parsed = new Date(value);
@@ -11,25 +15,15 @@ function formatDate(value: string) {
 
 export default async function StudentInquiriesPage() {
   const { user, profile } = await requireUser("student", { requireApproved: false });
-  const supabase = await createClient();
-
-  const { data: inquiriesByStudentId } = await supabase
-    .from("leads")
-    .select("id,name,email,phone,lead_type,course_id,webinar_id,message,created_at")
-    .eq("student_id", user.id)
-    .order("created_at", { ascending: false });
-
-  const shouldLoadLegacyByEmail = (inquiriesByStudentId?.length ?? 0) === 0 && Boolean(profile.email);
-  const { data: inquiriesByEmail } = shouldLoadLegacyByEmail
-    ? await supabase
-        .from("leads")
-        .select("id,name,email,phone,lead_type,course_id,webinar_id,message,created_at")
-        .is("student_id", null)
-        .eq("email", profile.email)
-        .order("created_at", { ascending: false })
-    : { data: [] as typeof inquiriesByStudentId };
-
-  const inquiries = [...(inquiriesByStudentId ?? []), ...(inquiriesByEmail ?? [])];
+  const fallbackClient = await createClient();
+  const admin = getSupabaseAdmin();
+  const dataClient = admin.ok ? admin.data : fallbackClient;
+  const inquiries = await getStudentInquiries(dataClient, {
+    userId: user.id,
+    email: profile.email ?? null,
+    phone: null,
+    limit: 200,
+  });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -48,7 +42,15 @@ export default async function StudentInquiriesPage() {
         </div>
       </div>
 
-      <div className="mt-6 space-y-2">
+      <div className="mt-6 rounded-xl border border-brand-100 bg-gradient-to-r from-brand-50 via-white to-white p-4 text-sm text-slate-700 shadow-sm">
+        <p className="font-semibold text-slate-900">Live inquiry sync enabled</p>
+        <p className="mt-1">
+          Every lead submitted from course or webinar pages is auto-linked to your account by login, email, and phone. If you just submitted one,
+          refresh this page and it will appear here.
+        </p>
+      </div>
+
+      <div className="mt-4 space-y-3">
         {(inquiries ?? []).length === 0 ? (
           <div className="rounded-xl border bg-white p-4 text-sm text-slate-600">
             You have not sent any course inquiries yet. Explore courses and submit an inquiry to get started.
@@ -56,10 +58,10 @@ export default async function StudentInquiriesPage() {
         ) : null}
 
         {(inquiries ?? []).map((inquiry) => (
-          <div key={inquiry.id} className="rounded-xl border bg-white p-4 text-sm">
-            <p className="font-medium text-slate-900">{inquiry.name}</p>
+          <div key={inquiry.id} className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm transition hover:border-brand-300">
+            <p className="font-medium text-slate-900">{inquiry.full_name ?? inquiry.name ?? "Student inquiry"}</p>
             <p className="mt-1 text-slate-700">
-              {inquiry.email} · {inquiry.phone}
+              {inquiry.email ?? "No email"} · {inquiry.phone ?? "No phone"}
             </p>
             <p className="mt-1 text-slate-700">
               {inquiry.lead_type === "webinar" ? "Webinar ID" : "Course ID"}: {inquiry.webinar_id ?? inquiry.course_id ?? "N/A"}

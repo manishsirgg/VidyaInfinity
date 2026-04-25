@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { jsonError } from "@/lib/institute/payouts";
 import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const NEXT_STATUSES = ["pending", "approved", "rejected", "disabled"] as const;
@@ -41,6 +42,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!data) return jsonError("Payout account not found.", 404);
 
   if (data.institute_id) {
+    const { data: instituteRow } = await admin.data
+      .from("institutes")
+      .select("user_id,name")
+      .eq("id", data.institute_id)
+      .maybeSingle<{ user_id: string; name: string | null }>();
+
     await logInstituteWalletEvent(
       {
         instituteId: String(data.institute_id),
@@ -55,6 +62,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
       admin.data
     );
+
+    if (instituteRow?.user_id) {
+      const statusVerb = nextStatus === "approved" ? "approved" : nextStatus === "rejected" ? "rejected" : "updated";
+      await createAccountNotification({
+        userId: instituteRow.user_id,
+        type: nextStatus === "approved" ? "approval" : nextStatus === "rejected" ? "rejection" : "payout",
+        category: "payout_account",
+        priority: nextStatus === "rejected" ? "high" : "normal",
+        title: `Payout account ${statusVerb}`,
+        message:
+          nextStatus === "rejected"
+            ? `Your payout account was rejected. Reason: ${rejectionReason ?? "Please review admin notes and resubmit."}`
+            : `Your payout account status is now ${nextStatus}.`,
+        targetUrl: "/institute/wallet",
+        actionLabel: "View payout accounts",
+        entityType: "payout_account",
+        entityId: id,
+        metadata: { nextStatus, rejectionReason, adminNotes: payload.admin_notes ?? null },
+        dedupeKey: `payout-review:${id}:${nextStatus}:${instituteRow.user_id}`,
+      });
+    }
   }
 
   return NextResponse.json({ payout_account: data });

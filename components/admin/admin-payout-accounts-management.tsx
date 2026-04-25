@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -42,6 +42,13 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const selected = useMemo(() => accounts.find((item) => String(item.id) === selectedId) ?? null, [accounts, selectedId]);
+
+  useEffect(() => {
+    if (selectedId) {
+      void loadDetail(selectedId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadDetail(id: string) {
     setSelectedId(id);
@@ -97,7 +104,7 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
 
   return (
     <div className="mt-6 grid gap-4 lg:grid-cols-5">
-      <section className="rounded border bg-white p-4 lg:col-span-2">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-2">
         <h2 className="text-base font-semibold">Payout Accounts</h2>
         <div className="mt-3 space-y-2 text-sm">
           {accounts.map((row) => (
@@ -115,7 +122,7 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
         </div>
       </section>
 
-      <section className="rounded border bg-white p-4 lg:col-span-3">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
         <h2 className="text-base font-semibold">Account detail</h2>
         {!selected ? <p className="mt-3 text-sm text-slate-600">Select a payout account.</p> : null}
         {selected ? (
@@ -167,6 +174,10 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
                       <dt className="text-xs text-slate-500">Reviewed at</dt>
                       <dd className="font-medium">{formatDate(selectedDetail.reviewed_at)}</dd>
                     </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs text-slate-500">Latest institute resubmission</dt>
+                      <dd className="font-medium">{formatDate(selectedDetail.updated_at)}</dd>
+                    </div>
                     {String(selectedDetail.rejection_reason ?? "") ? (
                       <div className="sm:col-span-2">
                         <dt className="text-xs text-slate-500">Rejection reason</dt>
@@ -192,6 +203,9 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
             ) : null}
             <div className="rounded border bg-slate-50 p-3">
               <p className="font-medium">Review action</p>
+              <p className="mt-1 text-xs text-slate-600">
+                Any approval/rejection action here immediately updates institute status and triggers a user notification.
+              </p>
               <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value)} className="mt-2 w-full rounded border px-2 py-1">
                 {STATUS_OPTIONS.map((status) => (
                   <option key={status} value={status}>{status}</option>
@@ -207,7 +221,7 @@ export function AdminPayoutAccountsManagement({ initialAccounts }: { initialAcco
         ) : null}
       </section>
 
-      {toast ? <div className={`fixed bottom-6 right-6 z-50 rounded border px-4 py-3 text-sm ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{toast.text}</div> : null}
+      {toast ? <div className={`fixed bottom-6 right-6 z-50 rounded-xl border px-4 py-3 text-sm shadow-lg ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{toast.text}</div> : null}
     </div>
   );
 }

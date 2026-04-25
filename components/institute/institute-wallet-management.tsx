@@ -24,6 +24,14 @@ function statusLabel(status: unknown) {
   return "Under review";
 }
 
+function statusToneClass(status: unknown) {
+  const value = String(status ?? "pending").toLowerCase();
+  if (value === "approved") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (value === "rejected") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (value === "disabled") return "border-slate-300 bg-slate-100 text-slate-700";
+  return "border-amber-200 bg-amber-50 text-amber-700";
+}
+
 function payoutStatusLabel(status: unknown) {
   const value = String(status ?? "").trim().toLowerCase();
   if (!value) return "-";
@@ -344,15 +352,22 @@ export function InstituteWalletManagement() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded border bg-white p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-base font-semibold">Payout accounts</h2>
           <div className="mt-3 space-y-2">
             {accounts.map((account) => (
-              <div key={String(account.id)} className="rounded border p-3 text-sm">
+              <div key={String(account.id)} className="rounded-lg border border-slate-200 p-3 text-sm">
                 <p className="font-medium">{String(account.account_type ?? "account").toUpperCase()} · {String(account.account_holder_name ?? "-")}</p>
-                <p className="text-xs text-slate-500">Status: {statusLabel(account.verification_status)} {Boolean(account.is_default) ? "· Default" : ""}</p>
+                <p className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-xs font-medium shadow-sm ${statusToneClass(account.verification_status)}`}>
+                  {statusLabel(account.verification_status)} {Boolean(account.is_default) ? "· Default" : ""}
+                </p>
                 <p className="text-xs text-slate-500">Mode: {String(account.payout_mode ?? "manual")}</p>
                 <p className="text-xs text-slate-500">{String(account.bank_name ?? account.upi_id ?? "")}</p>
+                {String(account.verification_status ?? "").toLowerCase() === "pending" ? (
+                  <p className="mt-1 rounded border border-brand-100 bg-brand-50 px-2 py-1 text-xs text-brand-800">
+                    Resubmitted details/proofs are currently with admin review. You will receive a notification after action.
+                  </p>
+                ) : null}
                 {String(account.rejection_reason ?? account.admin_notes ?? "") ? <p className="mt-1 rounded bg-rose-50 px-2 py-1 text-xs text-rose-700">{String(account.rejection_reason ?? account.admin_notes)}</p> : null}
                 <div className="mt-2 flex flex-wrap gap-2">
                   {!Boolean(account.is_default) ? <button disabled={submitting} onClick={() => setDefaultAccount(String(account.id))} className="rounded border px-2 py-1 text-xs disabled:opacity-60">Set default</button> : null}
@@ -399,7 +414,7 @@ export function InstituteWalletManagement() {
           </div>
         </div>
 
-        <div className="rounded border bg-white p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-base font-semibold">Request payout</h2>
           <p className="mt-1 text-sm text-slate-600">Available balance: <span className="font-semibold">{money(Number(wallet?.available_balance ?? 0))}</span></p>
           <div className="mt-3 grid gap-2 text-sm">
@@ -498,7 +513,7 @@ export function InstituteWalletManagement() {
         </div>
       </section>
 
-      {toast ? <div className={`fixed bottom-6 right-6 z-50 rounded border px-4 py-3 text-sm ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{toast.text}</div> : null}
+      {toast ? <div className={`fixed bottom-6 right-6 z-50 rounded-xl border px-4 py-3 text-sm shadow-lg ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{toast.text}</div> : null}
     </div>
   );
 }

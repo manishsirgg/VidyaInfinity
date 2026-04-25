@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { normalizePayoutAccountType, normalizePayoutMode, validatePayoutAccountPayload } from "@/lib/institute/payout-account";
 import { getInstituteIdForUser, jsonError } from "@/lib/institute/payouts";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -103,6 +104,40 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (cleanUpdates.is_default === true) {
     await admin.data.from("institute_payout_accounts").update({ is_default: false }).eq("institute_id", instituteId).neq("id", id);
+  }
+
+  if (hasSensitiveUpdates) {
+    const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
+    await Promise.allSettled([
+      createAccountNotification({
+        userId: auth.user.id,
+        type: "resubmission",
+        category: "payout_account",
+        priority: "normal",
+        title: "Payout details resubmitted",
+        message: "Your payout account details were updated and sent for fresh admin approval.",
+        targetUrl: "/institute/wallet",
+        actionLabel: "View status",
+        entityType: "payout_account",
+        entityId: id,
+        dedupeKey: `payout-details-resubmitted:${id}:${auth.user.id}`,
+      }),
+      ...(admins ?? []).map((row) =>
+        createAccountNotification({
+          userId: row.id,
+          type: "resubmission",
+          category: "payout_account",
+          priority: "high",
+          title: "Payout account details updated",
+          message: "An institute updated payout account details and requested admin review.",
+          targetUrl: "/admin/payout-accounts",
+          actionLabel: "Review account",
+          entityType: "payout_account",
+          entityId: id,
+          dedupeKey: `payout-details-resubmitted-admin:${id}:${row.id}`,
+        }),
+      ),
+    ]);
   }
 
   return NextResponse.json({ account: data });

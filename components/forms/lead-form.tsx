@@ -95,6 +95,10 @@ export function LeadForm({ courseId, webinarId, instituteId }: LeadFormProps) {
 
       setDone(true);
       setValues({ name: "", email: "", phone: "", message: "", contactPreference: "both" });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("vidya:lead-submitted"));
+        window.localStorage.setItem("vidya:last-lead-submitted-at", new Date().toISOString());
+      }
     } catch {
       setSubmitting(false);
       setError("We could not submit your inquiry right now. Please check your connection and try again.");
@@ -180,7 +184,11 @@ export function LeadForm({ courseId, webinarId, instituteId }: LeadFormProps) {
         {submitting ? "Submitting..." : "Submit Lead"}
       </button>
 
-      {done ? <FormFeedback tone="success">Your inquiry has been submitted successfully. Our team will contact you shortly.</FormFeedback> : null}
+      {done ? (
+        <FormFeedback tone="success">
+          Inquiry submitted successfully. It has been shared with the institute/admin and will appear in your student inquiries dashboard.
+        </FormFeedback>
+      ) : null}
       {error ? <FormFeedback tone="error">{error}</FormFeedback> : null}
     </form>
   );
