@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { InstituteCourseMedia, InstituteCourseRecord } from "@/lib/institute/course-data";
 
 type SubmitState = "idle" | "submitting" | "success" | "error";
+type FieldErrors = Partial<Record<string, string>>;
 
 const LEVEL_OPTIONS = ["beginner", "intermediate", "advanced", "all_levels", "foundation", "expert"] as const;
 const COURSE_MODE_OPTIONS = ["online", "live_online", "offline", "hybrid", "blended", "weekend", "bootcamp"] as const;
@@ -83,12 +84,14 @@ function Field({
   label,
   helper,
   required,
+  error,
   children,
   className = "",
 }: {
   label: string;
   helper?: string;
   required?: boolean;
+  error?: string;
   children: ReactNode;
   className?: string;
 }) {
@@ -99,6 +102,7 @@ function Field({
         {required ? <span className="ml-1 text-rose-600">*</span> : null}
       </span>
       {children}
+      {error ? <span className="block text-xs font-medium text-rose-600">{error}</span> : null}
       {helper ? <span className="block text-xs text-slate-500">{helper}</span> : null}
     </label>
   );
@@ -122,6 +126,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
   );
   const [isLoadingSavedMedia, setIsLoadingSavedMedia] = useState(false);
   const [step, setStep] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const steps = ["Basics", "Duration", "Outcomes", "Support", "Media & review"];
 
   const computedDuration = useMemo(() => {
@@ -291,6 +296,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     setState("submitting");
     setError("");
     setMessage("");
+    setFieldErrors({});
 
     if (descriptionWords > 3000) {
       setState("error");
@@ -351,6 +357,30 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       supportEmail: String(formData.get("supportEmail") ?? "").trim(),
       supportPhone: String(formData.get("supportPhone") ?? "").trim(),
     };
+    const nextFieldErrors: FieldErrors = {};
+
+    if (!payload.title) nextFieldErrors.title = "Course title is required.";
+    if (!payload.fees || Number.isNaN(Number(payload.fees)) || Number(payload.fees) < 0) nextFieldErrors.fees = "Enter a valid non-negative fees amount.";
+    if (!payload.mode) nextFieldErrors.mode = "Please select the course mode.";
+    if (!payload.durationValue || Number(payload.durationValue) < 1) nextFieldErrors.durationValue = "Duration value must be at least 1.";
+    if (!payload.durationUnit) nextFieldErrors.durationUnit = "Please select a duration unit.";
+    if (payload.supportEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.supportEmail)) nextFieldErrors.supportEmail = "Enter a valid support email address.";
+    if (payload.startDate && payload.endDate && new Date(payload.endDate) < new Date(payload.startDate)) {
+      nextFieldErrors.endDate = "End date cannot be before start date.";
+    }
+    if (payload.admissionDeadline && payload.startDate && new Date(payload.admissionDeadline) > new Date(payload.startDate)) {
+      nextFieldErrors.admissionDeadline = "Admission deadline must be on or before the start date.";
+    }
+
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      if (nextFieldErrors.title || nextFieldErrors.fees || nextFieldErrors.mode) setStep(0);
+      else if (nextFieldErrors.durationValue || nextFieldErrors.durationUnit || nextFieldErrors.startDate || nextFieldErrors.endDate || nextFieldErrors.admissionDeadline) setStep(1);
+      else if (nextFieldErrors.supportEmail) setStep(3);
+      setState("error");
+      setError("Please correct the highlighted fields and submit again.");
+      return;
+    }
 
     const body = submitMethod === "POST" && mode === "create" ? formData : JSON.stringify(payload);
     const headers = submitMethod === "POST" && mode === "create" ? undefined : { "Content-Type": "application/json" };
@@ -382,21 +412,17 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       setError(mediaFailures[0] ?? "Some media actions failed.");
     }
 
-    if (mode === "create") {
-      router.push(`/institute/courses/${courseId}?submitted=1`);
-      router.refresh();
-      return;
-    }
-
-    router.push(`/institute/courses/${courseId}`);
-    router.refresh();
+    const destination = mode === "create" ? `/institute/courses/${courseId}?submitted=1` : `/institute/courses/${courseId}`;
+    window.setTimeout(() => {
+      router.replace(destination);
+    }, 350);
   }
 
   const pageTitle = mode === "create" ? "Add a new course" : mode === "resubmit" ? "Resubmit rejected course" : "Edit course";
   const totalMediaAfterSave = currentMedia.length + newMedia.length;
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+    <form onSubmit={onSubmit} noValidate className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
       <div className="rounded-lg border border-brand-100 bg-brand-50/60 p-4">
         <h2 className="text-xl font-semibold text-slate-900">{pageTitle}</h2>
         <p className="mt-1 text-sm text-slate-600">All edits are sent for moderation approval.</p>
@@ -419,8 +445,8 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       <section className={`space-y-3 rounded-lg border border-slate-200 p-4 ${step === 0 ? "block" : "hidden"}`}>
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Course basics</h3>
         <div className="grid gap-3 md:grid-cols-2">
-          <Field label="Course title" required>
-            <input name="title" required defaultValue={initialCourse?.title ?? ""} placeholder="e.g. Full Stack Web Development" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <Field label="Course title" required error={fieldErrors.title}>
+            <input name="title" defaultValue={initialCourse?.title ?? ""} placeholder="e.g. Full Stack Web Development" className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.title ? "border-rose-400" : "border-slate-300"}`} />
           </Field>
           <Field label="Short summary">
             <input name="summary" defaultValue={initialCourse?.summary ?? ""} placeholder="A quick one-line course pitch" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
@@ -440,11 +466,11 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
           <Field label="Language">
             <input name="language" defaultValue={initialCourse?.language ?? ""} placeholder="e.g. English" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </Field>
-          <Field label="Fees" required helper="Enter total amount in INR.">
-            <input name="fees" type="number" min={0} required defaultValue={initialCourse?.fees ?? 0} placeholder="0" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <Field label="Fees" required helper="Enter total amount in INR." error={fieldErrors.fees}>
+            <input name="fees" type="number" min={0} defaultValue={initialCourse?.fees ?? 0} placeholder="0" className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.fees ? "border-rose-400" : "border-slate-300"}`} />
           </Field>
-          <Field label="Mode" required>
-            <select name="mode" required defaultValue={initialCourse?.mode ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"><option value="">Select mode</option>{COURSE_MODE_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+          <Field label="Mode" required error={fieldErrors.mode}>
+            <select name="mode" defaultValue={initialCourse?.mode ?? ""} className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.mode ? "border-rose-400" : "border-slate-300"}`}><option value="">Select mode</option>{COURSE_MODE_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
           </Field>
         </div>
       </section>
@@ -452,11 +478,11 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       <section className={`space-y-3 rounded-lg border border-slate-200 p-4 ${step === 1 ? "block" : "hidden"}`}>
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Duration & schedule</h3>
         <div className="grid gap-3 md:grid-cols-2">
-          <Field label="Duration value" required>
-            <input name="durationValue" required type="number" min={1} value={durationValue} onChange={(event) => setDurationValue(event.target.value)} placeholder="e.g. 12" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <Field label="Duration value" required error={fieldErrors.durationValue}>
+            <input name="durationValue" type="number" min={1} value={durationValue} onChange={(event) => setDurationValue(event.target.value)} placeholder="e.g. 12" className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.durationValue ? "border-rose-400" : "border-slate-300"}`} />
           </Field>
-          <Field label="Duration unit" required helper={computedDuration ? `Combined duration: ${computedDuration}` : undefined}>
-            <select name="durationUnit" required value={durationUnit} onChange={(event) => setDurationUnit(event.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"><option value="">Select duration unit</option>{DURATION_UNITS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
+          <Field label="Duration unit" required helper={computedDuration ? `Combined duration: ${computedDuration}` : undefined} error={fieldErrors.durationUnit}>
+            <select name="durationUnit" value={durationUnit} onChange={(event) => setDurationUnit(event.target.value)} className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.durationUnit ? "border-rose-400" : "border-slate-300"}`}><option value="">Select duration unit</option>{DURATION_UNITS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
           </Field>
           <Field label="Location">
             <input name="location" defaultValue={initialCourse?.location ?? ""} placeholder="Online / City / Campus" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
@@ -464,14 +490,14 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
           <Field label="Schedule">
             <input name="schedule" defaultValue={initialCourse?.schedule ?? ""} placeholder="Weekend, evening, weekdays..." className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </Field>
-          <Field label="Admission deadline">
-            <input name="admissionDeadline" type="date" defaultValue={initialCourse?.admission_deadline ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <Field label="Admission deadline" error={fieldErrors.admissionDeadline}>
+            <input name="admissionDeadline" type="date" defaultValue={initialCourse?.admission_deadline ?? ""} className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.admissionDeadline ? "border-rose-400" : "border-slate-300"}`} />
           </Field>
           <Field label="Start date">
-            <input name="startDate" type="date" defaultValue={initialCourse?.start_date ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+            <input name="startDate" type="date" defaultValue={initialCourse?.start_date ?? ""} className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.startDate ? "border-rose-400" : "border-slate-300"}`} />
           </Field>
-          <Field label="End date">
-            <input name="endDate" type="date" defaultValue={initialCourse?.end_date ?? ""} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <Field label="End date" error={fieldErrors.endDate}>
+            <input name="endDate" type="date" defaultValue={initialCourse?.end_date ?? ""} className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.endDate ? "border-rose-400" : "border-slate-300"}`} />
           </Field>
         </div>
       </section>
@@ -515,8 +541,8 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
           <Field label="Faculty qualification">
             <input name="facultyQualification" defaultValue={initialCourse?.faculty_qualification ?? ""} placeholder="e.g. PhD, Industry experience" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </Field>
-          <Field label="Support email">
-            <input name="supportEmail" type="email" defaultValue={initialCourse?.support_email ?? ""} placeholder="help@yourinstitute.com" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+          <Field label="Support email" error={fieldErrors.supportEmail}>
+            <input name="supportEmail" type="email" defaultValue={initialCourse?.support_email ?? ""} placeholder="help@yourinstitute.com" className={`w-full rounded-md border px-3 py-2 text-sm ${fieldErrors.supportEmail ? "border-rose-400" : "border-slate-300"}`} />
           </Field>
           <Field label="Support phone">
             <input name="supportPhone" defaultValue={initialCourse?.support_phone ?? ""} placeholder="+91..." className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
