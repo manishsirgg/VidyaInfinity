@@ -129,6 +129,11 @@ function isPaidLikeStatus(value: string | null | undefined) {
   return SUCCESS_PAYMENT_STATUSES.has(String(value ?? "").trim().toLowerCase());
 }
 
+function isRevokedLikeStatus(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ["cancelled", "canceled", "revoked", "refunded"].includes(normalized);
+}
+
 export default async function StudentWebinarRegistrationsPage({
   searchParams,
 }: {
@@ -234,7 +239,7 @@ export default async function StudentWebinarRegistrationsPage({
       return item.payment_status === "not_required" || item.webinar_mode === "free";
     }
     if (activeFilter === "paid") {
-      return item.payment_status === "paid" || item.webinar_mode === "paid";
+      return (item.payment_status === "paid" || item.webinar_mode === "paid") && !isRevokedLikeStatus(item.payment_status) && !isRevokedLikeStatus(item.registration_status) && !isRevokedLikeStatus(item.access_status);
     }
     return true;
   });
@@ -305,8 +310,10 @@ export default async function StudentWebinarRegistrationsPage({
                     Join Webinar
                   </a>
                 </div>
+              ) : isRevokedLikeStatus(item.payment_status) || isRevokedLikeStatus(item.registration_status) || isRevokedLikeStatus(item.access_status) ? (
+                <p className="mt-2 text-xs text-rose-700">This registration has been refunded/cancelled and access is revoked.</p>
               ) : (
-                <p className="mt-2 text-xs text-slate-600">Registration Confirmed. Join access unlocks 15 minutes before webinar starts.</p>
+                <p className="mt-2 text-xs text-slate-600">Registration confirmed. Join access unlocks 15 minutes before webinar starts.</p>
               )}
               {canRequestRefund ? (
                 <div className="mt-2">

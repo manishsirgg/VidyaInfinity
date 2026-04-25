@@ -36,13 +36,18 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
       .eq("id", id)
       .eq("institute_id", institute.id)
       .maybeSingle(),
-    dataClient.from("webinar_registrations").select("id,payment_status,access_status").eq("webinar_id", id),
+    dataClient.from("webinar_registrations").select("id,payment_status,access_status,registration_status").eq("webinar_id", id),
     dataClient.from("webinar_orders").select("id,payment_status,amount,platform_fee_amount,payout_amount").eq("webinar_id", id),
   ]);
 
   if (!webinar) notFound();
 
   const paidOrders = (orders ?? []).filter((order) => order.payment_status === "paid");
+  const activeRegistrations = (registrations ?? []).filter((row) =>
+    String(row.registration_status ?? "").toLowerCase() === "registered" &&
+    String(row.payment_status ?? "").toLowerCase() === "paid" &&
+    !["revoked", "cancelled", "canceled", "refunded"].includes(String(row.access_status ?? "").toLowerCase())
+  );
   const paidOrderIds = paidOrders.map((order) => order.id);
   const { data: payouts } =
     paidOrderIds.length > 0
@@ -81,7 +86,7 @@ export default async function WebinarDetailPage({ params }: { params: Promise<{ 
           <p className="mt-2 text-slate-600">{webinar.description ?? "No description provided."}</p>
         </section>
         <section className="rounded-xl border bg-white p-4 text-sm">
-          <p><span className="font-medium">Registrations:</span> {(registrations ?? []).length}</p>
+          <p><span className="font-medium">Active registrations:</span> {activeRegistrations.length}</p>
           <p><span className="font-medium">Paid orders:</span> {paidOrders.length}</p>
           <p><span className="font-medium">Gross:</span> {toCurrency(gross, webinar.currency)}</p>
           <p><span className="font-medium">Platform fee:</span> {toCurrency(platformFee, webinar.currency)}</p>

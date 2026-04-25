@@ -8,9 +8,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { siteConfig } from "@/lib/constants/site";
 import { isInstituteEligibleForEnrollment } from "@/lib/institutes/enrollment-eligibility";
 import { createClient } from "@/lib/supabase/server";
+import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
+import { isCourseEnrollmentCurrentlyActive, normalizeEntitlementStatus } from "@/lib/payments/entitlement-status";
 
-const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
-const ENROLLMENT_TERMINAL_STATUSES = new Set(["cancelled", "canceled", "expired", "dropped", "revoked", "refunded", "failed"]);
 
 function resolveAccessEndAt(startAtIso: string | null, durationValue: number | null, durationUnit: string | null) {
   if (!startAtIso || !durationValue || durationValue <= 0) return null;
@@ -40,18 +40,6 @@ function resolveCourseEndAt(endDate: string | null) {
   const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
-}
-
-function normalizeStatus(value: string | null | undefined) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase();
-}
-
-function isEnrollmentActiveStatus(status: string | null | undefined) {
-  const normalized = normalizeStatus(status);
-  if (!normalized) return true;
-  return !ENROLLMENT_TERMINAL_STATUSES.has(normalized);
 }
 
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -100,8 +88,9 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           .order("created_at", { ascending: false })
           .limit(20);
     const existingEnrollment =
-      [...(existingEnrollmentsByStudent ?? []), ...(existingEnrollmentsByUser ?? [])].find((row) => isEnrollmentActiveStatus(row.enrollment_status)) ??
-      null;
+      [...(existingEnrollmentsByStudent ?? []), ...(existingEnrollmentsByUser ?? [])].find((row) =>
+        isCourseEnrollmentCurrentlyActive({ enrollmentStatus: row.enrollment_status, paymentStatus: null, accessEndAt: row.access_end_at })
+      ) ?? null;
 
     if (existingEnrollment) {
       const effectiveEnrollmentEndAt = existingEnrollment.access_end_at ?? resolveCourseEndAt(course.end_date ?? null);
@@ -140,8 +129,8 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
             .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; created_at: string | null }>();
       const paidOrder = paidOrderByStudent ?? paidOrderByUser;
 
-      const normalizedPaymentStatus = String(paidOrder?.payment_status ?? "").trim().toLowerCase();
-      const hasConfirmedPayment = Boolean(paidOrder && (SUCCESS_PAYMENT_STATUSES.has(normalizedPaymentStatus) || paidOrder.paid_at));
+      const normalizedPaymentStatus = normalizeEntitlementStatus(paidOrder?.payment_status ?? "");
+      const hasConfirmedPayment = Boolean(paidOrder && (isSuccessfulPaymentStatus(normalizedPaymentStatus) || paidOrder.paid_at));
       if (paidOrder && hasConfirmedPayment) {
         const fallbackEndAt = resolveAccessEndAt(
           paidOrder.paid_at ?? paidOrder.created_at ?? null,
@@ -149,7 +138,11 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           course.duration_unit ?? null
         );
         const effectivePaidEndAt = fallbackEndAt ?? resolveCourseEndAt(course.end_date ?? null);
-        const hasActivePaidAccess = !effectivePaidEndAt || new Date(effectivePaidEndAt).getTime() > Date.now();
+        const hasActivePaidAccess = isCourseEnrollmentCurrentlyActive({
+          enrollmentStatus: "enrolled",
+          paymentStatus: normalizedPaymentStatus,
+          accessEndAt: effectivePaidEndAt,
+        });
         if (hasActivePaidAccess) {
           existingActiveEnrollment = true;
           activeEnrollmentEndsAt = effectivePaidEndAt;

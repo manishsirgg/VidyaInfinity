@@ -4,8 +4,10 @@ import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed"] as const;
-const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
+import { isCourseEnrollmentCurrentlyActive, normalizeEntitlementStatus } from "@/lib/payments/entitlement-status";
+
+const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed", "cancelled", "canceled", "revoked", "inactive", "expired", "refunded"] as const;
 
 type EnrollmentRow = {
   id: string;
@@ -129,7 +131,7 @@ export default async function StudentEnrollmentsPage() {
   for (const order of courseOrders) {
     if (!order.course_id || paidOrderByCourseId.has(order.course_id)) continue;
     const normalized = String(order.payment_status ?? "").trim().toLowerCase();
-    if (SUCCESS_PAYMENT_STATUSES.has(normalized) || order.paid_at) {
+    if (isSuccessfulPaymentStatus(normalized) || order.paid_at) {
       paidOrderByCourseId.set(order.course_id, order);
     }
   }
@@ -139,11 +141,12 @@ export default async function StudentEnrollmentsPage() {
       if (!order.course_id) return false;
       if (enrollments.some((enrollment) => enrollment.course_id === order.course_id)) return false;
       const normalized = String(order.payment_status ?? "").trim().toLowerCase();
-      return SUCCESS_PAYMENT_STATUSES.has(normalized) || Boolean(order.paid_at);
+      return isSuccessfulPaymentStatus(normalized) || Boolean(order.paid_at);
     })
     .map((order) => ({
       id: `order-${order.id}`,
       course_id: order.course_id as string,
+      course_order_id: order.id,
       enrollment_status: "enrolled",
       enrolled_at: order.paid_at ?? order.created_at,
       access_start_at: order.paid_at ?? order.created_at,
@@ -156,11 +159,13 @@ export default async function StudentEnrollmentsPage() {
 
   const mergedEnrollments = [...enrollments, ...fallbackEnrollmentCards];
 
-  const nowMs = Date.now();
   const activeEnrollmentCount = mergedEnrollments.filter((enrollment) => {
-    if (!enrollment.access_end_at) return true;
-    const accessEndAtMs = new Date(enrollment.access_end_at).getTime();
-    return Number.isFinite(accessEndAtMs) && accessEndAtMs > nowMs;
+    const linkedOrder = enrollment.course_order_id ? courseOrders.find((row) => row.id === enrollment.course_order_id) : null;
+    return isCourseEnrollmentCurrentlyActive({
+      enrollmentStatus: enrollment.enrollment_status,
+      paymentStatus: linkedOrder?.payment_status ?? null,
+      accessEndAt: enrollment.access_end_at,
+    });
   }).length;
 
   console.info("[student/enrollments] enrollments_page_loaded", {
@@ -193,10 +198,14 @@ export default async function StudentEnrollmentsPage() {
           const institute = one(enrollment.institute) ?? instituteById.get(course?.institute_id ?? "") ?? null;
           const order = one(enrollment.order);
           const fallbackPaidOrder = paidOrderByCourseId.get(enrollment.course_id);
-          const normalizedPaymentStatus = String(order?.payment_status ?? fallbackPaidOrder?.payment_status ?? "").trim().toLowerCase();
-          const isPaid = SUCCESS_PAYMENT_STATUSES.has(normalizedPaymentStatus) || Boolean(order?.paid_at ?? fallbackPaidOrder?.paid_at);
+          const normalizedPaymentStatus = normalizeEntitlementStatus(order?.payment_status ?? fallbackPaidOrder?.payment_status ?? "");
+          const isPaid = isSuccessfulPaymentStatus(normalizedPaymentStatus) || Boolean(order?.paid_at ?? fallbackPaidOrder?.paid_at);
           const instituteEmail = institute?.user_id ? profileMap.get(institute.user_id)?.email : null;
-          const hasActiveAccess = !enrollment.access_end_at || new Date(enrollment.access_end_at).getTime() > nowMs;
+          const hasActiveAccess = isCourseEnrollmentCurrentlyActive({
+            enrollmentStatus: enrollment.enrollment_status,
+            paymentStatus: normalizedPaymentStatus,
+            accessEndAt: enrollment.access_end_at,
+          });
 
           return (
             <div key={enrollment.id} className="rounded-xl border bg-white p-4 text-sm">
