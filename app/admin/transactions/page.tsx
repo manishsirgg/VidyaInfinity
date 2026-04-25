@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
-import { calculateCanonicalPendingInstitutePayouts, calculateNetRevenue } from "@/lib/admin/finance-summary";
+import { calculateCanonicalPendingInstitutePayouts, calculateRevenueBreakdown } from "@/lib/admin/finance-summary";
 
 function toTitleCase(value: string | null) {
   const raw = value ?? "unknown";
@@ -183,12 +183,12 @@ export default async function Page() {
 
   const webinarById = new Map((webinarRows ?? []).map((webinar) => [webinar.id, webinar]));
 
-  const courseRevenue = calculateNetRevenue(orders as Record<string, unknown>[], "gross_amount");
-  const webinarRevenue = calculateNetRevenue(webinarOrders as Record<string, unknown>[], "amount");
-  const psychometricRevenue = calculateNetRevenue(psychometricOrders as Record<string, unknown>[], "final_amount");
-  const instituteFeaturedRevenue = calculateNetRevenue(featuredListingOrders as Record<string, unknown>[], "final_payable_amount");
-  const courseFeaturedRevenue = calculateNetRevenue(courseFeaturedOrders as Record<string, unknown>[], "amount");
-  const webinarFeaturedRevenue = calculateNetRevenue(webinarFeaturedOrders as Record<string, unknown>[], "amount");
+  const courseRevenue = calculateRevenueBreakdown(orders as Record<string, unknown>[], "gross_amount");
+  const webinarRevenue = calculateRevenueBreakdown(webinarOrders as Record<string, unknown>[], "amount");
+  const psychometricRevenue = calculateRevenueBreakdown(psychometricOrders as Record<string, unknown>[], "final_amount");
+  const instituteFeaturedRevenue = calculateRevenueBreakdown(featuredListingOrders as Record<string, unknown>[], "final_payable_amount");
+  const courseFeaturedRevenue = calculateRevenueBreakdown(courseFeaturedOrders as Record<string, unknown>[], "amount");
+  const webinarFeaturedRevenue = calculateRevenueBreakdown(webinarFeaturedOrders as Record<string, unknown>[], "amount");
   const canonicalPendingPayouts = calculateCanonicalPendingInstitutePayouts({
     payoutLedgerRows: payouts as Record<string, unknown>[],
     payoutRequestRows: payoutRequests as Record<string, unknown>[],
@@ -294,14 +294,14 @@ export default async function Page() {
           <Link href="/admin/refunds" className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700">View Refunds</Link>
         </div>
         <p className="mt-1 text-sm text-slate-600">Monitor all payment transactions throughout the app, plus related orders, enrollments, registrations, and payouts.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Course revenue (net)</p><p className="text-lg font-semibold">{formatAmount(courseRevenue.net)}</p></div>
-          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Webinar revenue (net)</p><p className="text-lg font-semibold">{formatAmount(webinarRevenue.net)}</p></div>
-          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Psychometric revenue (net)</p><p className="text-lg font-semibold">{formatAmount(psychometricRevenue.net)}</p></div>
-          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Course featured listing revenue</p><p className="text-lg font-semibold">{formatAmount(courseFeaturedRevenue.net)}</p></div>
-          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Webinar featured promotion revenue</p><p className="text-lg font-semibold">{formatAmount(webinarFeaturedRevenue.net)}</p></div>
-          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Institute featured listing revenue</p><p className="text-lg font-semibold">{formatAmount(instituteFeaturedRevenue.net)}</p></div>
-          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Pending institute payouts / net payable</p><p className="text-lg font-semibold">{formatAmount(canonicalPendingPayouts.totalPayable)}</p></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Course revenue</p><p className="text-xs text-slate-600">Gross {formatAmount(courseRevenue.grossPaid)} · Refunded {formatAmount(courseRevenue.refunded)}</p><p className="text-lg font-semibold">Net {formatAmount(courseRevenue.net)}</p></div>
+          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Webinar revenue</p><p className="text-xs text-slate-600">Gross {formatAmount(webinarRevenue.grossPaid)} · Refunded {formatAmount(webinarRevenue.refunded)}</p><p className="text-lg font-semibold">Net {formatAmount(webinarRevenue.net)}</p></div>
+          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Psychometric revenue</p><p className="text-xs text-slate-600">Gross {formatAmount(psychometricRevenue.grossPaid)} · Refunded {formatAmount(psychometricRevenue.refunded)}</p><p className="text-lg font-semibold">Net {formatAmount(psychometricRevenue.net)}</p></div>
+          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Course featured listing revenue</p><p className="text-xs text-slate-600">Gross {formatAmount(courseFeaturedRevenue.grossPaid)} · Refunded {formatAmount(courseFeaturedRevenue.refunded)}</p><p className="text-lg font-semibold">Net {formatAmount(courseFeaturedRevenue.net)}</p></div>
+          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Webinar featured promotion revenue</p><p className="text-xs text-slate-600">Gross {formatAmount(webinarFeaturedRevenue.grossPaid)} · Refunded {formatAmount(webinarFeaturedRevenue.refunded)}</p><p className="text-lg font-semibold">Net {formatAmount(webinarFeaturedRevenue.net)}</p></div>
+          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Institute featured listing revenue</p><p className="text-xs text-slate-600">Gross {formatAmount(instituteFeaturedRevenue.grossPaid)} · Refunded {formatAmount(instituteFeaturedRevenue.refunded)}</p><p className="text-lg font-semibold">Net {formatAmount(instituteFeaturedRevenue.net)}</p></div>
+          <div className="rounded border bg-white p-3"><p className="text-xs text-slate-500">Institute payout liability (net payable)</p><p className="text-xs text-slate-600">Available {formatAmount(canonicalPendingPayouts.availablePayable)} · Locked {formatAmount(canonicalPendingPayouts.lockedPayable)} · Paid out {formatAmount(canonicalPendingPayouts.paidOut)}</p><p className="text-lg font-semibold">Pending {formatAmount(canonicalPendingPayouts.totalPayable)}</p></div>
         </div>
       </section>
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
+import { calculateNetPlatformFeeRevenue, calculateRevenueBreakdown } from "@/lib/admin/finance-summary";
 import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -63,7 +64,8 @@ export default async function AdminDashboardPage() {
     { count: activeFeaturedWebinarsCount },
     { data: recentNotifications },
     { data: recentPendingCourses },
-    { data: payoutLedgerRows },
+    { data: courseRefundRows },
+    { data: webinarRefundRows },
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase.from("institutes").select("id", { count: "exact", head: true }),
@@ -97,7 +99,8 @@ export default async function AdminDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(5),
     supabase.from("courses").select("id,title,created_at").eq("status", "pending").order("created_at", { ascending: false }).limit(5),
-    supabase.from("institute_payouts").select("id,payout_source,gross_amount,platform_fee_amount,payout_amount,refund_amount,payout_status"),
+    supabase.from("refunds").select("course_order_id,amount,refund_status").not("course_order_id", "is", null),
+    supabase.from("refunds").select("webinar_order_id,amount,refund_status").not("webinar_order_id", "is", null),
   ]);
 
   const moderationNotifications = (recentPendingCourses ?? []).map((course) => ({
@@ -116,23 +119,32 @@ export default async function AdminDashboardPage() {
   const paidWebinarFeaturedOrders = (webinarFeaturedOrders ?? []).filter((order) => isSuccessfulPaymentStatus(order.payment_status));
   const paidCourseFeaturedRevenue = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const paidWebinarFeaturedRevenue = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
-  const payoutLedger = (payoutLedgerRows ?? []) as Array<{
-    payout_source: string | null;
-    gross_amount: number | null;
-    platform_fee_amount: number | null;
-    payout_amount: number | null;
-    refund_amount: number | null;
-    payout_status: string | null;
-  }>;
-  const paidEarningsRows = payoutLedger.filter((row) => (row.payout_source ?? "").toLowerCase() !== "refund_adjustment" && (row.payout_status ?? "").toLowerCase() !== "failed");
-  const refundRows = payoutLedger.filter((row) => (row.payout_source ?? "").toLowerCase() === "refund_adjustment");
-  const adminGrossRevenue = paidEarningsRows.reduce((sum, row) => sum + Number(row.gross_amount ?? 0), 0);
-  const adminRefundReversals = refundRows.reduce(
-    (sum, row) => sum + Math.max(Number(row.refund_amount ?? 0), Number(row.payout_amount ?? 0) < 0 ? Math.abs(Number(row.payout_amount ?? 0)) : 0),
-    0
-  );
+  const courseRevenue = calculateRevenueBreakdown((await supabase.from("course_orders").select("payment_status,gross_amount")).data ?? [], "gross_amount");
+  const webinarRevenue = calculateRevenueBreakdown((await supabase.from("webinar_orders").select("payment_status,amount")).data ?? [], "amount");
+  const psychometricRevenue = calculateRevenueBreakdown((await supabase.from("psychometric_orders").select("payment_status,final_amount")).data ?? [], "final_amount");
+  const adminGrossRevenue = courseRevenue.grossPaid + webinarRevenue.grossPaid + psychometricRevenue.grossPaid;
+  const adminRefundReversals = courseRevenue.refunded + webinarRevenue.refunded + psychometricRevenue.refunded;
   const adminNetRevenue = Math.max(0, adminGrossRevenue - adminRefundReversals);
-  const adminPlatformRevenue = paidEarningsRows.reduce((sum, row) => sum + Number(row.platform_fee_amount ?? 0), 0);
+  const courseFeeRevenue = calculateNetPlatformFeeRevenue({
+    paidOrders: (await supabase.from("course_orders").select("id,payment_status,gross_amount,platform_fee_amount")).data ?? [],
+    orderIdField: "id",
+    grossAmountField: "gross_amount",
+    platformFeeField: "platform_fee_amount",
+    refunds: (courseRefundRows ?? []) as Record<string, unknown>[],
+    refundOrderIdField: "course_order_id",
+    refundAmountField: "amount",
+  });
+  const webinarFeeRevenue = calculateNetPlatformFeeRevenue({
+    paidOrders: (await supabase.from("webinar_orders").select("id,payment_status,amount,platform_fee_amount")).data ?? [],
+    orderIdField: "id",
+    grossAmountField: "amount",
+    platformFeeField: "platform_fee_amount",
+    refunds: (webinarRefundRows ?? []) as Record<string, unknown>[],
+    refundOrderIdField: "webinar_order_id",
+    refundAmountField: "amount",
+  });
+  // Refund commission policy: refunded orders proportionally reverse platform commission unless explicitly non-refundable.
+  const adminPlatformRevenue = courseFeeRevenue.netPlatformFee + webinarFeeRevenue.netPlatformFee;
 
   return (
     <div className="vi-page">
@@ -211,13 +223,13 @@ export default async function AdminDashboardPage() {
           Paid gross revenue: ₹{adminGrossRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
         </Link>
         <Link href="/admin/refunds" className="vi-card p-4">
-          Refund reversals: ₹{adminRefundReversals.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+          Refunded amount: ₹{adminRefundReversals.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
         </Link>
         <Link href="/admin/transactions" className="vi-card p-4">
-          Net revenue (after refunds): ₹{adminNetRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+          Net revenue: ₹{adminNetRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
         </Link>
         <Link href="/admin/commission" className="vi-card p-4">
-          Platform fee revenue: ₹{adminPlatformRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+          Platform fee revenue (net of refunds): ₹{adminPlatformRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
         </Link>
       </div>
 

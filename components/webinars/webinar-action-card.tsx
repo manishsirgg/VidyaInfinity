@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { useState } from "react";
 
+import { getAccessStatusLabel, getPaymentStatusLabel, getRegistrationStatusLabel } from "@/lib/payments/status-labels";
 import { shouldShowMeetingJoinWindow } from "@/lib/webinars/utils";
 
 declare global {
@@ -170,7 +171,7 @@ export function WebinarActionCard({
   const entitlementGranted = ["granted", "revealed"].includes(accessState);
   const hasJoinAccess = isEnrolled && Boolean(secureJoinUrl) && entitlementGranted && revealWindowOpen;
   const isRevoked = String(registrationAccessStatus ?? "").toLowerCase() === "revoked" || String(registrationPaymentStatus ?? "").toLowerCase() === "refunded";
-  const ctaDisabled = loading || !isLoggedIn || !enrollmentOpen || isEnrolled;
+  const ctaDisabled = loading || !isLoggedIn || !enrollmentOpen || (isEnrolled && !isRevoked);
 
   return (
     <div className="rounded-xl border bg-white p-4">
@@ -203,9 +204,13 @@ export function WebinarActionCard({
         </div>
       ) : null}
       {isEnrolled && !hasJoinAccess && !isRevoked ? (
-        <p className="mt-2 text-xs text-slate-600">Registration: Registered · Access: Granted{!revealWindowOpen ? " · Join unlocks 15 minutes before webinar starts." : ""}</p>
+        <p className="mt-2 text-xs text-slate-600">Registration: {getRegistrationStatusLabel("registered")} · Access: {getAccessStatusLabel("granted")}{!revealWindowOpen ? " · Join unlocks 15 minutes before webinar starts." : ""}</p>
       ) : null}
-      {isEnrolled && !hasJoinAccess ? <p className="mt-2 text-sm text-emerald-700">Already Registered{activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}</p> : null}
+      {isEnrolled && !hasJoinAccess ? (
+        <p className={`mt-2 text-sm ${isRevoked ? "text-amber-700" : "text-emerald-700"}`}>
+          {isRevoked ? `Registration: ${getRegistrationStatusLabel("cancelled")} · Payment: ${getPaymentStatusLabel(registrationPaymentStatus)} · Access: ${getAccessStatusLabel(registrationAccessStatus)}` : `Already Registered${activeAccessEndAt ? ` · Access Active Until ${new Date(activeAccessEndAt).toLocaleString()}` : ""}`}
+        </p>
+      ) : null}
 
       {webinarMode === "free" ? (
         <button type="button" disabled={ctaDisabled} onClick={registerFree} className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">
