@@ -46,6 +46,49 @@ function buildWalletDebitIdempotencyKey(orderTable: string, orderId: string) {
   return `wallet_debit:${orderTable}:${orderId}`;
 }
 
+function resolvePayableAmountRupees(plan: PlanRow) {
+  const amountRaw = toNumber(plan.amount);
+  const priceRaw = toNumber(plan.price);
+  const amount = amountRaw > 0 ? amountRaw : 0;
+  const price = priceRaw > 0 ? priceRaw : 0;
+
+  if (price > 0 && amount > 0) {
+    const ratio = amount / price;
+    if (Math.abs(ratio - 100) < 0.001) {
+      return {
+        payableAmount: price,
+        source: "price_rupees_with_amount_paise" as const,
+        planAmountRaw: amount,
+        planPriceRaw: price,
+      };
+    }
+    if (Math.abs(ratio - 1) < 0.001) {
+      return {
+        payableAmount: amount,
+        source: "amount_or_price_rupees" as const,
+        planAmountRaw: amount,
+        planPriceRaw: price,
+      };
+    }
+  }
+
+  if (price > 0) {
+    return {
+      payableAmount: price,
+      source: "price_rupees" as const,
+      planAmountRaw: amount,
+      planPriceRaw: price,
+    };
+  }
+
+  return {
+    payableAmount: amount,
+    source: "amount_rupees" as const,
+    planAmountRaw: amount,
+    planPriceRaw: price,
+  };
+}
+
 export async function POST(request: Request) {
   let stage = "auth";
   let orderId: string | null = null;
@@ -79,25 +122,50 @@ export async function POST(request: Request) {
     }
 
     stage = "institute_lookup";
-    instituteId = await getInstituteIdForUser(admin.data, auth.user.id);
-    if (!instituteId) {
+    const userInstituteId = await getInstituteIdForUser(admin.data, auth.user.id);
+    if (!userInstituteId) {
       console.error("[course-featured/create-order] failed", { stage, userId: auth.user.id, error: "institute_not_found" });
       return NextResponse.json({ error: "Institute profile not found" }, { status: 404 });
     }
-    console.info("[course-featured/create-order] stage", { stage: "institute_ok", userId: auth.user.id, instituteId });
+    console.info("[course-featured/create-order] stage", { stage: "institute_ok", userId: auth.user.id, instituteId: userInstituteId });
 
     stage = "course_lookup";
     const { data: course } = await admin.data
       .from("courses")
       .select("id,institute_id,status,is_active")
       .eq("id", body.courseId)
-      .eq("institute_id", instituteId)
       .maybeSingle<CourseRow>();
 
     if (!course) {
-      console.error("[course-featured/create-order] failed", { stage, instituteId, userId: auth.user.id, courseId: body.courseId, error: "course_not_found" });
+      console.error("[course-featured/create-order] failed", {
+        stage,
+        instituteId: userInstituteId,
+        userId: auth.user.id,
+        courseId: body.courseId,
+        error: "course_not_found",
+      });
       return NextResponse.json({ error: "Course not found" }, { status: 404 });
     }
+
+    instituteId = course.institute_id;
+    const { data: courseInstitute } = await admin.data
+      .from("institutes")
+      .select("id,user_id")
+      .eq("id", instituteId)
+      .maybeSingle<{ id: string; user_id: string | null }>();
+
+    if (!courseInstitute || courseInstitute.user_id !== auth.user.id) {
+      console.error("[course-featured/create-order] failed", {
+        stage,
+        userId: auth.user.id,
+        userInstituteId,
+        resolvedInstituteId: instituteId,
+        courseId: body.courseId,
+        error: "course_institute_mismatch",
+      });
+      return NextResponse.json({ error: "You are not allowed to feature this course" }, { status: 403 });
+    }
+
     if (course.status !== "approved" || course.is_active === false) {
       console.error("[course-featured/create-order] failed", {
         stage,
@@ -148,7 +216,8 @@ export async function POST(request: Request) {
     const resolvedPlan = canonicalPlan ?? plan;
 
     const durationDays = toNumber(resolvedPlan.duration_days);
-    const amount = toNumber(resolvedPlan.amount ?? resolvedPlan.price);
+    const amountResolution = resolvePayableAmountRupees(resolvedPlan);
+    const amount = amountResolution.payableAmount;
     const currency = typeof resolvedPlan.currency === "string" && resolvedPlan.currency.length > 0 ? resolvedPlan.currency : "INR";
 
     if (durationDays <= 0 || amount <= 0) {
@@ -174,6 +243,9 @@ export async function POST(request: Request) {
       resolvedPlanId: String(resolvedPlan.id),
       resolution: planResolution.resolution,
       amount,
+      amountResolutionSource: amountResolution.source,
+      planAmountRaw: amountResolution.planAmountRaw,
+      planPriceRaw: amountResolution.planPriceRaw,
       currency,
       durationDays,
     });
@@ -186,6 +258,16 @@ export async function POST(request: Request) {
     const availableBalance = Math.max(0, toNumber(walletSnapshot.data.summary.available_balance));
     const payableAmount = amount;
     const canPayViaWallet = availableBalance >= payableAmount;
+    console.info("[course-featured/create-order] wallet_decision", {
+      userId: auth.user.id,
+      instituteId,
+      courseId: body.courseId,
+      planId: String(resolvedPlan.id),
+      payableAmount,
+      walletAvailableBalance: availableBalance,
+      walletComparisonResult: `${availableBalance} >= ${payableAmount} => ${canPayViaWallet}`,
+      paymentPath: canPayViaWallet ? "wallet" : "razorpay",
+    });
 
     stage = "local_order_insert";
     const nowIso = new Date().toISOString();
@@ -372,7 +454,7 @@ export async function POST(request: Request) {
     let order: { id: string; receipt: string | null; amount: number; currency: string };
     try {
       const created = await razorpay.data.orders.create({
-        amount: Math.round(amount * 100),
+        amount: Math.round(payableAmount * 100),
         currency,
         receipt,
         notes: {
