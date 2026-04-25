@@ -4,6 +4,7 @@ import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { applyRefundToInstitutePayout } from "@/lib/payments/institute-payout-refunds";
+import { reconcileRefundAccessAndOrderState } from "@/lib/payments/refund-reconciliation";
 import { createRazorpayRefund, mapRazorpayRefundStatus } from "@/lib/payments/refunds";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -297,36 +298,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   let payoutSyncWarning: string | null = null;
 
   if (refund.refund_status === "refunded") {
-    if (refund.course_order_id) {
-      await admin.data
-        .from("course_orders")
-        .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
-        .eq("id", refund.course_order_id);
-    }
-
-    if (refund.psychometric_order_id) {
-      await admin.data
-        .from("psychometric_orders")
-        .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
-        .eq("id", refund.psychometric_order_id);
-    }
-
-    if (refund.webinar_order_id) {
-      await admin.data
-        .from("webinar_orders")
-        .update({ payment_status: "refunded", order_status: "refunded", access_status: "revoked", updated_at: new Date().toISOString() })
-        .eq("id", refund.webinar_order_id);
-
-      await admin.data
-        .from("webinar_registrations")
-        .update({
-          payment_status: "refunded",
-          access_status: "revoked",
-          access_end_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("webinar_order_id", refund.webinar_order_id);
-    }
+    const refundedAt = new Date().toISOString();
+    await reconcileRefundAccessAndOrderState({
+      supabase: admin.data,
+      targets: {
+        course_order_id: refund.course_order_id ?? null,
+        psychometric_order_id: refund.psychometric_order_id ?? null,
+        webinar_order_id: refund.webinar_order_id ?? null,
+      },
+      refundedAt,
+    });
+    logRefundAdminEvent("refund_order_entitlement_reconciled", {
+      refundId: refund.id,
+      refundedAt,
+      courseOrderId: refund.course_order_id,
+      psychometricOrderId: refund.psychometric_order_id,
+      webinarOrderId: refund.webinar_order_id,
+    });
 
     const payoutOrderKind = refund.course_order_id ? "course_order" : refund.webinar_order_id ? "webinar_order" : null;
     const payoutOrderId = refund.course_order_id ?? refund.webinar_order_id;

@@ -1127,7 +1127,7 @@ export async function reconcileWebinarOrderPaid({
 
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
-      order_type: "course",
+      order_type: "webinar",
       order_id: canonicalPaidOrderId,
       order_kind: REFUND_ORDER_TYPE_TO_CANONICAL_KIND.webinar,
       webinar_order_id: canonicalPaidOrderId,
