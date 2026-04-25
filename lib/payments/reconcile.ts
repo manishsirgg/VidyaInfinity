@@ -45,6 +45,17 @@ function isOnePaidPerStudentCourseViolation(error: { message?: string | null; de
   return text.includes("idx_course_orders_one_paid_per_student_course");
 }
 
+function isRazorpayTransactionOrderKindConstraintError(error: { message?: string | null; details?: string | null } | null | undefined) {
+  if (!error) return false;
+  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return text.includes("razorpay_transactions_order_kind_check");
+}
+
+function getOrderKindConstraintMigrationHint(error: { message?: string | null; details?: string | null } | null | undefined) {
+  if (!isRazorpayTransactionOrderKindConstraintError(error)) return null;
+  return "Database schema is missing canonical razorpay_transactions.order_kind values. Run migration 20260425_000038_razorpay_transactions_order_kind_canonical_alignment.sql.";
+}
+
 type EnrollmentMutationError = { code?: string | null; message?: string | null; details?: string | null };
 
 function isInvalidEnrollmentEnumValue(error: EnrollmentMutationError | null | undefined) {
@@ -105,8 +116,18 @@ async function createInstitutePayoutForCourseOrder({
     return { error: errorMessage };
   }
 
+  const { data: existingPayoutRow } = await supabase
+    .from("institute_payouts")
+    .select("id")
+    .eq("course_order_id", paidOrder.id)
+    .maybeSingle<{ id: string }>();
+
+  if (existingPayoutRow?.id) {
+    return { error: null as string | null };
+  }
+
   const availableAt = paidOrder.paid_at ?? new Date().toISOString();
-  const { error: payoutInsertError } = await supabase.from("institute_payouts").upsert(
+  const { error: payoutInsertError } = await supabase.from("institute_payouts").insert(
     {
       institute_id: paidOrder.institute_id,
       course_order_id: paidOrder.id,
@@ -120,10 +141,12 @@ async function createInstitutePayoutForCourseOrder({
       available_at: availableAt,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "course_order_id", ignoreDuplicates: true }
   );
 
   if (payoutInsertError) {
+    if (isUniqueViolation(payoutInsertError)) {
+      return { error: null as string | null };
+    }
     await logInstituteWalletEvent(
       {
         instituteId: paidOrder.institute_id,
@@ -208,12 +231,22 @@ async function createInstitutePayoutForWebinarOrder({
     return { error: errorMessage };
   }
 
+  const { data: existingPayoutRow } = await supabase
+    .from("institute_payouts")
+    .select("id")
+    .eq("webinar_order_id", paidOrder.id)
+    .maybeSingle<{ id: string }>();
+
+  if (existingPayoutRow?.id) {
+    return { error: null as string | null };
+  }
+
   const grossAmount = Number(paidOrder.amount ?? 0);
   const platformFeeAmount = Number(paidOrder.platform_fee_amount ?? 0);
   const payoutAmount = Number(paidOrder.payout_amount ?? Math.max(grossAmount - platformFeeAmount, 0));
   const availableAt = paidOrder.paid_at ?? paidOrder.created_at ?? new Date().toISOString();
 
-  const { error: payoutInsertError } = await supabase.from("institute_payouts").upsert(
+  const { error: payoutInsertError } = await supabase.from("institute_payouts").insert(
     {
       institute_id: paidOrder.institute_id,
       webinar_order_id: paidOrder.id,
@@ -227,10 +260,12 @@ async function createInstitutePayoutForWebinarOrder({
       available_at: availableAt,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "webinar_order_id" }
   );
 
   if (payoutInsertError) {
+    if (isUniqueViolation(payoutInsertError)) {
+      return { error: null as string | null };
+    }
     await logInstituteWalletEvent(
       {
         instituteId: paidOrder.institute_id,
@@ -452,7 +487,8 @@ export async function reconcileCourseOrderPaid({
       error: txnError.message,
       source,
     });
-    return { error: txnError.message };
+    const migrationHint = getOrderKindConstraintMigrationHint(txnError);
+    return { error: migrationHint ?? txnError.message };
   }
 
   console.info("[payments/reconcile] transaction upsert success", {
@@ -1149,7 +1185,10 @@ export async function reconcileWebinarOrderPaid({
     { onConflict: "razorpay_payment_id" }
   );
 
-  if (txnError) return { error: txnError.message };
+  if (txnError) {
+    const migrationHint = getOrderKindConstraintMigrationHint(txnError);
+    return { error: migrationHint ?? txnError.message };
+  }
 
   const { data: existingRegistration } = await supabase
     .from("webinar_registrations")

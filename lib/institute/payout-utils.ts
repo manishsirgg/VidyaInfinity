@@ -77,23 +77,38 @@ export function calculateInstituteWallet({
   let platformCommission = 0;
   let refundedAmount = 0;
   let pendingClearance = 0;
+  let ledgerNetPayout = 0;
 
   // Canonical earnings source: institute_payouts ledger rows synced from paid course_orders/webinar_orders.
   // We intentionally avoid summing raw orders directly here to prevent duplicate earnings.
   for (const row of ledger) {
     const payoutAmount = toNumber(row.payout_amount ?? row.amount_payable);
     const status = normalizePayoutStatus(row.payout_status, row.available_at);
+    const payoutSource = String(row.payout_source ?? "").trim().toLowerCase();
 
-    grossRevenue += Math.max(0, toNumber(row.gross_amount));
-    platformCommission += Math.max(0, toNumber(row.platform_fee_amount));
-    refundedAmount += Math.max(0, toNumber(row.refund_amount));
+    const rowGross = Math.max(0, toNumber(row.gross_amount));
+    const rowPlatformFee = Math.max(0, toNumber(row.platform_fee_amount));
+    const rowRefundAmount = Math.max(0, toNumber(row.refund_amount));
+    const inferredRefundAmount = payoutAmount < 0 ? Math.abs(payoutAmount) : 0;
+
+    if (payoutSource === "refund_adjustment") {
+      refundedAmount += Math.max(rowRefundAmount, inferredRefundAmount);
+    } else {
+      grossRevenue += rowGross;
+      platformCommission += rowPlatformFee;
+      refundedAmount += rowRefundAmount;
+    }
+
+    if (!["failed", "reversed"].includes(status)) {
+      ledgerNetPayout += payoutAmount;
+    }
 
     if (status === "pending") {
-      pendingClearance += payoutAmount;
+      pendingClearance += Math.max(0, payoutAmount);
     }
   }
 
-  const netInstituteEarnings = Math.max(0, grossRevenue - platformCommission - refundedAmount);
+  const netInstituteEarnings = Math.max(0, ledgerNetPayout);
   const paidPayouts = payoutRequests.reduce((total, row) => {
     const status = String(row.status ?? "").trim().toLowerCase();
     if (status !== "paid") return total;
