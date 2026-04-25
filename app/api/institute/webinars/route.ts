@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { normalizeWebinarMode } from "@/lib/webinars/utils";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { getSuccessfulPaymentStatuses, isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { generateUniqueWebinarSlug } from "@/lib/webinars/slug";
@@ -88,7 +89,11 @@ export async function GET() {
       ? dataClient.from("webinar_registrations").select("webinar_id").in("webinar_id", webinarIds)
       : Promise.resolve({ data: [], error: null }),
     webinarIds.length > 0
-      ? dataClient.from("webinar_orders").select("webinar_id,payout_amount,payment_status").in("webinar_id", webinarIds).eq("payment_status", "paid")
+      ? dataClient
+          .from("webinar_orders")
+          .select("webinar_id,payout_amount,payment_status")
+          .in("webinar_id", webinarIds)
+          .in("payment_status", getSuccessfulPaymentStatuses())
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -99,7 +104,7 @@ export async function GET() {
   }
 
   const paidRevenueMap = new Map<string, number>();
-  for (const row of paidOrders ?? []) {
+  for (const row of (paidOrders ?? []).filter((item) => isSuccessfulPaymentStatus(item.payment_status))) {
     const current = paidRevenueMap.get(row.webinar_id) ?? 0;
     paidRevenueMap.set(row.webinar_id, current + Number(row.payout_amount ?? 0));
   }

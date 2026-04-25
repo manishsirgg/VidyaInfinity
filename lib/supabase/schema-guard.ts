@@ -11,9 +11,11 @@ type PaymentTable =
   | "razorpay_transactions"
   | "course_enrollments"
   | "institute_payouts"
+  | "institute_payout_requests"
+  | "institute_payout_accounts"
   | "razorpay_webhook_logs";
 
-export type PaymentSchemaDomain = "common" | "course" | "webinar" | "psychometric" | "webhook";
+export type PaymentSchemaDomain = "common" | "course" | "webinar" | "psychometric" | "webhook" | "payout";
 
 const domainTables: Record<PaymentSchemaDomain, PaymentTable[]> = {
   common: ["coupons", "razorpay_transactions"],
@@ -21,6 +23,7 @@ const domainTables: Record<PaymentSchemaDomain, PaymentTable[]> = {
   webinar: ["webinar_orders", "webinar_registrations", "webinar_commission_settings", "institute_payouts"],
   psychometric: ["psychometric_orders"],
   webhook: ["razorpay_webhook_logs"],
+  payout: ["institute_payouts", "institute_payout_requests", "institute_payout_accounts"],
 };
 
 const requiredColumns: Partial<Record<PaymentTable, string[]>> = {
@@ -103,11 +106,93 @@ const requiredColumns: Partial<Record<PaymentTable, string[]>> = {
   ],
   razorpay_webhook_logs: ["id", "event_id", "event_type", "signature", "signature_valid", "headers", "processed", "processed_at", "notes", "payload"],
   institute_payouts: ["id", "institute_id", "course_order_id", "gross_amount", "platform_fee_amount", "payout_amount", "payout_status"],
+  institute_payout_requests: [
+    "id",
+    "institute_id",
+    "payout_account_id",
+    "status",
+    "requested_amount",
+    "approved_amount",
+    "payment_reference",
+    "paid_at",
+  ],
+  institute_payout_accounts: [
+    "id",
+    "institute_id",
+    "account_type",
+    "account_holder_name",
+    "verification_status",
+    "payout_mode",
+    "auto_payout_enabled",
+  ],
 };
+
+const requiredStatusCompatibilityChecks: Array<{
+  table: PaymentTable;
+  column: string;
+  values: string[];
+}> = [
+  { table: "course_orders", column: "payment_status", values: ["paid", "captured", "success", "confirmed", "failed", "created", "refunded"] },
+  { table: "webinar_orders", column: "payment_status", values: ["paid", "captured", "success", "confirmed", "failed", "pending", "refunded"] },
+  { table: "psychometric_orders", column: "payment_status", values: ["paid", "captured", "success", "confirmed", "failed", "created"] },
+  { table: "institute_payout_requests", column: "status", values: ["requested", "under_review", "approved", "processing", "paid", "failed", "rejected", "cancelled"] },
+  { table: "institute_payout_accounts", column: "verification_status", values: ["pending", "approved", "rejected", "disabled"] },
+];
+
+const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
+
+const requiredRpcChecks: Array<{
+  fn: string;
+  domains: PaymentSchemaDomain[];
+  variants: Array<Record<string, unknown>>;
+}> = [
+  {
+    fn: "create_institute_payout_request",
+    domains: ["payout"],
+    variants: [
+      { p_institute_id: ZERO_UUID, p_payout_account_id: ZERO_UUID, p_amount: 500 },
+      { institute_id: ZERO_UUID, payout_account_id: ZERO_UUID, amount: 500 },
+    ],
+  },
+  {
+    fn: "admin_transition_payout_request",
+    domains: ["payout"],
+    variants: [
+      {
+        p_payout_request_id: ZERO_UUID,
+        p_next_status: "paid",
+        p_payment_reference: "schema_guard_probe",
+        p_admin_note: "schema guard probe",
+        p_admin_user_id: ZERO_UUID,
+      },
+      {
+        payout_request_id: ZERO_UUID,
+        next_status: "paid",
+        payment_reference: "schema_guard_probe",
+        admin_note: "schema guard probe",
+        admin_user_id: ZERO_UUID,
+      },
+    ],
+  },
+  {
+    fn: "get_next_featured_subscription_window",
+    domains: ["payout"],
+    variants: [{ p_institute_id: ZERO_UUID }, { institute_id: ZERO_UUID }],
+  },
+];
+
+function looksLikeMissingRpc(errorMessage: string) {
+  const normalized = errorMessage.toLowerCase();
+  return (
+    normalized.includes("could not find the function") ||
+    normalized.includes("function") && normalized.includes("does not exist") ||
+    normalized.includes("no function matches")
+  );
+}
 
 export async function detectPaymentSchemaMismatches(domains?: PaymentSchemaDomain[]) {
   const admin = getSupabaseAdmin();
-  const activeDomains = domains?.length ? domains : (["common", "course", "webinar", "psychometric", "webhook"] as PaymentSchemaDomain[]);
+  const activeDomains = domains?.length ? domains : (["common", "course", "webinar", "psychometric", "webhook", "payout"] as PaymentSchemaDomain[]);
   const tablesToCheck = [...new Set(activeDomains.flatMap((domain) => domainTables[domain]))];
 
   if (!admin.ok) {
@@ -115,11 +200,17 @@ export async function detectPaymentSchemaMismatches(domains?: PaymentSchemaDomai
       envError: admin.error,
       missing: tablesToCheck.map((table) => table as string),
       missingColumns: [] as string[],
+      incompatibleStatusValues: [] as string[],
+      missingRpcs: [] as string[],
+      incompatibleRpcSignatures: [] as string[],
     };
   }
 
   const missing: string[] = [];
   const missingColumns: string[] = [];
+  const incompatibleStatusValues: string[] = [];
+  const missingRpcs: string[] = [];
+  const incompatibleRpcSignatures: string[] = [];
 
   for (const tableName of tablesToCheck) {
     const { error } = await admin.data.from(tableName).select("id", { count: "exact", head: true });
@@ -164,5 +255,42 @@ export async function detectPaymentSchemaMismatches(domains?: PaymentSchemaDomai
     }
   }
 
-  return { envError: null, missing, missingColumns };
+  const statusChecks = requiredStatusCompatibilityChecks.filter((check) => activeDomains.some((domain) => domainTables[domain].includes(check.table)));
+  for (const check of statusChecks) {
+    const { error } = await admin.data.from(check.table).select("id", { head: true, count: "exact" }).in(check.column, check.values);
+    if (error) {
+      incompatibleStatusValues.push(`${check.table}.${check.column}:${check.values.join("|")}`);
+    }
+  }
+
+  const rpcChecks = requiredRpcChecks.filter((check) => check.domains.some((domain) => activeDomains.includes(domain)));
+  for (const rpcCheck of rpcChecks) {
+    let hasCompatibleVariant = false;
+    let sawMissingRpc = false;
+
+    for (const args of rpcCheck.variants) {
+      const { error } = await admin.data.rpc(rpcCheck.fn, args);
+      if (!error) {
+        hasCompatibleVariant = true;
+        break;
+      }
+      if (looksLikeMissingRpc(error.message)) {
+        sawMissingRpc = true;
+      } else {
+        hasCompatibleVariant = true;
+        break;
+      }
+    }
+
+    if (sawMissingRpc && !hasCompatibleVariant) {
+      missingRpcs.push(rpcCheck.fn);
+      continue;
+    }
+
+    if (!hasCompatibleVariant) {
+      incompatibleRpcSignatures.push(rpcCheck.fn);
+    }
+  }
+
+  return { envError: null, missing, missingColumns, incompatibleStatusValues, missingRpcs, incompatibleRpcSignatures };
 }

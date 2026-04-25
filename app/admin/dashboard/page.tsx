@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
+import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const adminModules = [
@@ -109,8 +110,8 @@ export default async function AdminDashboardPage() {
   const recentNotificationFeed = [...(recentNotifications ?? []), ...moderationNotifications]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 5);
-  const paidCourseFeaturedOrders = (courseFeaturedOrders ?? []).filter((order) => order.payment_status === "paid");
-  const paidWebinarFeaturedOrders = (webinarFeaturedOrders ?? []).filter((order) => order.payment_status === "paid");
+  const paidCourseFeaturedOrders = (courseFeaturedOrders ?? []).filter((order) => isSuccessfulPaymentStatus(order.payment_status));
+  const paidWebinarFeaturedOrders = (webinarFeaturedOrders ?? []).filter((order) => isSuccessfulPaymentStatus(order.payment_status));
   const paidCourseFeaturedRevenue = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const paidWebinarFeaturedRevenue = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
 

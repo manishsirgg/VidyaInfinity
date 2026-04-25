@@ -22,7 +22,6 @@ export async function GET(request: Request) {
     .eq("is_deleted", false)
     .eq("approval_status", "approved")
     .eq("is_public", true)
-    .eq("is_deleted", false)
     .in("status", ["scheduled", "live"])
     .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`);
 

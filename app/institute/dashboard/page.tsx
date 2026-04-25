@@ -3,6 +3,7 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
 import { loadInstituteWalletSnapshot } from "@/lib/institute/payouts";
+import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -72,7 +73,7 @@ export default async function InstituteDashboardPage() {
     );
   }
 
-  const [coursesResult, leadsResult, enrollmentsResult, orderResult, walletSnapshotResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarPaidRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, instituteFeaturedOrdersResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
+  const [coursesResult, leadsResult, enrollmentsResult, orderResult, walletSnapshotResult, unreadNotificationsResult, recentNotificationsResult, featuredStatusResult, courseFeaturedSummaryResult, webinarFeaturedSummaryResult, webinarsResult, webinarRegistrationsResult, webinarOrdersResult, instituteFeaturedPlansResult, courseFeaturedPlansResult, webinarFeaturedPlansResult, instituteFeaturedOrdersResult, courseFeaturedOrdersResult, webinarFeaturedOrdersResult] = await Promise.all([
     dataClient
       .from("courses")
       .select("id,title,status,fees,created_at,start_date,rejection_reason")
@@ -122,8 +123,7 @@ export default async function InstituteDashboardPage() {
       .select("id,title,status,approval_status,starts_at,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("institute_id", institute.id),
-    dataClient.from("webinar_registrations").select("id", { count: "exact", head: true }).eq("institute_id", institute.id).eq("payment_status", "paid"),
+    dataClient.from("webinar_registrations").select("id,payment_status").eq("institute_id", institute.id),
     dataClient
       .from("webinar_orders")
       .select("id,payment_status,payout_amount,created_at")
@@ -171,8 +171,9 @@ export default async function InstituteDashboardPage() {
   const recentNotifications = recentNotificationsResult.data ?? [];
   const activeFeaturedStatus = featuredStatusResult.data ?? null;
   const webinars = webinarsResult.data ?? [];
-  const webinarRegistrationsCount = webinarRegistrationsResult.count ?? 0;
-  const webinarPaidRegistrationsCount = webinarPaidRegistrationsResult.count ?? 0;
+  const webinarRegistrationRows = (webinarRegistrationsResult.data ?? []) as Array<{ id: string; payment_status: string | null }>;
+  const webinarRegistrationsCount = webinarRegistrationRows.length;
+  const webinarPaidRegistrationsCount = webinarRegistrationRows.filter((row) => isSuccessfulPaymentStatus(row.payment_status)).length;
   const webinarOrders = webinarOrdersResult.data ?? [];
   const courseFeaturedRows =
     (courseFeaturedSummaryResult.data as Array<{ course_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
@@ -192,7 +193,7 @@ export default async function InstituteDashboardPage() {
   const pendingCourses = courses.filter((course) => course.status === "pending").length;
   const rejectedCourses = courses.filter((course) => course.status === "rejected");
 
-  const paidOrders = orderRows.filter((order) => order.payment_status === "paid");
+  const paidOrders = orderRows.filter((order) => isSuccessfulPaymentStatus(order.payment_status));
   const totalGrossRevenue = Number(walletSummary.gross_revenue ?? 0);
   const totalCommission = Number(walletSummary.platform_fee ?? 0);
   const totalRefundedAmount = Number(walletSummary.refunded_amount ?? 0);
@@ -210,11 +211,11 @@ export default async function InstituteDashboardPage() {
   const approvedWebinars = webinars.filter((webinar) => webinar.approval_status === "approved").length;
   const pendingWebinars = webinars.filter((webinar) => webinar.approval_status === "pending").length;
   const liveWebinars = webinars.filter((webinar) => webinar.status === "live").length;
-  const webinarPaidOrders = webinarOrders.filter((order) => order.payment_status === "paid");
+  const webinarPaidOrders = webinarOrders.filter((order) => isSuccessfulPaymentStatus(order.payment_status));
   const webinarPayoutTotal = webinarPaidOrders.reduce((sum, order) => sum + Number(order.payout_amount ?? 0), 0);
-  const paidInstituteFeaturedOrders = instituteFeaturedOrders.filter((order) => order.payment_status === "paid");
-  const paidCourseFeaturedOrders = courseFeaturedOrders.filter((order) => order.payment_status === "paid");
-  const paidWebinarFeaturedOrders = webinarFeaturedOrders.filter((order) => order.payment_status === "paid");
+  const paidInstituteFeaturedOrders = instituteFeaturedOrders.filter((order) => isSuccessfulPaymentStatus(order.payment_status));
+  const paidCourseFeaturedOrders = courseFeaturedOrders.filter((order) => isSuccessfulPaymentStatus(order.payment_status));
+  const paidWebinarFeaturedOrders = webinarFeaturedOrders.filter((order) => isSuccessfulPaymentStatus(order.payment_status));
   const instituteFeaturedSpend = paidInstituteFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const courseFeaturedSpend = paidCourseFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
   const webinarFeaturedSpend = paidWebinarFeaturedOrders.reduce((sum, order) => sum + Number(order.amount ?? 0), 0);
