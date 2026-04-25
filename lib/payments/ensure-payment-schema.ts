@@ -20,13 +20,23 @@ export async function getPaymentSchemaErrorResponse(domains?: PaymentSchemaDomai
     return NextResponse.json({ error: result.envError }, { status: 500 });
   }
 
-  if (
-    !result.missing.length &&
-    !result.missingColumns.length &&
-    !result.incompatibleStatusValues.length &&
-    !result.missingRpcs.length &&
-    !result.incompatibleRpcSignatures.length
-  ) {
+  const hasHardBlockers = result.missing.length > 0 || result.missingColumns.length > 0;
+  const hasSoftWarnings = result.incompatibleStatusValues.length > 0 || result.missingRpcs.length > 0 || result.incompatibleRpcSignatures.length > 0;
+
+  if (!hasHardBlockers && hasSoftWarnings) {
+    console.warn("[payments/schema-guard] compatibility warnings detected (non-blocking)", {
+      domains: domains ?? ["common", "course", "webinar", "psychometric", "webhook", "payout"],
+      incompatibleStatusValues: result.incompatibleStatusValues,
+      missingRpcs: result.missingRpcs,
+      incompatibleRpcSignatures: result.incompatibleRpcSignatures,
+    });
+  }
+
+  if (!hasHardBlockers && !hasSoftWarnings) {
+    return null;
+  }
+
+  if (!hasHardBlockers) {
     return null;
   }
 
