@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
     .maybeSingle<FeaturedOrderRow>();
 
   if (!existingOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  if (existingOrder.payment_status === "paid") return NextResponse.json({ ok: true, idempotent: true });
+  if (isSuccessfulPaymentStatus(existingOrder.payment_status)) return NextResponse.json({ ok: true, idempotent: true });
 
   const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
   if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });

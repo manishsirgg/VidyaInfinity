@@ -20,15 +20,24 @@ export async function getPaymentSchemaErrorResponse(domains?: PaymentSchemaDomai
     return NextResponse.json({ error: result.envError }, { status: 500 });
   }
 
-  if (!result.missing.length && !result.missingColumns.length) {
+  if (
+    !result.missing.length &&
+    !result.missingColumns.length &&
+    !result.incompatibleStatusValues.length &&
+    !result.missingRpcs.length &&
+    !result.incompatibleRpcSignatures.length
+  ) {
     return null;
   }
 
   return NextResponse.json(
     {
-      error: "Payment schema is missing required tables or columns.",
+      error: "Payment schema is missing required tables/columns or has incompatible status/RPC expectations.",
       missingTables: result.missing,
       missingColumns: result.missingColumns,
+      incompatibleStatusValues: result.incompatibleStatusValues,
+      missingRpcs: result.missingRpcs,
+      incompatibleRpcSignatures: result.incompatibleRpcSignatures,
       migration: `Run migrations: ${PAYMENT_MIGRATION_PATHS.join(", ")}`,
     },
     { status: 500 }

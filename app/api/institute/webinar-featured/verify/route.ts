@@ -5,6 +5,7 @@ import { resolveFeaturedPlan } from "@/lib/featured-plan-resolution";
 import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser } from "@/lib/course-featured";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { expireWebinarFeaturedSubscriptionsSafe, getNextWebinarFeaturedWindow, isWebinarPromotable } from "@/lib/webinar-featured";
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
 
   if (!existingOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
-  if (existingOrder.payment_status === "paid") {
+  if (isSuccessfulPaymentStatus(existingOrder.payment_status)) {
     const { data: existingSubscription } = await admin.data
       .from("webinar_featured_subscriptions")
       .select("id,status,starts_at,ends_at,queued_from_previous")

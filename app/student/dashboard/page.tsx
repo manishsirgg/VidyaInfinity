@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
 import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
+import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -53,6 +54,12 @@ type TestAttemptItem = {
   created_at: string;
 };
 
+type PsychometricOrderRow = {
+  id: string;
+  payment_status: string | null;
+  paid_at: string | null;
+};
+
 type WebinarRegistrationItem = {
   id: string;
   webinar_id: string;
@@ -90,7 +97,6 @@ type RefundItem = {
   created_at: string;
 };
 
-const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 const REFUND_OPEN_STATUSES = ["requested", "processing"] as const;
 const INACTIVE_COURSE_ENROLLMENT_STATUSES = new Set(["cancelled", "canceled", "refunded", "expired", "revoked", "inactive"]);
 
@@ -130,9 +136,9 @@ function extractInstituteName(institutes: { name: string | null } | { name: stri
 }
 
 function isConfirmedPayment(status: string | null | undefined, paidAt?: string | null) {
+  if (isSuccessfulPaymentStatus(status)) return true;
   const normalized = String(status ?? "").trim().toLowerCase();
-  if (normalized === "refunded" || normalized === "failed") return false;
-  if (SUCCESS_PAYMENT_STATUSES.has(normalized)) return true;
+  if (["refunded", "failed", "cancelled", "canceled", "rejected"].includes(normalized)) return false;
   return Boolean(paidAt);
 }
 
@@ -150,7 +156,7 @@ export default async function StudentDashboardPage() {
 
   const [
     { data: courseOrderRows },
-    { count: paidPsychometricOrders },
+    { data: psychometricOrderRows },
     { data: enrollmentRowsRaw },
     { count: inquiryCount },
     { count: unreadNotificationCount },
@@ -167,7 +173,7 @@ export default async function StudentDashboardPage() {
     { data: recentRefundRequests },
   ] = await Promise.all([
     dataClient.from("course_orders").select("id,course_id,payment_status,paid_at,created_at").eq("student_id", user.id).order("created_at", { ascending: false }),
-    supabase.from("psychometric_orders").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("payment_status", "paid"),
+    supabase.from("psychometric_orders").select("id,payment_status,paid_at").eq("user_id", user.id).returns<PsychometricOrderRow[]>(),
     dataClient
       .from("course_enrollments")
       .select("id,course_id,enrollment_status,created_at,access_end_at")
@@ -258,6 +264,7 @@ export default async function StudentDashboardPage() {
   ]);
 
   const allCourseOrders = (courseOrderRows ?? []) as CourseOrderItem[];
+  const paidPsychometricOrders = (psychometricOrderRows ?? []).filter((row) => isConfirmedPayment(row.payment_status, row.paid_at)).length;
   const enrollmentRows = ((enrollmentRowsRaw ?? []) as EnrollmentItem[]).filter((row) => isActiveCourseEnrollmentStatus(row?.enrollment_status));
   const confirmedCourseOrders = allCourseOrders.filter((order) => isConfirmedPayment(order.payment_status, order.paid_at));
   const courseIds = Array.from(new Set(allCourseOrders.map((item) => item.course_id).filter((value): value is string => Boolean(value))));
@@ -279,7 +286,7 @@ export default async function StudentDashboardPage() {
   const mergedRecentEnrollments = [...((recentEnrollments ?? []) as EnrollmentItem[]), ...fallbackRecentEnrollments].slice(0, 3);
   const normalizedActiveEnrollments = enrollmentRows.length;
   const webinarMetricItems = webinarMetricRows ?? [];
-  const paidWebinarOrdersCount = webinarMetricItems.filter((item) => item.payment_status === "paid").length;
+  const paidWebinarOrdersCount = webinarMetricItems.filter((item) => isConfirmedPayment(item.payment_status, null)).length;
   const normalizedActiveWebinarRegistrations = webinarMetricItems.filter((item) => item.registration_status === "registered").length;
   const freeWebinarRegistrationsCount = webinarMetricItems.filter((item) => {
     const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
@@ -517,7 +524,7 @@ export default async function StudentDashboardPage() {
                   </p>
                   <p className="text-slate-700">Payment: {toTitleCase(item.payment_status ?? "pending")} · Amount: ₹{item.amount ?? 0}</p>
                   <p className="text-slate-700">Provider: {webinar?.meeting_provider ?? "N/A"} · Institute: {extractInstituteName(webinar?.institutes) ?? "N/A"}</p>
-                  {(item.payment_status ?? "").toLowerCase() === "paid" ? (
+                  {isSuccessfulPaymentStatus(item.payment_status) ? (
                     <a href={`/student/webinars/${item.webinar_id}/join`} className="mt-2 inline-flex rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white">
                       Join Webinar
                     </a>
