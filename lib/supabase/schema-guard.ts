@@ -19,8 +19,8 @@ export type PaymentSchemaDomain = "common" | "course" | "webinar" | "psychometri
 
 const domainTables: Record<PaymentSchemaDomain, PaymentTable[]> = {
   common: ["coupons", "razorpay_transactions"],
-  course: ["course_orders", "course_enrollments", "institute_payouts", "platform_commission_settings"],
-  webinar: ["webinar_orders", "webinar_registrations", "webinar_commission_settings", "institute_payouts"],
+  course: ["course_orders", "course_enrollments", "platform_commission_settings"],
+  webinar: ["webinar_orders", "webinar_registrations", "webinar_commission_settings"],
   psychometric: ["psychometric_orders"],
   webhook: ["razorpay_webhook_logs"],
   payout: ["institute_payouts", "institute_payout_requests", "institute_payout_accounts"],
