@@ -4,6 +4,8 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { resolveFeaturedPlan } from "@/lib/featured-plan-resolution";
 import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser } from "@/lib/course-featured";
+import { loadInstituteWalletSnapshot } from "@/lib/institute/payouts";
+import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -38,6 +40,10 @@ function toNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function buildWalletDebitIdempotencyKey(orderTable: string, orderId: string) {
+  return `wallet_debit:${orderTable}:${orderId}`;
 }
 
 export async function POST(request: Request) {
@@ -172,6 +178,15 @@ export async function POST(request: Request) {
       durationDays,
     });
 
+    stage = "wallet_snapshot";
+    const walletSnapshot = await loadInstituteWalletSnapshot(instituteId, { ledgerLimit: 1, payoutHistoryLimit: 1 });
+    if (walletSnapshot.error || !walletSnapshot.data) {
+      return NextResponse.json({ error: walletSnapshot.error ?? "Unable to load institute wallet snapshot." }, { status: 500 });
+    }
+    const availableBalance = Math.max(0, toNumber(walletSnapshot.data.summary.available_balance));
+    const payableAmount = amount;
+    const canPayViaWallet = availableBalance >= payableAmount;
+
     stage = "local_order_insert";
     const nowIso = new Date().toISOString();
     const { data: inserted, error: insertError } = await admin.data
@@ -184,13 +199,20 @@ export async function POST(request: Request) {
         amount,
         currency,
         duration_days: durationDays,
-        payment_status: "pending",
-        order_status: "pending",
+        payment_status: canPayViaWallet ? "paid" : "pending",
+        order_status: canPayViaWallet ? "paid" : "pending",
+        paid_at: canPayViaWallet ? nowIso : null,
+        razorpay_order_id: null,
+        razorpay_payment_id: null,
+        razorpay_signature: null,
         metadata: {
           source: "course_featured_create_order_api",
           tier_rank: resolvedPlan.tier_rank ?? null,
           plan_resolution: planResolution.resolution,
-          razorpay_stage: "not_created",
+          razorpay_stage: canPayViaWallet ? "not_required_wallet" : "not_created",
+          payment_method: canPayViaWallet ? "wallet" : "razorpay",
+          wallet_balance_before: availableBalance,
+          wallet_balance_after: canPayViaWallet ? Math.max(0, availableBalance - payableAmount) : availableBalance,
         },
         updated_at: nowIso,
       })
@@ -218,6 +240,100 @@ export async function POST(request: Request) {
       localOrderId: orderId,
       planId: String(resolvedPlan.id),
     });
+
+    if (canPayViaWallet) {
+      stage = "wallet_debit";
+      const idempotencyKey = buildWalletDebitIdempotencyKey("course_featured_orders", orderId);
+      const debitResult = await admin.data
+        .from("institute_payouts")
+        .insert({
+          institute_id: instituteId,
+          amount_payable: -payableAmount,
+          payout_amount: -payableAmount,
+          gross_amount: 0,
+          platform_fee_amount: 0,
+          refund_amount: 0,
+          payout_status: "available",
+          payout_source: "refund_adjustment",
+          source_reference_type: "featured_wallet_debit",
+          source_reference_id: orderId,
+          payout_currency: "INR",
+          due_at: nowIso,
+          scheduled_at: nowIso,
+          created_at: nowIso,
+          updated_at: nowIso,
+          metadata: {
+            reason: "course_featured_subscription_wallet_debit",
+            order_table: "course_featured_orders",
+            order_id: orderId,
+          },
+        });
+      if (debitResult.error && debitResult.error.code !== "23505") {
+        return NextResponse.json({ error: debitResult.error.message }, { status: 500 });
+      }
+
+      const auditResult = await logInstituteWalletEvent({
+        instituteId,
+        eventType: "featured_subscription_wallet_debit",
+        sourceTable: "course_featured_orders",
+        sourceId: orderId,
+        orderId,
+        orderKind: "featured_course",
+        amount: payableAmount,
+        actorUserId: auth.user.id,
+        actorRole: "institute",
+        idempotencyKey,
+        metadata: {
+          payment_method: "wallet",
+          balance_before: availableBalance,
+          balance_after: Math.max(0, availableBalance - payableAmount),
+          plan_id: String(resolvedPlan.id),
+          target_type: "course",
+          target_id: body.courseId,
+        },
+      });
+      if (!auditResult.ok) return NextResponse.json({ error: auditResult.error }, { status: 500 });
+
+      const verifyResponse = await fetch(new URL("/api/institute/course-featured/verify", request.url), {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: request.headers.get("cookie") ?? "" },
+        body: JSON.stringify({ orderId }),
+      });
+      const verifyBody = await verifyResponse.json().catch(() => null);
+      if (!verifyResponse.ok) {
+        return NextResponse.json({ error: verifyBody?.error ?? "Unable to activate featured subscription from wallet." }, { status: verifyResponse.status });
+      }
+
+      await notifyInstituteAndAdmins({
+        admin: admin.data,
+        instituteUserId: auth.user.id,
+        title: "Course featuring activated via wallet",
+        message: "A course featured listing subscription was activated using institute wallet balance.",
+        metadata: { courseId: body.courseId, orderId, planId: String(resolvedPlan.id), paymentMethod: "wallet" },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        payment_required: false,
+        order: null,
+        orderRecordId: orderId,
+        purchase: {
+          id: orderId,
+          courseId: body.courseId,
+          planId: String(resolvedPlan.id),
+          durationDays,
+          amount,
+          currency,
+          planCode: resolvedPlan.plan_code ?? resolvedPlan.code ?? "",
+        },
+        wallet: {
+          usedAmount: payableAmount,
+          availableBalanceBefore: availableBalance,
+          availableBalanceAfter: Math.max(0, availableBalance - payableAmount),
+        },
+        verification: verifyBody,
+      });
+    }
 
     stage = "razorpay_client_init";
     const razorpay = getRazorpayClient();
@@ -366,6 +482,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
+      payment_required: true,
       order,
       purchase: {
         id: orderId,

@@ -209,9 +209,24 @@ export function InstituteCourseFeaturedPageClient() {
       });
 
       const createBody = await createResponse.json().catch(() => null);
-      if (!createResponse.ok || !createBody?.order?.id) {
+      if (!createResponse.ok) {
         setMessageType("error");
         setMessage(createBody?.error ?? `Unable to start payment via /api/institute/course-featured/create-order (status ${createResponse.status}).`);
+        setBusyCourseId(null);
+        return;
+      }
+
+      if (createBody?.payment_required === false) {
+        setMessageType("success");
+        setMessage("Subscription activated using wallet balance.");
+        await loadData();
+        setBusyCourseId(null);
+        return;
+      }
+
+      if (!createBody?.order?.id) {
+        setMessageType("error");
+        setMessage("Unable to initiate Razorpay order.");
         setBusyCourseId(null);
         return;
       }

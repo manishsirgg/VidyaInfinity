@@ -212,9 +212,24 @@ export function InstituteWebinarFeaturedPageClient() {
       });
 
       const createBody = await createResponse.json().catch(() => null);
-      if (!createResponse.ok || !createBody?.order?.id) {
+      if (!createResponse.ok) {
         setMessageType("error");
         setMessage(createBody?.error ?? `Unable to start payment via /api/institute/webinar-featured/create-order (status ${createResponse.status}).`);
+        setBusyWebinarId(null);
+        return;
+      }
+
+      if (createBody?.payment_required === false) {
+        setMessageType("success");
+        setMessage("Subscription activated using wallet balance.");
+        await loadData();
+        setBusyWebinarId(null);
+        return;
+      }
+
+      if (!createBody?.order?.id) {
+        setMessageType("error");
+        setMessage("Unable to initiate Razorpay order.");
         setBusyWebinarId(null);
         return;
       }
