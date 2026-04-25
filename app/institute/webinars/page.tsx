@@ -5,6 +5,7 @@ import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
 
 import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
+import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { toCurrency, toDateTimeLabel } from "@/lib/webinars/utils";
@@ -15,6 +16,10 @@ function moderationMessage(status: string, reason: string | null = null) {
     return `Rejected by admin. Please update details and resubmit for approval.${reason ? ` Reason: ${reason}` : ""}`;
   }
   return "Sent for admin approval. It will be reviewed shortly.";
+}
+
+function isRevokedLikeStatus(value: string | null | undefined) {
+  return ["revoked", "cancelled", "canceled", "refunded"].includes(String(value ?? "").trim().toLowerCase());
 }
 
 export default async function InstituteWebinarsPage() {
@@ -36,24 +41,36 @@ export default async function InstituteWebinarsPage() {
       .eq("institute_id", institute.id)
       .eq("is_deleted", false)
       .order("starts_at", { ascending: true }),
-    dataClient.from("webinar_registrations").select("id,webinar_id,registration_status,payment_status,access_status").eq("institute_id", institute.id),
-    dataClient.from("webinar_orders").select("id,webinar_id,payment_status,amount,platform_fee_amount,payout_amount").eq("institute_id", institute.id),
+    dataClient.from("webinar_registrations").select("id,webinar_id,student_id,registration_status,payment_status,access_status").eq("institute_id", institute.id),
+    dataClient.from("webinar_orders").select("id,webinar_id,student_id,payment_status,amount,platform_fee_amount,payout_amount,paid_at").eq("institute_id", institute.id),
     dataClient.from("webinar_featured_subscription_summary").select("webinar_id,status,starts_at,ends_at").eq("institute_id", institute.id),
   ]);
 
   const webinarRows = webinars ?? [];
   const regRows = registrations ?? [];
   const orderRows = orders ?? [];
-  const paidOrders = orderRows.filter((item) => item.payment_status === "paid");
+  const paidOrders = orderRows.filter((item) => isSuccessfulPaymentStatus(item.payment_status) || Boolean(item.paid_at));
   const webinarFeaturedRows = (webinarFeaturedSummary as Array<{ webinar_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
   const attendeeCountMap = new Map<string, number>();
+  const attendeePairs = new Set<string>();
   for (const row of regRows) {
     const registrationStatus = String(row.registration_status ?? "").toLowerCase();
     const paymentStatus = String(row.payment_status ?? "").toLowerCase();
-    const accessStatus = String(row.access_status ?? "").toLowerCase();
-    const isActive = registrationStatus === "registered" && paymentStatus === "paid" && !["revoked", "cancelled", "canceled", "refunded"].includes(accessStatus);
+    const isFree = paymentStatus === "not_required";
+    const isPaid = isSuccessfulPaymentStatus(paymentStatus);
+    const isActive = registrationStatus === "registered" && (isFree || isPaid) && !isRevokedLikeStatus(row.access_status);
     if (!isActive) continue;
+    attendeePairs.add(`${row.webinar_id}::${row.student_id ?? row.id}`);
     attendeeCountMap.set(row.webinar_id, (attendeeCountMap.get(row.webinar_id) ?? 0) + 1);
+  }
+  for (const order of paidOrders) {
+    const paymentStatus = String(order.payment_status ?? "").toLowerCase();
+    if (!isSuccessfulPaymentStatus(paymentStatus) && !order.paid_at) continue;
+    if (!order.student_id) continue;
+    const pairKey = `${order.webinar_id}::${order.student_id}`;
+    if (attendeePairs.has(pairKey)) continue;
+    attendeePairs.add(pairKey);
+    attendeeCountMap.set(order.webinar_id, (attendeeCountMap.get(order.webinar_id) ?? 0) + 1);
   }
 
   const stats = {

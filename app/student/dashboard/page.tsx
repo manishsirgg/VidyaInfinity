@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
-import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
 import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -166,7 +165,6 @@ export default async function StudentDashboardPage() {
     { data: recentEnrollments },
     { data: recentTestAttempts },
     { data: webinarMetricRows },
-    { count: webinarRefundRequestsCount },
     { data: recentWebinarRegistrations },
     { data: recentWebinarTransactions },
     { count: openRefundRequestsCount },
@@ -235,11 +233,6 @@ export default async function StudentDashboardPage() {
         }[]
       >(),
     dataClient
-      .from("refunds")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .in("order_kind", [REFUND_ORDER_TYPE_TO_CANONICAL_KIND.webinar]),
-    dataClient
       .from("webinar_registrations")
       .select("id,webinar_id,created_at,payment_status,access_status,registration_status,webinars(title,starts_at,ends_at,status,webinar_mode,meeting_provider,meeting_url,institutes(name))")
       .eq("student_id", user.id)
@@ -286,12 +279,7 @@ export default async function StudentDashboardPage() {
   const mergedRecentEnrollments = [...((recentEnrollments ?? []) as EnrollmentItem[]), ...fallbackRecentEnrollments].slice(0, 3);
   const normalizedActiveEnrollments = enrollmentRows.length;
   const webinarMetricItems = webinarMetricRows ?? [];
-  const paidWebinarOrdersCount = webinarMetricItems.filter((item) => isConfirmedPayment(item.payment_status, null)).length;
   const normalizedActiveWebinarRegistrations = webinarMetricItems.filter((item) => item.registration_status === "registered" && item.payment_status === "paid" && !["revoked", "cancelled", "canceled", "refunded"].includes(String(item.access_status ?? "").toLowerCase())).length;
-  const freeWebinarRegistrationsCount = webinarMetricItems.filter((item) => {
-    const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
-    return item.payment_status === "not_required" || webinar?.webinar_mode === "free";
-  }).length;
   const upcomingWebinarsCount = webinarMetricItems.filter((item) => {
     const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
     if (!webinar?.starts_at) return false;
@@ -376,9 +364,6 @@ export default async function StudentDashboardPage() {
           <Link href="/student/enrollments" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Enrollments: <span className="font-semibold">{normalizedActiveEnrollments}</span></Link>
           <Link href="/student/webinar-registrations?filter=all" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Active Webinar Registrations: <span className="font-semibold">{normalizedActiveWebinarRegistrations}</span></Link>
           <Link href="/student/webinar-registrations?filter=upcoming" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Upcoming Webinars: <span className="font-semibold">{upcomingWebinarsCount}</span></Link>
-          <Link href="/student/purchases?kind=webinar" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Paid Webinar Orders: <span className="font-semibold">{paidWebinarOrdersCount}</span></Link>
-          <Link href="/student/webinar-registrations?filter=free" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Free Webinar Registrations: <span className="font-semibold">{freeWebinarRegistrationsCount}</span></Link>
-          <Link href="/student/purchases?kind=webinar-refunds" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Webinar Refund Requests: <span className="font-semibold">{webinarRefundRequestsCount ?? 0}</span></Link>
           <Link href="/student/leads" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">My Inquiries: <span className="font-semibold">{inquiryCount ?? 0}</span></Link>
           <Link href="/student/notifications" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Unread Notifications: <span className="font-semibold">{unreadNotificationCount ?? 0}</span></Link>
           <Link href="/student/purchases" className="rounded-xl border bg-white p-4 text-sm transition hover:border-brand-300">Open Refund Requests: <span className="font-semibold">{openRefundRequestsCount ?? 0}</span></Link>
