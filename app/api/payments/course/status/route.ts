@@ -264,14 +264,32 @@ export async function GET(request: Request) {
           };
 
           const expectedAmountInPaise = Math.round(Number(resolvedOrder.gross_amount ?? 0) * 100);
-          const paymentCaptured = normalizeStatus(payment.status) === "captured";
-          const paymentMatchesOrder =
-            payment.id === effectivePaymentId &&
-            payment.order_id === (resolvedOrder.razorpay_order_id ?? orderId) &&
-            Number(payment.amount ?? 0) === expectedAmountInPaise &&
-            String(payment.currency ?? "").toUpperCase() === String(resolvedOrder.currency ?? "").toUpperCase();
+          const expectedCurrency = String(resolvedOrder.currency ?? "").toUpperCase();
+          const expectedOrderId = resolvedOrder.razorpay_order_id ?? orderId ?? "";
+          const matchesOrderShape = (candidate: { id?: string; order_id?: string; status?: string; amount?: number; currency?: string } | null | undefined) =>
+            Boolean(candidate?.id) &&
+            normalizeStatus(candidate?.status) === "captured" &&
+            candidate?.order_id === expectedOrderId &&
+            Number(candidate?.amount ?? 0) === expectedAmountInPaise &&
+            String(candidate?.currency ?? "").toUpperCase() === expectedCurrency;
 
-          if (paymentCaptured && paymentMatchesOrder) {
+          let resolvedCapturedPayment = matchesOrderShape(payment) ? payment : null;
+
+          if (!resolvedCapturedPayment) {
+            const paymentList = (await razorpay.data.orders.fetchPayments(expectedOrderId)) as {
+              items?: Array<{ id?: string; order_id?: string; status?: string; amount?: number; currency?: string; method?: string }>;
+            };
+            resolvedCapturedPayment =
+              (paymentList.items ?? []).find((item) => matchesOrderShape(item)) ??
+              (paymentList.items ?? []).find(
+                (item) =>
+                  Boolean(item.id) && normalizeStatus(item.status) === "captured" && item.order_id === expectedOrderId
+              ) ??
+              null;
+          }
+
+          if (resolvedCapturedPayment?.id) {
+            effectivePaymentId = resolvedCapturedPayment.id;
             const reconciled = await reconcileCourseOrderPaid({
               supabase: admin.data,
               order: {
@@ -284,10 +302,10 @@ export async function GET(request: Request) {
                 currency: resolvedOrder.currency,
                 payment_status: resolvedOrder.payment_status ?? "created",
               },
-              razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? payment.order_id ?? "",
+              razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? resolvedCapturedPayment.order_id ?? "",
               razorpayPaymentId: effectivePaymentId,
               source: "verify_api",
-              gatewayResponse: { source: "status_poll", method: payment.method ?? null },
+              gatewayResponse: { source: "status_poll", method: resolvedCapturedPayment.method ?? null },
             });
 
             if (reconciled.error) {
