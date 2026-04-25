@@ -287,7 +287,7 @@ export default async function StudentDashboardPage() {
   const normalizedActiveEnrollments = enrollmentRows.length;
   const webinarMetricItems = webinarMetricRows ?? [];
   const paidWebinarOrdersCount = webinarMetricItems.filter((item) => isConfirmedPayment(item.payment_status, null)).length;
-  const normalizedActiveWebinarRegistrations = webinarMetricItems.filter((item) => item.registration_status === "registered").length;
+  const normalizedActiveWebinarRegistrations = webinarMetricItems.filter((item) => item.registration_status === "registered" && item.payment_status === "paid" && !["revoked", "cancelled", "canceled", "refunded"].includes(String(item.access_status ?? "").toLowerCase())).length;
   const freeWebinarRegistrationsCount = webinarMetricItems.filter((item) => {
     const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
     return item.payment_status === "not_required" || webinar?.webinar_mode === "free";
@@ -295,7 +295,7 @@ export default async function StudentDashboardPage() {
   const upcomingWebinarsCount = webinarMetricItems.filter((item) => {
     const webinar = Array.isArray(item.webinars) ? item.webinars[0] : item.webinars;
     if (!webinar?.starts_at) return false;
-    return item.registration_status === "registered" && new Date(webinar.starts_at).getTime() > Date.now();
+    return item.registration_status === "registered" && item.payment_status === "paid" && !["revoked", "cancelled", "canceled", "refunded"].includes(String(item.access_status ?? "").toLowerCase()) && new Date(webinar.starts_at).getTime() > Date.now();
   }).length;
 
   const approvalStatus = profile.approval_status ?? "pending";

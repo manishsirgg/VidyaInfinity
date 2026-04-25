@@ -93,7 +93,7 @@ export default async function InstituteDashboardPage() {
       .select("id,course_id,payment_status,gross_amount,platform_fee_amount,institute_receivable_amount,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    loadInstituteWalletSnapshot(institute.id, { ledgerLimit: 10, payoutHistoryLimit: 5 }),
+    loadInstituteWalletSnapshot(institute.id, { payoutHistoryLimit: 5 }),
     dataClient.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
     dataClient
       .from("notifications")
@@ -123,7 +123,7 @@ export default async function InstituteDashboardPage() {
       .select("id,title,status,approval_status,starts_at,created_at")
       .eq("institute_id", institute.id)
       .order("created_at", { ascending: false }),
-    dataClient.from("webinar_registrations").select("id,payment_status").eq("institute_id", institute.id),
+    dataClient.from("webinar_registrations").select("id,payment_status,registration_status,access_status").eq("institute_id", institute.id),
     dataClient
       .from("webinar_orders")
       .select("id,payment_status,payout_amount,created_at")
@@ -171,9 +171,15 @@ export default async function InstituteDashboardPage() {
   const recentNotifications = recentNotificationsResult.data ?? [];
   const activeFeaturedStatus = featuredStatusResult.data ?? null;
   const webinars = webinarsResult.data ?? [];
-  const webinarRegistrationRows = (webinarRegistrationsResult.data ?? []) as Array<{ id: string; payment_status: string | null }>;
-  const webinarRegistrationsCount = webinarRegistrationRows.length;
-  const webinarPaidRegistrationsCount = webinarRegistrationRows.filter((row) => isSuccessfulPaymentStatus(row.payment_status)).length;
+  const webinarRegistrationRows = (webinarRegistrationsResult.data ?? []) as Array<{ id: string; payment_status: string | null; registration_status: string | null; access_status: string | null }>;
+  const webinarActiveRegistrations = webinarRegistrationRows.filter((row) => {
+    const reg = String(row.registration_status ?? "").toLowerCase();
+    const pay = String(row.payment_status ?? "").toLowerCase();
+    const access = String(row.access_status ?? "").toLowerCase();
+    return reg === "registered" && pay === "paid" && !["revoked", "cancelled", "canceled", "refunded"].includes(access);
+  });
+  const webinarRegistrationsCount = webinarActiveRegistrations.length;
+  const webinarPaidRegistrationsCount = webinarActiveRegistrations.length;
   const webinarOrders = webinarOrdersResult.data ?? [];
   const courseFeaturedRows =
     (courseFeaturedSummaryResult.data as Array<{ course_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];

@@ -36,7 +36,7 @@ export default async function InstituteWebinarsPage() {
       .eq("institute_id", institute.id)
       .eq("is_deleted", false)
       .order("starts_at", { ascending: true }),
-    dataClient.from("webinar_registrations").select("id,webinar_id").eq("institute_id", institute.id),
+    dataClient.from("webinar_registrations").select("id,webinar_id,registration_status,payment_status,access_status").eq("institute_id", institute.id),
     dataClient.from("webinar_orders").select("id,webinar_id,payment_status,amount,platform_fee_amount,payout_amount").eq("institute_id", institute.id),
     dataClient.from("webinar_featured_subscription_summary").select("webinar_id,status,starts_at,ends_at").eq("institute_id", institute.id),
   ]);
@@ -47,7 +47,14 @@ export default async function InstituteWebinarsPage() {
   const paidOrders = orderRows.filter((item) => item.payment_status === "paid");
   const webinarFeaturedRows = (webinarFeaturedSummary as Array<{ webinar_id: string; status: string; starts_at: string; ends_at: string }> | null) ?? [];
   const attendeeCountMap = new Map<string, number>();
-  for (const row of regRows) attendeeCountMap.set(row.webinar_id, (attendeeCountMap.get(row.webinar_id) ?? 0) + 1);
+  for (const row of regRows) {
+    const registrationStatus = String(row.registration_status ?? "").toLowerCase();
+    const paymentStatus = String(row.payment_status ?? "").toLowerCase();
+    const accessStatus = String(row.access_status ?? "").toLowerCase();
+    const isActive = registrationStatus === "registered" && paymentStatus === "paid" && !["revoked", "cancelled", "canceled", "refunded"].includes(accessStatus);
+    if (!isActive) continue;
+    attendeeCountMap.set(row.webinar_id, (attendeeCountMap.get(row.webinar_id) ?? 0) + 1);
+  }
 
   const stats = {
     total: webinarRows.length,
@@ -55,7 +62,7 @@ export default async function InstituteWebinarsPage() {
     pending: webinarRows.filter((item) => item.approval_status === "pending").length,
     rejected: webinarRows.filter((item) => item.approval_status === "rejected").length,
     upcoming: webinarRows.filter((item) => new Date(item.starts_at).getTime() >= Date.now() && item.status !== "cancelled").length,
-    registrations: regRows.length,
+    registrations: Array.from(attendeeCountMap.values()).reduce((sum, item) => sum + item, 0),
     revenue: paidOrders.reduce((sum, row) => sum + Number(row.amount ?? 0), 0),
     eligibleForPromotion: webinarRows.filter(isWebinarPromotable).length,
     activeFeatured: webinarFeaturedRows.filter((item) => item.status === "active" && new Date(item.starts_at).getTime() <= Date.now() && new Date(item.ends_at).getTime() > Date.now()).length,
