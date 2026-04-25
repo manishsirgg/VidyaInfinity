@@ -10,14 +10,26 @@ function formatDate(value: string) {
 }
 
 export default async function StudentInquiriesPage() {
-  const { profile } = await requireUser("student", { requireApproved: false });
+  const { user, profile } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
 
-  const { data: inquiries } = await supabase
+  const { data: inquiriesByStudentId } = await supabase
     .from("leads")
-    .select("id,name,email,phone,course_id,message,created_at")
-    .eq("email", profile.email)
+    .select("id,name,email,phone,lead_type,course_id,webinar_id,message,created_at")
+    .eq("student_id", user.id)
     .order("created_at", { ascending: false });
+
+  const shouldLoadLegacyByEmail = (inquiriesByStudentId?.length ?? 0) === 0 && Boolean(profile.email);
+  const { data: inquiriesByEmail } = shouldLoadLegacyByEmail
+    ? await supabase
+        .from("leads")
+        .select("id,name,email,phone,lead_type,course_id,webinar_id,message,created_at")
+        .is("student_id", null)
+        .eq("email", profile.email)
+        .order("created_at", { ascending: false })
+    : { data: [] as typeof inquiriesByStudentId };
+
+  const inquiries = [...(inquiriesByStudentId ?? []), ...(inquiriesByEmail ?? [])];
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -49,7 +61,9 @@ export default async function StudentInquiriesPage() {
             <p className="mt-1 text-slate-700">
               {inquiry.email} · {inquiry.phone}
             </p>
-            <p className="mt-1 text-slate-700">Course ID: {inquiry.course_id}</p>
+            <p className="mt-1 text-slate-700">
+              {inquiry.lead_type === "webinar" ? "Webinar ID" : "Course ID"}: {inquiry.webinar_id ?? inquiry.course_id ?? "N/A"}
+            </p>
             {inquiry.message ? <p className="mt-2 text-slate-700">{inquiry.message}</p> : null}
             <p className="mt-2 text-xs text-slate-500">Submitted: {formatDate(inquiry.created_at)}</p>
           </div>

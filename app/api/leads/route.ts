@@ -120,6 +120,55 @@ export async function POST(request: Request) {
     });
   }
 
+  const { data: crmContact, error: crmContactError } = await admin.data
+    .from("crm_contacts")
+    .insert({
+      full_name: payload.data.fullName,
+      email: payload.data.email?.trim() || null,
+      phone: payload.data.phone?.trim() || null,
+      source,
+      service_type: leadType,
+      lifecycle_stage: "new",
+      priority: "medium",
+      linked_profile_id: studentId,
+      linked_institute_id: resolvedInstituteId,
+      source_reference_table: "leads",
+      metadata: {
+        lead_type: leadType,
+        lead_target: leadType,
+        course_id: payload.data.courseId ?? null,
+        webinar_id: payload.data.webinarId ?? null,
+        message: payload.data.message ?? null,
+        contact_preference: payload.data.contactPreference,
+      },
+      last_activity_at: new Date().toISOString(),
+    })
+    .select("id")
+    .maybeSingle<{ id: string }>();
+
+  if (crmContactError) {
+    console.error("Lead CRM contact sync failed", {
+      error: crmContactError.message,
+      courseId: payload.data.courseId,
+      webinarId: payload.data.webinarId,
+      instituteId: resolvedInstituteId,
+      source,
+      leadType,
+    });
+  } else if (crmContact?.id) {
+    await admin.data.from("crm_activities").insert({
+      contact_id: crmContact.id,
+      activity_type: "lead_created",
+      title: "Lead captured",
+      description: `${leadType === "webinar" ? "Webinar" : "Course"} lead submitted from ${source}.`,
+      metadata: {
+        course_id: payload.data.courseId ?? null,
+        webinar_id: payload.data.webinarId ?? null,
+        contact_preference: payload.data.contactPreference,
+      },
+    });
+  }
+
   const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
 
   const targetInstituteId = resolvedInstituteId;
@@ -130,6 +179,24 @@ export async function POST(request: Request) {
     const { data: institute } = await admin.data.from("institutes").select("user_id").eq("id", targetInstituteId).maybeSingle<{ user_id: string }>();
 
     await Promise.allSettled([
+      ...(studentId
+        ? [
+            createAccountNotification({
+              userId: studentId,
+              type: "lead",
+              category: "crm_lead",
+              priority: "normal",
+              title: `Inquiry received for ${targetTitle}`,
+              message: `We received your ${targetType} inquiry and shared it with the institute.`,
+              targetUrl: "/student/leads",
+              actionLabel: "View inquiries",
+              entityType: targetType,
+              entityId: targetId,
+              dedupeKey: `student-${targetType}-lead:${targetId}:${studentId}:${payload.data.email ?? payload.data.phone}`,
+              metadata: { targetId, targetType, email: payload.data.email ?? null, phone: payload.data.phone ?? null },
+            }),
+          ]
+        : []),
       ...(institute?.user_id
         ? [
             createAccountNotification({
