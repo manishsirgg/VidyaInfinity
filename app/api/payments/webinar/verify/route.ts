@@ -6,6 +6,8 @@ import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razor
 import { reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+
 async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
   let lastError: string | null = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -41,6 +43,12 @@ export async function POST(request: Request) {
   if (!orderId || !paymentId || !signature) {
     return NextResponse.json({ error: "orderId, paymentId, signature are required" }, { status: 400 });
   }
+
+  console.info("[payments/webinar/verify] entry", {
+    order_id: orderId,
+    razorpay_order_id: orderId,
+    payment_id: paymentId,
+  });
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
@@ -113,6 +121,17 @@ export async function POST(request: Request) {
       }
     }
 
+    console.info("[payments/webinar/verify] duplicate_payment_id_handled", {
+      event: "duplicate_payment_id_handled",
+      webinar_order_id: order.id,
+      webinar_id: order.webinar_id,
+      student_id: order.student_id,
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+      self_healed_registration: !registration,
+      payment_status: order.payment_status,
+      order_status: order.order_status,
+    });
     return NextResponse.json({ ok: true, idempotent: true, duplicate: true, selfHealedRegistration: !registration });
   }
 
@@ -121,6 +140,13 @@ export async function POST(request: Request) {
 
   if (!signatureResult.valid) {
     await admin.data.from("webinar_orders").update({ payment_status: "failed", order_status: "failed" }).eq("id", order.id);
+    console.warn("[payments/webinar/verify] signature_invalid", {
+      webinar_order_id: order.id,
+      webinar_id: order.webinar_id,
+      student_id: order.student_id,
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+    });
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
@@ -139,17 +165,41 @@ export async function POST(request: Request) {
   try {
     payment = (await razorpay.data.payments.fetch(paymentId)) as RazorpayPayment;
   } catch (error) {
+    console.error("[payments/webinar/verify] payment_fetch_failed", {
+      webinar_order_id: order.id,
+      webinar_id: order.webinar_id,
+      student_id: order.student_id,
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to validate payment" }, { status: 502 });
   }
 
   const expectedAmountInPaise = Math.round(Number(order.amount) * 100);
+  const normalizedGatewayStatus = String(payment.status ?? "").trim().toLowerCase();
+  const isCaptured = normalizedGatewayStatus === "captured" || SUCCESS_PAYMENT_STATUSES.has(normalizedGatewayStatus);
   if (
     payment.id !== paymentId ||
     payment.order_id !== orderId ||
-    payment.status !== "captured" ||
+    !isCaptured ||
     Number(payment.amount ?? 0) !== expectedAmountInPaise ||
     (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase()
   ) {
+    console.warn("[payments/webinar/verify] payment_validation_failed", {
+      webinar_order_id: order.id,
+      webinar_id: order.webinar_id,
+      student_id: order.student_id,
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+      gateway_payment_id: payment.id ?? null,
+      gateway_order_id: payment.order_id ?? null,
+      gateway_status: payment.status ?? null,
+      expected_amount_subunits: expectedAmountInPaise,
+      gateway_amount_subunits: Number(payment.amount ?? 0),
+      expected_currency: order.currency,
+      gateway_currency: payment.currency ?? null,
+    });
     await admin.data.from("webinar_orders").update({ payment_status: "failed", order_status: "failed" }).eq("id", order.id).in("payment_status", ["pending", "failed"]);
     return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
   }
@@ -165,8 +215,24 @@ export async function POST(request: Request) {
   });
 
   if (reconciled.error) {
+    console.error("[payments/webinar/verify] reconciliation_failed", {
+      webinar_order_id: order.id,
+      webinar_id: order.webinar_id,
+      student_id: order.student_id,
+      razorpay_order_id: orderId,
+      razorpay_payment_id: paymentId,
+      error: reconciled.error,
+    });
     return NextResponse.json({ error: reconciled.error }, { status: 500 });
   }
 
+  console.info("[payments/webinar/verify] exit", {
+    webinar_order_id: order.id,
+    webinar_id: order.webinar_id,
+    student_id: order.student_id,
+    razorpay_order_id: orderId,
+    razorpay_payment_id: paymentId,
+    final_decision: "success",
+  });
   return NextResponse.json({ ok: true, idempotent: order.payment_status === "paid" });
 }

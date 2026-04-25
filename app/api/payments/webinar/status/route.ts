@@ -10,6 +10,8 @@ function normalize(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
+
 async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
   let lastError: string | null = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -133,11 +135,84 @@ export async function GET(request: Request) {
     .limit(1)
     .maybeSingle<{ id: string }>();
 
-  if (isPaid || finalRegistration) {
+  const isCanonicalSuccess = SUCCESS_PAYMENT_STATUSES.has(normalize(order.payment_status)) || Boolean(order.paid_at);
+  if (!isCanonicalSuccess && effectivePaymentId) {
+    const razorpay = getRazorpayClient();
+    if (razorpay.ok) {
+      try {
+        const payment = (await razorpay.data.payments.fetch(effectivePaymentId)) as {
+          id?: string;
+          order_id?: string;
+          status?: string;
+          amount?: number;
+          currency?: string;
+        };
+
+        const capturedAndMatching =
+          normalize(payment.status) === "captured" &&
+          payment.id === effectivePaymentId &&
+          payment.order_id === (order.razorpay_order_id ?? orderId ?? "");
+
+        if (capturedAndMatching) {
+          console.info("[payments/webinar/status] captured_payment_found_for_pending_order", {
+            event: "captured_payment_found_for_pending_order",
+            webinar_order_id: order.id,
+            webinar_id: order.webinar_id,
+            student_id: auth.user.id,
+            razorpay_order_id: order.razorpay_order_id ?? orderId,
+            razorpay_payment_id: effectivePaymentId,
+            order_payment_status: order.payment_status,
+          });
+
+          const capturedReconcile = await reconcileWebinarWithRetry({
+            supabase: admin.data,
+            order,
+            razorpayOrderId: order.razorpay_order_id ?? orderId ?? "",
+            razorpayPaymentId: effectivePaymentId,
+            source: "verify_api",
+            paymentEventType: "payment.status.captured",
+          });
+
+          if (capturedReconcile.error) {
+            console.error("[payments/webinar/status] captured_payment_reconcile_failed", {
+              event: "captured_payment_reconcile_failed",
+              webinar_order_id: order.id,
+              webinar_id: order.webinar_id,
+              student_id: auth.user.id,
+              razorpay_order_id: order.razorpay_order_id ?? orderId,
+              razorpay_payment_id: effectivePaymentId,
+              error: capturedReconcile.error,
+            });
+          }
+        }
+      } catch (error) {
+        console.warn("[payments/webinar/status] unable_to_fetch_payment_during_pending_resolution", {
+          webinar_order_id: order.id,
+          webinar_id: order.webinar_id,
+          student_id: auth.user.id,
+          razorpay_order_id: order.razorpay_order_id ?? orderId,
+          razorpay_payment_id: effectivePaymentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  const refreshedOrder = await admin.data
+    .from("webinar_orders")
+    .select("payment_status,paid_at")
+    .eq("id", order.id)
+    .maybeSingle<{ payment_status: string | null; paid_at: string | null }>();
+
+  const refreshedIsPaid =
+    SUCCESS_PAYMENT_STATUSES.has(normalize(refreshedOrder.data?.payment_status ?? order.payment_status)) ||
+    Boolean(refreshedOrder.data?.paid_at ?? order.paid_at);
+
+  if (refreshedIsPaid || finalRegistration) {
     return NextResponse.json({
       ok: true,
       state: "paid",
-      syncPending: isPaid && !finalRegistration,
+      syncPending: refreshedIsPaid && !finalRegistration,
       redirectTo: `/student/payments/success?kind=webinar&order_id=${encodeURIComponent(order.razorpay_order_id ?? order.id)}&payment_id=${encodeURIComponent(effectivePaymentId ?? "")}`,
     });
   }

@@ -477,7 +477,7 @@ export default async function Page({
                 const refund = webinarRefundByOrderId.get(order.id);
                 const resolvedAccess = webinarAccessResolutionByOrderId.get(order.id);
 
-                const hasPaidOrder = String(order.payment_status ?? "").toLowerCase() === "paid";
+                const hasPaidOrder = isConfirmedPayment(order.payment_status, order.paid_at);
                 const registrationStatus = registration?.registration_status ?? (hasPaidOrder ? "registered" : "not_registered");
                 const accessStatus = registration?.access_status ?? order.access_status ?? "no_access";
                 const deliveryStatus = registration?.access_delivery_status ?? null;
