@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveWebinarAccessState } from "@/lib/webinars/access-state";
+import { getAccessStatusLabel, getPaymentStatusLabel, getRegistrationStatusLabel } from "@/lib/payments/status-labels";
 
 type WebinarFilter = "all" | "upcoming" | "free" | "paid";
 
@@ -302,7 +303,7 @@ export default async function StudentWebinarRegistrationsPage({
               <p className="text-slate-700">Ends: {formatDate(item.ends_at)} · Timezone: {item.timezone ?? "Asia/Kolkata"}</p>
               <p className="text-slate-700">Mode: {toLabel(item.webinar_mode)} · Provider: {item.meeting_provider ?? "N/A"}</p>
               <p className="text-slate-700">Institute: {item.institute_name ?? "N/A"}</p>
-              <p className="text-slate-700">Registration: {toLabel(item.registration_status)} · Payment: {toLabel(item.payment_status)} · Access: {toLabel(item.access_status)}</p>
+              <p className="text-slate-700">Registration: {getRegistrationStatusLabel(item.registration_status)} · Payment: {getPaymentStatusLabel(item.payment_status)} · Access: {getAccessStatusLabel(item.access_status)}</p>
               {canJoin ? <p className="text-slate-700">Status: {webinarLifecycleLabel(item.starts_at, item.ends_at)} · Access Granted</p> : null}
               {canJoin ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 
 import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { isCourseEnrollmentCurrentlyActive, normalizeEntitlementStatus } from "@/lib/payments/entitlement-status";
+import { getAccessStatusLabel, getEnrollmentStatusLabel, getPaymentStatusLabel } from "@/lib/payments/status-labels";
 
 const ENROLLMENT_STATUSES_VISIBLE = ["enrolled", "pending", "active", "suspended", "completed", "cancelled", "canceled", "revoked", "inactive", "expired", "refunded"] as const;
 
@@ -36,15 +37,6 @@ function formatDate(value: string | null) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
-}
-
-function toTitleCase(value: string) {
-  return value
-    .replaceAll("_", " ")
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function one<T>(value: T | T[] | null | undefined): T | null {
@@ -210,14 +202,15 @@ export default async function StudentEnrollmentsPage() {
           return (
             <div key={enrollment.id} className="rounded-xl border bg-white p-4 text-sm">
               <p className="font-medium text-slate-900">{course?.title ?? `Course ${enrollment.course_id}`}</p>
-              <p className="mt-1 text-slate-700">Status: {toTitleCase(enrollment.enrollment_status ?? "unknown")}</p>
-              <p className="mt-1 text-slate-700">Access: {hasActiveAccess ? "Active" : "Expired"}</p>
-              <p className="mt-1 text-slate-700">Payment: {toTitleCase(order?.payment_status ?? fallbackPaidOrder?.payment_status ?? "unknown")}</p>
+              <p className="mt-1 text-slate-700">Status: {getEnrollmentStatusLabel(enrollment.enrollment_status)}</p>
+              <p className="mt-1 text-slate-700">Access: {hasActiveAccess ? "Active" : getAccessStatusLabel(normalizedPaymentStatus === "refunded" ? "revoked" : "expired")}</p>
+              <p className="mt-1 text-slate-700">Payment: {getPaymentStatusLabel(order?.payment_status ?? fallbackPaidOrder?.payment_status ?? "unknown")}</p>
               <p className="mt-1 text-slate-700">Enrolled at: {formatDate(enrollment.enrolled_at ?? enrollment.created_at)}</p>
               {enrollment.access_start_at ? <p className="mt-1 text-slate-700">Access starts: {formatDate(enrollment.access_start_at)}</p> : null}
               {enrollment.access_end_at ? <p className="mt-1 text-slate-700">Access ends: {formatDate(enrollment.access_end_at)}</p> : null}
+              {!hasActiveAccess ? <p className="mt-1 text-xs text-slate-500">Historical enrollment record (inactive).</p> : null}
 
-              {isPaid ? (
+              {isPaid && hasActiveAccess ? (
                 <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800">
                   <p className="font-medium">Institute details</p>
                   <p>Name: {institute?.name ?? "-"}</p>
