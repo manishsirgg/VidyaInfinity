@@ -1,9 +1,12 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
+import { getStudentInquiries } from "@/lib/leads/student-inquiries";
 import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 type IdentityDocument = {
   id: string;
@@ -159,11 +162,9 @@ export default async function StudentDashboardPage() {
     { data: courseOrderRows },
     { data: psychometricOrderRows },
     { data: enrollmentRowsRaw },
-    { count: inquiryCount },
     { count: unreadNotificationCount },
     { data: latestIdentityDocument },
     { data: recentNotifications },
-    { data: recentInquiries },
     { data: recentEnrollments },
     { data: recentTestAttempts },
     { data: webinarMetricRows },
@@ -178,7 +179,6 @@ export default async function StudentDashboardPage() {
       .from("course_enrollments")
       .select("id,course_id,enrollment_status,created_at,access_end_at")
       .eq("student_id", user.id),
-    supabase.from("leads").select("id", { count: "exact", head: true }).eq("student_id", user.id),
     supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
     supabase
       .from("user_documents")
@@ -197,13 +197,6 @@ export default async function StudentDashboardPage() {
       .order("created_at", { ascending: false })
       .limit(5)
       .returns<NotificationItem[]>(),
-    supabase
-      .from("leads")
-      .select("id,created_at,lead_type,course_id,webinar_id,message")
-      .eq("student_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(3)
-      .returns<InquiryItem[]>(),
     dataClient
       .from("course_enrollments")
       .select("id,course_id,enrollment_status,created_at,access_end_at")
@@ -259,6 +252,14 @@ export default async function StudentDashboardPage() {
   ]);
 
   const allCourseOrders = (courseOrderRows ?? []) as CourseOrderItem[];
+  const allInquiries = await getStudentInquiries(dataClient, {
+    userId: user.id,
+    email: profile.email ?? null,
+    phone: null,
+    limit: 200,
+  });
+  const inquiryCount = allInquiries.length;
+  const recentInquiries = allInquiries.slice(0, 3) as InquiryItem[];
   const paidPsychometricOrders = (psychometricOrderRows ?? []).filter((row) => isConfirmedPayment(row.payment_status, row.paid_at)).length;
   const enrollmentRows = ((enrollmentRowsRaw ?? []) as EnrollmentItem[]).filter((row) => isActiveCourseEnrollmentStatus(row?.enrollment_status));
   const confirmedCourseOrders = allCourseOrders.filter((order) => isConfirmedPayment(order.payment_status, order.paid_at));

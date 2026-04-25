@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getInstituteIdForUser, jsonError } from "@/lib/institute/payouts";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { deleteFromBucket, STORAGE_BUCKETS, uploadInstituteDocument } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -77,6 +78,38 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .maybeSingle();
 
   if (updateError) return jsonError(updateError.message, 500);
+
+  const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
+  await Promise.allSettled([
+    createAccountNotification({
+      userId: auth.user.id,
+      type: "resubmission",
+      category: "payout_account",
+      priority: "normal",
+      title: "Payout proof resubmitted",
+      message: "Your updated payout proof has been resubmitted for admin approval.",
+      targetUrl: "/institute/wallet",
+      actionLabel: "View wallet",
+      entityType: "payout_account",
+      entityId: id,
+      dedupeKey: `payout-proof-resubmitted:${id}:${auth.user.id}`,
+    }),
+    ...(admins ?? []).map((row) =>
+      createAccountNotification({
+        userId: row.id,
+        type: "resubmission",
+        category: "payout_account",
+        priority: "high",
+        title: "Payout proof resubmitted",
+        message: "An institute has resubmitted payout proof and is awaiting admin review.",
+        targetUrl: "/admin/payout-accounts",
+        actionLabel: "Review now",
+        entityType: "payout_account",
+        entityId: id,
+        dedupeKey: `payout-proof-resubmitted-admin:${id}:${row.id}`,
+      }),
+    ),
+  ]);
 
   return NextResponse.json({ account: updated });
 }
