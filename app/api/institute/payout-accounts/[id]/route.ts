@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { normalizePayoutMode } from "@/lib/institute/payout-account";
+import { normalizePayoutAccountType, normalizePayoutMode, validatePayoutAccountPayload } from "@/lib/institute/payout-account";
 import { getInstituteIdForUser, jsonError } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -18,6 +18,31 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const payload = (await request.json()) as Record<string, unknown>;
+  if (payload.account_type !== undefined) {
+    return jsonError("account_type cannot be changed after account creation.");
+  }
+
+  const { data: existingAccount, error: existingAccountError } = await admin.data
+    .from("institute_payout_accounts")
+    .select("id,account_type,account_holder_name,bank_name,account_number,ifsc_code,upi_id")
+    .eq("id", id)
+    .eq("institute_id", instituteId)
+    .maybeSingle<{
+      id: string;
+      account_type: string | null;
+      account_holder_name: string | null;
+      bank_name: string | null;
+      account_number: string | null;
+      ifsc_code: string | null;
+      upi_id: string | null;
+    }>();
+
+  if (existingAccountError) return jsonError(existingAccountError.message, 400);
+  if (!existingAccount) return jsonError("Payout account not found.", 404);
+
+  const accountType = normalizePayoutAccountType(existingAccount.account_type);
+  if (!accountType) return jsonError("Unsupported payout account type found for this record.", 400);
+
   const hasSensitiveUpdates =
     payload.account_holder_name !== undefined ||
     payload.bank_name !== undefined ||
@@ -26,12 +51,30 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     payload.upi_id !== undefined ||
     payload.proof_document_path !== undefined;
 
+  const accountHolderName = payload.account_holder_name !== undefined ? String(payload.account_holder_name ?? "").trim() || null : existingAccount.account_holder_name;
+  const bankName = payload.bank_name !== undefined ? String(payload.bank_name ?? "").trim() || null : existingAccount.bank_name;
+  const accountNumber = payload.account_number !== undefined ? String(payload.account_number ?? "").trim() || null : existingAccount.account_number;
+  const ifscCode = payload.ifsc_code !== undefined ? String(payload.ifsc_code ?? "").trim().toUpperCase() || null : existingAccount.ifsc_code;
+  const upiId = payload.upi_id !== undefined ? String(payload.upi_id ?? "").trim() || null : existingAccount.upi_id;
+
+  if (hasSensitiveUpdates) {
+    const validationError = validatePayoutAccountPayload({
+      accountType,
+      accountHolderName,
+      bankName,
+      accountNumber,
+      ifscCode,
+      upiId,
+    });
+    if (validationError) return jsonError(validationError);
+  }
+
   const updates: Record<string, unknown> = {
-    account_holder_name: payload.account_holder_name,
-    bank_name: payload.bank_name,
-    account_number: payload.account_number,
-    ifsc_code: typeof payload.ifsc_code === "string" ? payload.ifsc_code.toUpperCase() : payload.ifsc_code,
-    upi_id: payload.upi_id,
+    account_holder_name: payload.account_holder_name !== undefined ? accountHolderName : undefined,
+    bank_name: payload.bank_name !== undefined ? bankName : undefined,
+    account_number: payload.account_number !== undefined ? accountNumber : undefined,
+    ifsc_code: payload.ifsc_code !== undefined ? ifscCode : undefined,
+    upi_id: payload.upi_id !== undefined ? upiId : undefined,
     is_default: payload.is_default,
     payout_mode: payload.payout_mode !== undefined ? normalizePayoutMode(payload.payout_mode) : undefined,
     auto_payout_enabled: payload.payout_mode !== undefined ? normalizePayoutMode(payload.payout_mode) === "auto" : undefined,

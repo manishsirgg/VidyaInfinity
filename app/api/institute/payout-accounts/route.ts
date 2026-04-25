@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { normalizePayoutMode } from "@/lib/institute/payout-account";
+import { normalizePayoutAccountType, normalizePayoutMode, validatePayoutAccountPayload } from "@/lib/institute/payout-account";
 import { getInstituteIdForUser, jsonError } from "@/lib/institute/payouts";
 import { getSignedPrivateFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -55,19 +55,35 @@ export async function POST(request: Request) {
   if (!instituteId) return jsonError("Institute profile not found.", 404);
 
   const payload = (await request.json()) as Record<string, unknown>;
-  const accountType = String(payload.account_type ?? "").toLowerCase();
-  if (!accountType || !["bank", "upi"].includes(accountType)) {
+  const accountType = normalizePayoutAccountType(payload.account_type);
+  if (!accountType) {
     return jsonError("account_type must be bank or upi.");
   }
+
+  const accountHolderName = String(payload.account_holder_name ?? "").trim() || null;
+  const bankName = String(payload.bank_name ?? "").trim() || null;
+  const accountNumber = String(payload.account_number ?? "").trim() || null;
+  const ifscCode = String(payload.ifsc_code ?? "").trim().toUpperCase() || null;
+  const upiId = String(payload.upi_id ?? "").trim() || null;
+
+  const validationError = validatePayoutAccountPayload({
+    accountType,
+    accountHolderName,
+    bankName,
+    accountNumber,
+    ifscCode,
+    upiId,
+  });
+  if (validationError) return jsonError(validationError);
 
   const createPayload = {
     institute_id: instituteId,
     account_type: accountType,
-    account_holder_name: String(payload.account_holder_name ?? "").trim() || null,
-    bank_name: String(payload.bank_name ?? "").trim() || null,
-    account_number: String(payload.account_number ?? "").trim() || null,
-    ifsc_code: String(payload.ifsc_code ?? "").trim().toUpperCase() || null,
-    upi_id: String(payload.upi_id ?? "").trim() || null,
+    account_holder_name: accountHolderName,
+    bank_name: bankName,
+    account_number: accountNumber,
+    ifsc_code: ifscCode,
+    upi_id: upiId,
     verification_status: "pending",
     is_default: Boolean(payload.is_default),
     payout_mode: normalizePayoutMode(payload.payout_mode),

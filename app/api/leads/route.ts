@@ -49,6 +49,11 @@ export async function POST(request: Request) {
     course = data;
   }
 
+  const resolvedInstituteId = course?.institute_id ?? webinar?.institute_id ?? null;
+  if (!resolvedInstituteId) {
+    return NextResponse.json({ error: "Unable to resolve institute for this inquiry." }, { status: 400 });
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -74,11 +79,12 @@ export async function POST(request: Request) {
     contact_preference: payload.data.contactPreference,
     course_id: leadType === "course" ? payload.data.courseId ?? null : null,
     webinar_id: leadType === "webinar" ? payload.data.webinarId ?? null : null,
-    institute_id: payload.data.instituteId ?? (course?.institute_id ?? webinar?.institute_id ?? null),
+    institute_id: resolvedInstituteId,
     source,
     metadata: {
       ...(payload.data.metadata ?? {}),
       contact_preference: payload.data.contactPreference,
+      provided_institute_id: payload.data.instituteId ?? null,
     },
   };
 
@@ -96,11 +102,12 @@ export async function POST(request: Request) {
     metadata: {
       course_id: payload.data.courseId ?? null,
       webinar_id: payload.data.webinarId ?? null,
-      institute_id: payload.data.instituteId ?? (course?.institute_id ?? webinar?.institute_id ?? null),
+      institute_id: resolvedInstituteId,
       lead_type: leadType,
       source,
       message: payload.data.message,
       contact_preference: payload.data.contactPreference,
+      provided_institute_id: payload.data.instituteId ?? null,
     },
   });
 
@@ -108,14 +115,14 @@ export async function POST(request: Request) {
     console.error("Course lead CRM sync failed", {
       error: crmError.message,
       courseId: payload.data.courseId,
-      instituteId: payload.data.instituteId ?? (course?.institute_id ?? webinar?.institute_id ?? null),
+      instituteId: resolvedInstituteId,
       source,
     });
   }
 
   const { data: admins } = await admin.data.from("profiles").select("id").eq("role", "admin");
 
-  const targetInstituteId = course?.institute_id ?? webinar?.institute_id ?? null;
+  const targetInstituteId = resolvedInstituteId;
   const targetId = course?.id ?? webinar?.id ?? null;
   const targetTitle = course?.title ?? webinar?.title ?? "listing";
   const targetType = leadType === "webinar" ? "webinar" : "course";
