@@ -5,6 +5,7 @@ import { detectPaymentSchemaMismatches } from "@/lib/supabase/schema-guard";
 import { getRazorpayClient, verifyRazorpayWebhookSignature } from "@/lib/payments/razorpay";
 import { applyRefundToInstitutePayout } from "@/lib/payments/institute-payout-refunds";
 import { mapRazorpayRefundStatus } from "@/lib/payments/refunds";
+import { reconcileRefundAccessAndOrderState } from "@/lib/payments/refund-reconciliation";
 import { reconcileCourseOrderPaid, reconcilePsychometricOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
@@ -291,34 +292,25 @@ export async function POST(request: Request) {
       const updatedRefundAmount = Number(updatedRefund.amount ?? (refundEntity.amount ? Number(refundEntity.amount) / 100 : 0));
 
       if (updatedRefund.refund_status === "refunded") {
-        if (updatedRefund.course_order_id) {
-          await admin.data
-            .from("course_orders")
-            .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
-            .eq("id", updatedRefund.course_order_id);
-        }
-        if (updatedRefund.psychometric_order_id) {
-          await admin.data
-            .from("psychometric_orders")
-            .update({ payment_status: "refunded", updated_at: new Date().toISOString() })
-            .eq("id", updatedRefund.psychometric_order_id);
-        }
-        if (updatedRefund.webinar_order_id) {
-          await admin.data
-            .from("webinar_orders")
-            .update({ payment_status: "refunded", order_status: "refunded", access_status: "revoked", updated_at: new Date().toISOString() })
-            .eq("id", updatedRefund.webinar_order_id);
-
-          await admin.data
-            .from("webinar_registrations")
-            .update({
-              payment_status: "refunded",
-              access_status: "revoked",
-              access_end_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq("webinar_order_id", updatedRefund.webinar_order_id);
-        }
+        const refundedAt = new Date().toISOString();
+        await reconcileRefundAccessAndOrderState({
+          supabase: admin.data,
+          targets: {
+            course_order_id: updatedRefund.course_order_id ?? null,
+            psychometric_order_id: updatedRefund.psychometric_order_id ?? null,
+            webinar_order_id: updatedRefund.webinar_order_id ?? null,
+          },
+          refundedAt,
+        });
+        console.info("[razorpay/webhook] refund_order_entitlement_reconciled", {
+          eventType,
+          eventId,
+          refund_id: updatedRefund.id,
+          refunded_at: refundedAt,
+          course_order_id: updatedRefund.course_order_id,
+          psychometric_order_id: updatedRefund.psychometric_order_id,
+          webinar_order_id: updatedRefund.webinar_order_id,
+        });
 
         const payoutOrderKind = updatedRefund.course_order_id ? "course_order" : updatedRefund.webinar_order_id ? "webinar_order" : null;
         const payoutOrderId = updatedRefund.course_order_id ?? updatedRefund.webinar_order_id;

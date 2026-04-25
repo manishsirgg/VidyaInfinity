@@ -2,11 +2,10 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
+import { isSuccessfulPaymentStatus, normalizePaymentStatus } from "@/lib/payments/payment-status";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-
-const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 
 async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
   let lastError: string | null = null;
@@ -177,8 +176,8 @@ export async function POST(request: Request) {
   }
 
   const expectedAmountInPaise = Math.round(Number(order.amount) * 100);
-  const normalizedGatewayStatus = String(payment.status ?? "").trim().toLowerCase();
-  const isCaptured = normalizedGatewayStatus === "captured" || SUCCESS_PAYMENT_STATUSES.has(normalizedGatewayStatus);
+  const normalizedGatewayStatus = normalizePaymentStatus(payment.status);
+  const isCaptured = normalizedGatewayStatus === "captured" || isSuccessfulPaymentStatus(normalizedGatewayStatus);
   if (
     payment.id !== paymentId ||
     payment.order_id !== orderId ||

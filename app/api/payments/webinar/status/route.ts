@@ -2,15 +2,14 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
+import { isSuccessfulPaymentStatus, normalizePaymentStatus } from "@/lib/payments/payment-status";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 function normalize(value: string | null | undefined) {
-  return String(value ?? "").trim().toLowerCase();
+  return normalizePaymentStatus(value);
 }
-
-const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 
 async function reconcileWebinarWithRetry(payload: Parameters<typeof reconcileWebinarOrderPaid>[0], attempts = 2) {
   let lastError: string | null = null;
@@ -135,7 +134,7 @@ export async function GET(request: Request) {
     .limit(1)
     .maybeSingle<{ id: string }>();
 
-  const isCanonicalSuccess = SUCCESS_PAYMENT_STATUSES.has(normalize(order.payment_status)) || Boolean(order.paid_at);
+  const isCanonicalSuccess = isSuccessfulPaymentStatus(order.payment_status) || Boolean(order.paid_at);
   if (!isCanonicalSuccess && effectivePaymentId) {
     const razorpay = getRazorpayClient();
     if (razorpay.ok) {
@@ -223,7 +222,7 @@ export async function GET(request: Request) {
     .maybeSingle<{ payment_status: string | null; paid_at: string | null }>();
 
   const refreshedIsPaid =
-    SUCCESS_PAYMENT_STATUSES.has(normalize(refreshedOrder.data?.payment_status ?? order.payment_status)) ||
+    isSuccessfulPaymentStatus(refreshedOrder.data?.payment_status ?? order.payment_status) ||
     Boolean(refreshedOrder.data?.paid_at ?? order.paid_at);
 
   if (refreshedIsPaid || finalRegistration) {
