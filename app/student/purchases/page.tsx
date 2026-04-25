@@ -3,17 +3,24 @@ import Link from "next/link";
 import { RefundRequestButton } from "@/components/student/refund-request-button";
 import { requireUser } from "@/lib/auth/get-session";
 import type { CanonicalOrderKind } from "@/lib/payments/order-kinds";
+import { getRazorpayClient } from "@/lib/payments/razorpay";
+import { reconcileCourseOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveWebinarAccessState } from "@/lib/webinars/access-state";
 
 type CoursePurchase = {
   id: string;
+  student_id: string;
   gross_amount: number | null;
+  institute_receivable_amount: number | null;
+  institute_id: string;
+  currency: string | null;
   payment_status: string | null;
   paid_at: string | null;
   course_id: string;
   created_at: string | null;
+  razorpay_order_id: string | null;
   razorpay_payment_id: string | null;
 };
 
@@ -37,6 +44,8 @@ type PsychometricPurchase = {
 type WebinarPurchase = {
   id: string;
   webinar_id: string;
+  student_id: string;
+  institute_id: string;
   amount: number | null;
   currency: string | null;
   payment_status: string | null;
@@ -190,6 +199,26 @@ function webinarJoin<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
+async function deriveCapturedPaymentIdForOrder(razorpayOrderId: string) {
+  const razorpay = getRazorpayClient();
+  if (!razorpay.ok) return null;
+
+  try {
+    const paymentList = (await razorpay.data.orders.fetchPayments(razorpayOrderId)) as {
+      items?: Array<{ id?: string; status?: string }>;
+    };
+    const capturedPayment = (paymentList.items ?? []).find((item) => item.id && String(item.status ?? "").toLowerCase() === "captured");
+    return capturedPayment?.id ?? null;
+  } catch (error) {
+    console.warn("[student/purchases] pending_order_capture_probe_failed", {
+      event: "pending_order_capture_probe_failed",
+      razorpay_order_id: razorpayOrderId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 export default async function Page({
   searchParams,
 }: {
@@ -218,7 +247,7 @@ export default async function Page({
   const [courseResult, testResult, webinarResult] = await Promise.all([
     dataClient
       .from("course_orders")
-      .select("id,gross_amount,payment_status,paid_at,created_at,course_id,razorpay_payment_id")
+      .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,paid_at,created_at,razorpay_order_id,razorpay_payment_id")
       .eq("student_id", user.id)
       .order("created_at", { ascending: false }),
     dataClient
@@ -229,7 +258,7 @@ export default async function Page({
     dataClient
       .from("webinar_orders")
       .select(
-        "id,webinar_id,amount,currency,payment_status,paid_at,order_status,access_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_delivery_status,access_start_at,access_end_at,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))",
+        "id,webinar_id,student_id,institute_id,amount,currency,payment_status,paid_at,order_status,access_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_delivery_status,access_start_at,access_end_at,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))",
       )
       .eq("student_id", user.id)
       .order("created_at", { ascending: false }),
@@ -252,9 +281,95 @@ export default async function Page({
     });
   }
 
-  const courseOrders = (courseResult.data ?? []) as CoursePurchase[];
+  let courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
-  const webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
+  let webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
+
+  if (admin.ok) {
+    const pendingCourseOrders = courseOrders
+      .filter((order) => !isConfirmedPayment(order.payment_status, order.paid_at) && Boolean(order.razorpay_order_id))
+      .slice(0, 5);
+    const pendingWebinarOrders = webinarOrders
+      .filter((order) => !isConfirmedPayment(order.payment_status, order.paid_at) && Boolean(order.razorpay_order_id))
+      .slice(0, 5);
+
+    let syncMutated = false;
+
+    for (const order of pendingCourseOrders) {
+      const razorpayOrderId = order.razorpay_order_id;
+      if (!razorpayOrderId) continue;
+      const capturedPaymentId = await deriveCapturedPaymentIdForOrder(razorpayOrderId);
+      if (!capturedPaymentId) continue;
+
+      const reconciled = await reconcileCourseOrderPaid({
+        supabase: admin.data,
+        order: {
+          id: order.id,
+          student_id: order.student_id,
+          course_id: order.course_id,
+          institute_id: order.institute_id,
+          gross_amount: Number(order.gross_amount ?? 0),
+          institute_receivable_amount: Number(order.institute_receivable_amount ?? 0),
+          currency: order.currency ?? "INR",
+          payment_status: order.payment_status ?? "created",
+        },
+        razorpayOrderId,
+        razorpayPaymentId: capturedPaymentId,
+        source: "verify_api",
+        gatewayResponse: { source: "student_purchases_page_probe" },
+      });
+
+      if (!reconciled.error) syncMutated = true;
+    }
+
+    for (const order of pendingWebinarOrders) {
+      const razorpayOrderId = order.razorpay_order_id;
+      if (!razorpayOrderId) continue;
+      const capturedPaymentId = await deriveCapturedPaymentIdForOrder(razorpayOrderId);
+      if (!capturedPaymentId) continue;
+
+      const reconciled = await reconcileWebinarOrderPaid({
+        supabase: admin.data,
+        order: {
+          id: order.id,
+          webinar_id: order.webinar_id,
+          student_id: order.student_id,
+          institute_id: order.institute_id,
+          amount: Number(order.amount ?? 0),
+          currency: order.currency ?? "INR",
+          payment_status: order.payment_status ?? "pending",
+          order_status: order.order_status ?? "pending",
+          access_status: order.access_status ?? "locked",
+        },
+        razorpayOrderId,
+        razorpayPaymentId: capturedPaymentId,
+        source: "verify_api",
+        paymentEventType: "payment.status",
+      });
+
+      if (!reconciled.error) syncMutated = true;
+    }
+
+    if (syncMutated) {
+      const [refreshedCourses, refreshedWebinars] = await Promise.all([
+        dataClient
+          .from("course_orders")
+          .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,paid_at,created_at,razorpay_order_id,razorpay_payment_id")
+          .eq("student_id", user.id)
+          .order("created_at", { ascending: false }),
+        dataClient
+          .from("webinar_orders")
+          .select(
+            "id,webinar_id,student_id,institute_id,amount,currency,payment_status,paid_at,order_status,access_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_delivery_status,access_start_at,access_end_at,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))",
+          )
+          .eq("student_id", user.id)
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (!refreshedCourses.error) courseOrders = (refreshedCourses.data ?? []) as CoursePurchase[];
+      if (!refreshedWebinars.error) webinarOrders = (refreshedWebinars.data ?? []) as WebinarPurchase[];
+    }
+  }
 
   const { data: refundsData, error: refundsError } = await dataClient
     .from("refunds")
