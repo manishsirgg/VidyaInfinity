@@ -415,6 +415,12 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     const destination = mode === "create" ? `/institute/courses/${courseId}?submitted=1` : `/institute/courses/${courseId}`;
     window.setTimeout(() => {
       router.replace(destination);
+      window.setTimeout(() => {
+        const currentPath = window.location.pathname;
+        if (currentPath === "/institute/courses/new" || currentPath.endsWith("/resubmit") || currentPath.endsWith("/edit")) {
+          window.location.assign(destination);
+        }
+      }, 800);
     }, 350);
   }
 
