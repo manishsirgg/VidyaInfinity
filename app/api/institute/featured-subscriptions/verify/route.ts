@@ -104,8 +104,8 @@ export async function POST(request: Request) {
     signature?: string;
   };
 
-  if (!orderId || !paymentId || !signature) {
-    return NextResponse.json({ error: "orderId, paymentId, signature are required" }, { status: 400 });
+  if (!orderId) {
+    return NextResponse.json({ error: "orderId is required" }, { status: 400 });
   }
 
   const admin = getSupabaseAdmin();
@@ -121,15 +121,35 @@ export async function POST(request: Request) {
 
   if (!institute) return NextResponse.json({ error: "Institute profile not found" }, { status: 404 });
 
-  const { data: existingOrder } = await admin.data
+  let { data: existingOrder } = await admin.data
     .from("featured_listing_orders")
-    .select("id,institute_id,created_by,plan_id,amount,base_amount,credit_adjustment_amount,final_payable_amount,currency,duration_days,payment_status,razorpay_order_id,is_upgrade,auto_renew_requested,upgraded_from_subscription_id")
+    .select("id,institute_id,created_by,plan_id,amount,base_amount,credit_adjustment_amount,final_payable_amount,currency,duration_days,payment_status,razorpay_order_id,is_upgrade,auto_renew_requested,upgraded_from_subscription_id,metadata")
     .eq("razorpay_order_id", orderId)
     .eq("institute_id", institute.id)
-    .maybeSingle<FeaturedOrderRow>();
+    .maybeSingle<FeaturedOrderRow & { metadata?: Record<string, unknown> | null }>();
+
+  if (!existingOrder) {
+    const fallback = await admin.data
+      .from("featured_listing_orders")
+      .select("id,institute_id,created_by,plan_id,amount,base_amount,credit_adjustment_amount,final_payable_amount,currency,duration_days,payment_status,razorpay_order_id,is_upgrade,auto_renew_requested,upgraded_from_subscription_id,metadata")
+      .eq("id", orderId)
+      .eq("institute_id", institute.id)
+      .maybeSingle<FeaturedOrderRow & { metadata?: Record<string, unknown> | null }>();
+    existingOrder = fallback.data ?? null;
+  }
 
   if (!existingOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+  const paymentMethod = String(existingOrder.metadata?.payment_method ?? "").toLowerCase();
+  if (isSuccessfulPaymentStatus(existingOrder.payment_status) && paymentMethod === "wallet") {
+    return NextResponse.json({ ok: true, idempotent: true, wallet_paid: true });
+  }
+
   if (isSuccessfulPaymentStatus(existingOrder.payment_status)) return NextResponse.json({ ok: true, idempotent: true });
+
+  if (!paymentId || !signature) {
+    return NextResponse.json({ error: "paymentId and signature are required for Razorpay payments" }, { status: 400 });
+  }
 
   const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
   if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });

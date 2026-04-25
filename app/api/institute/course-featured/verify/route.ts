@@ -63,8 +63,8 @@ export async function POST(request: Request) {
   if ("error" in auth) return auth.error;
 
   const { orderId, paymentId, signature } = (await request.json()) as VerifyBody;
-  if (!orderId || !paymentId || !signature) {
-    return NextResponse.json({ error: "orderId, paymentId, and signature are required" }, { status: 400 });
+  if (!orderId) {
+    return NextResponse.json({ error: "orderId is required" }, { status: 400 });
   }
 
   const admin = getSupabaseAdmin();
@@ -78,16 +78,29 @@ export async function POST(request: Request) {
     // ignore cleanup failures on verify path
   }
 
-  const { data: existingOrder } = await admin.data
+  let { data: existingOrder } = await admin.data
     .from("course_featured_orders")
-    .select("id,institute_id,created_by,course_id,plan_id,amount,currency,duration_days,payment_status,order_status")
+    .select("id,institute_id,created_by,course_id,plan_id,amount,currency,duration_days,payment_status,order_status,metadata")
     .eq("razorpay_order_id", orderId)
     .eq("institute_id", instituteId)
-    .maybeSingle<ExistingOrder>();
+    .maybeSingle<ExistingOrder & { metadata?: Record<string, unknown> | null }>();
+
+  if (!existingOrder) {
+    const fallback = await admin.data
+      .from("course_featured_orders")
+      .select("id,institute_id,created_by,course_id,plan_id,amount,currency,duration_days,payment_status,order_status,metadata")
+      .eq("id", orderId)
+      .eq("institute_id", instituteId)
+      .maybeSingle<ExistingOrder & { metadata?: Record<string, unknown> | null }>();
+    existingOrder = fallback.data ?? null;
+  }
 
   if (!existingOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
-  if (isSuccessfulPaymentStatus(existingOrder.payment_status)) {
+  const paymentMethod = String(existingOrder.metadata?.payment_method ?? "").toLowerCase();
+  const isWalletPaidOrder = paymentMethod === "wallet" && existingOrder.payment_status === "paid";
+
+  if (isSuccessfulPaymentStatus(existingOrder.payment_status) && !isWalletPaidOrder) {
     const { data: existingSubscription } = await admin.data
       .from("course_featured_subscriptions")
       .select("id,status,starts_at,ends_at,queued_from_previous")
@@ -108,30 +121,41 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Paid order is missing featured subscription. Contact support." }, { status: 409 });
   }
 
-  if (!["pending", "failed"].includes(existingOrder.payment_status) || existingOrder.order_status === "cancelled") {
+  if (!["pending", "failed", "paid"].includes(existingOrder.payment_status) || existingOrder.order_status === "cancelled") {
     return NextResponse.json({ error: "Order is not eligible for verification" }, { status: 409 });
   }
 
-  const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
-  if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
-  if (!signatureResult.valid) {
-    await admin.data
-      .from("course_featured_orders")
-      .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
-      .eq("id", existingOrder.id)
-      .in("payment_status", ["pending", "failed"]);
-    await notifyInstituteAndAdmins({
-      admin: admin.data,
-      instituteUserId: auth.user.id,
-      title: "Course featuring payment failed",
-      message: "Course featured payment signature verification failed.",
-      metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "invalid_signature" },
-    });
-    return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
+  if (isWalletPaidOrder && (!paymentId || !signature)) {
+    // proceed to subscription activation idempotently without Razorpay checks.
+  } else {
+    if (!paymentId || !signature) {
+      return NextResponse.json({ error: "paymentId and signature are required for Razorpay payments" }, { status: 400 });
+    }
   }
 
-  const razorpay = getRazorpayClient();
-  if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
+  if (!isWalletPaidOrder) {
+    const signatureResult = verifyRazorpaySignature({ orderId, paymentId: paymentId!, signature: signature! });
+    if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
+    if (!signatureResult.valid) {
+      await admin.data
+        .from("course_featured_orders")
+        .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", existingOrder.id)
+        .in("payment_status", ["pending", "failed"]);
+      await notifyInstituteAndAdmins({
+        admin: admin.data,
+        instituteUserId: auth.user.id,
+        title: "Course featuring payment failed",
+        message: "Course featured payment signature verification failed.",
+        metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "invalid_signature" },
+      });
+      return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
+    }
+  }
+
+  if (!isWalletPaidOrder) {
+    const razorpay = getRazorpayClient();
+    if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
 
   type RazorpayPayment = {
     id?: string;
@@ -141,55 +165,58 @@ export async function POST(request: Request) {
     currency?: string;
   };
 
-  let payment: RazorpayPayment;
-  try {
-    payment = (await razorpay.data.payments.fetch(paymentId)) as RazorpayPayment;
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to validate payment details" },
-      { status: 502 },
-    );
-  }
+    let payment: RazorpayPayment;
+    try {
+      payment = (await razorpay.data.payments.fetch(paymentId!)) as RazorpayPayment;
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Unable to validate payment details" },
+        { status: 502 },
+      );
+    }
 
   const expectedAmountInPaise = Math.round(Number(existingOrder.amount) * 100);
-  if (
-    payment.id !== paymentId ||
-    payment.order_id !== orderId ||
-    payment.status !== "captured" ||
-    Number(payment.amount ?? 0) !== expectedAmountInPaise ||
-    (payment.currency ?? "").toUpperCase() !== existingOrder.currency.toUpperCase()
-  ) {
-    await admin.data
-      .from("course_featured_orders")
-      .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
-      .eq("id", existingOrder.id)
-      .in("payment_status", ["pending", "failed"]);
-    await notifyInstituteAndAdmins({
-      admin: admin.data,
-      instituteUserId: auth.user.id,
-      title: "Course featuring payment failed",
-      message: "Course featured payment did not pass Razorpay capture validation.",
-      metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "payment_validation_failed" },
-    });
-    return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
+    if (
+      payment.id !== paymentId ||
+      payment.order_id !== orderId ||
+      payment.status !== "captured" ||
+      Number(payment.amount ?? 0) !== expectedAmountInPaise ||
+      (payment.currency ?? "").toUpperCase() !== existingOrder.currency.toUpperCase()
+    ) {
+      await admin.data
+        .from("course_featured_orders")
+        .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", existingOrder.id)
+        .in("payment_status", ["pending", "failed"]);
+      await notifyInstituteAndAdmins({
+        admin: admin.data,
+        instituteUserId: auth.user.id,
+        title: "Course featuring payment failed",
+        message: "Course featured payment did not pass Razorpay capture validation.",
+        metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "payment_validation_failed" },
+      });
+      return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
+    }
   }
 
   const nowIso = new Date().toISOString();
-  const { error: paidUpdateError } = await admin.data
-    .from("course_featured_orders")
-    .update({
-      payment_status: "paid",
-      order_status: "confirmed",
-      paid_at: nowIso,
-      razorpay_payment_id: paymentId,
-      razorpay_signature: signature,
-      updated_at: nowIso,
-    })
-    .eq("id", existingOrder.id)
-    .in("payment_status", ["pending", "failed"])
-    .neq("order_status", "cancelled");
+  if (!isWalletPaidOrder) {
+    const { error: paidUpdateError } = await admin.data
+      .from("course_featured_orders")
+      .update({
+        payment_status: "paid",
+        order_status: "confirmed",
+        paid_at: nowIso,
+        razorpay_payment_id: paymentId!,
+        razorpay_signature: signature!,
+        updated_at: nowIso,
+      })
+      .eq("id", existingOrder.id)
+      .in("payment_status", ["pending", "failed"])
+      .neq("order_status", "cancelled");
 
-  if (paidUpdateError) return NextResponse.json({ error: paidUpdateError.message }, { status: 500 });
+    if (paidUpdateError) return NextResponse.json({ error: paidUpdateError.message }, { status: 500 });
+  }
 
   const { data: course } = await admin.data
     .from("courses")
