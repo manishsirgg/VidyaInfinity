@@ -25,7 +25,9 @@ type NotificationItem = {
 type InquiryItem = {
   id: string;
   created_at: string;
+  lead_type: string | null;
   course_id: string | null;
+  webinar_id: string | null;
   message: string | null;
 };
 
@@ -176,7 +178,7 @@ export default async function StudentDashboardPage() {
       .from("course_enrollments")
       .select("id,course_id,enrollment_status,created_at,access_end_at")
       .eq("student_id", user.id),
-    supabase.from("leads").select("id", { count: "exact", head: true }).eq("email", profile.email),
+    supabase.from("leads").select("id", { count: "exact", head: true }).eq("student_id", user.id),
     supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
     supabase
       .from("user_documents")
@@ -197,8 +199,8 @@ export default async function StudentDashboardPage() {
       .returns<NotificationItem[]>(),
     supabase
       .from("leads")
-      .select("id,created_at,course_id,message")
-      .eq("email", profile.email)
+      .select("id,created_at,lead_type,course_id,webinar_id,message")
+      .eq("student_id", user.id)
       .order("created_at", { ascending: false })
       .limit(3)
       .returns<InquiryItem[]>(),
@@ -416,7 +418,9 @@ export default async function StudentDashboardPage() {
             {(recentInquiries ?? []).length === 0 ? <p className="text-slate-500">You have not submitted any course inquiries yet.</p> : null}
             {(recentInquiries ?? []).map((item) => (
               <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
-                <p className="font-medium text-slate-900">Course: {item.course_id ?? "N/A"}</p>
+                <p className="font-medium text-slate-900">
+                  {item.lead_type === "webinar" ? "Webinar" : "Course"}: {item.webinar_id ?? item.course_id ?? "N/A"}
+                </p>
                 {item.message ? <p className="text-slate-700">{item.message}</p> : null}
                 <p className="text-xs text-slate-500">{formatDate(item.created_at)}</p>
               </div>
