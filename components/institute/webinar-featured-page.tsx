@@ -123,15 +123,18 @@ export function InstituteWebinarFeaturedPageClient() {
     }).catch(() => null);
   }
 
-  async function loadData() {
+  async function loadData(options?: { showErrorMessage?: boolean }) {
+    const showErrorMessage = options?.showErrorMessage ?? true;
     setLoading(true);
     const response = await fetch("/api/institute/webinar-featured", { cache: "no-store" });
     const body = await response.json().catch(() => null);
     if (!response.ok) {
-      setMessageType("error");
-      setMessage(body?.error ?? "Unable to load webinar featured data.");
+      if (showErrorMessage) {
+        setMessageType("error");
+        setMessage(body?.error ?? "Unable to load webinar featured data.");
+      }
       setLoading(false);
-      return;
+      throw new Error(body?.error ?? "Unable to load webinar featured data.");
     }
 
     setPlans((body?.plans ?? []) as Plan[]);
@@ -140,6 +143,7 @@ export function InstituteWebinarFeaturedPageClient() {
     setOrders((body?.orders ?? []) as Order[]);
     setSummary((body?.summary ?? { activeCount: 0, scheduledCount: 0, expiringSoonCount: 0 }) as Summary);
     setLoading(false);
+    return body as { subscriptions?: Subscription[] };
   }
 
   useEffect(() => {
@@ -262,9 +266,39 @@ export function InstituteWebinarFeaturedPageClient() {
             return;
           }
 
+          let refreshedSubscriptions: Subscription[] = [];
+          try {
+            const refreshedBody = await loadData({ showErrorMessage: false });
+            refreshedSubscriptions = (refreshedBody?.subscriptions ?? []) as Subscription[];
+          } catch {
+            setMessageType("info");
+            setMessage("Payment successful. Please refresh to see the latest featured status.");
+            setBusyWebinarId(null);
+            return;
+          }
+
+          const nowMs = Date.now();
+          const nextState = refreshedSubscriptions
+            .filter((subscription) => subscription.webinar_id === webinarId)
+            .reduce(
+              (acc, subscription) => {
+                const startMs = new Date(subscription.starts_at).getTime();
+                const endMs = new Date(subscription.ends_at).getTime();
+                if (startMs <= nowMs && endMs > nowMs) acc.hasActive = true;
+                if (startMs > nowMs) acc.hasScheduled = true;
+                return acc;
+              },
+              { hasActive: false, hasScheduled: false },
+            );
+
           setMessageType("success");
-          setMessage(verifyBody?.status === "scheduled" ? "Payment successful. Webinar extension is scheduled." : "Payment successful. Webinar is now featured.");
-          await loadData();
+          if (nextState.hasActive) {
+            setMessage("Payment successful. Featured plan is active.");
+          } else if (nextState.hasScheduled) {
+            setMessage("Payment successful. Featured plan has been scheduled.");
+          } else {
+            setMessage("Payment received. Activation is being reconciled.");
+          }
           setBusyWebinarId(null);
         },
         modal: {
