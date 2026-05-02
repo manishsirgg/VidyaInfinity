@@ -5,6 +5,12 @@ import { compareFeaturedPlans, getCurrentFeaturedState, type FeaturedType } from
 
 export type FeaturedOrderType = FeaturedType;
 
+const orderTableByType = {
+  institute: "featured_listing_orders",
+  course: "course_featured_orders",
+  webinar: "webinar_featured_orders",
+} as const;
+
 const CFG = {
   institute: { orderTable: "featured_listing_orders", subTable: "institute_featured_subscriptions", planTable: "featured_listing_plans", target: null },
   course: { orderTable: "course_featured_orders", subTable: "course_featured_subscriptions", planTable: "course_featured_plans", target: "course_id" },
@@ -14,8 +20,19 @@ const CFG = {
 export async function activateFeaturedSubscriptionFromPaidOrder(params: { supabase: SupabaseClient; orderType: FeaturedOrderType; orderId: string; razorpayOrderId?: string; razorpayPaymentId?: string; razorpaySignature?: string; source: "verify" | "webhook" | "admin_reconciliation" | "manual_admin_grant"; actorUserId?: string; reason?: string; razorpayPayload?: Record<string, unknown>; }) {
   const nowIso = new Date().toISOString();
   const cfg = CFG[params.orderType];
-  const { data: order } = await params.supabase.from(cfg.orderTable).select("id,institute_id,created_by,plan_id,duration_days,currency,amount,final_payable_amount,payment_status,order_status,paid_at,razorpay_order_id,razorpay_payment_id,metadata,course_id,webinar_id").eq("id", params.orderId).maybeSingle();
-  if (!order) return { ok: false, error: "Order not found", debugStage: "order_loaded" };
+  const orderTable = orderTableByType[params.orderType];
+  const { data: order, error: orderLookupError } = await params.supabase
+    .from(orderTable)
+    .select("id,institute_id,created_by,plan_id,duration_days,currency,amount,final_payable_amount,payment_status,order_status,paid_at,razorpay_order_id,razorpay_payment_id,metadata,course_id,webinar_id")
+    .eq("id", params.orderId)
+    .maybeSingle();
+  if (orderLookupError) return { ok: false, error: orderLookupError.message, debugStage: "order_loaded" };
+  if (!order) {
+    const missingMessage = params.orderType === "institute"
+      ? `Order not found in featured_listing_orders by id=${params.orderId}`
+      : `Order not found in ${orderTable} by id=${params.orderId}`;
+    return { ok: false, error: missingMessage, debugStage: "order_loaded" };
+  }
 
   const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status").eq("order_id", params.orderId).limit(1).maybeSingle();
   if (existingForOrder) return { ok: true, idempotent: true, subscriptionId: existingForOrder.id };

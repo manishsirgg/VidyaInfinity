@@ -14,29 +14,123 @@ export async function POST(request: Request) {
     debugStage = "admin_verified";
     const { orderType, orderId } = body;
     console.log("[admin/featured-reconciliation/reconcile] received", { orderType, orderId, actorUserId });
+
     const admin = getSupabaseAdmin();
     if (!admin.ok) return NextResponse.json({ success: false, message: "Reconciliation failed", error: admin.error, debug_stage: debugStage }, { status: 500 });
+
     const orderTable = orderType === "institute" ? "featured_listing_orders" : orderType === "course" ? "course_featured_orders" : "webinar_featured_orders";
-    const { data: orderRow, error: orderError } = await admin.data.from(orderTable).select("id,payment_status,order_status,razorpay_order_id,razorpay_payment_id").eq("id", orderId).maybeSingle<{ id: string; payment_status: string; order_status: string; razorpay_order_id: string | null; razorpay_payment_id: string | null }>();
+    const { data: orderRow, error: orderError } = await admin.data
+      .from(orderTable)
+      .select("*")
+      .eq("id", orderId)
+      .maybeSingle<Record<string, unknown>>();
+
     debugStage = "order_loaded";
+
+    if (orderType === "institute") {
+      console.log("[admin reconcile] institute order lookup", {
+        orderId,
+        table: "featured_listing_orders",
+        found: Boolean(orderRow),
+        error: orderError,
+      });
+      if (!orderRow) {
+        return NextResponse.json({
+          success: false,
+          message: "Order not found in featured_listing_orders",
+          debug_stage: "route_order_lookup",
+          received: { orderType, orderId },
+          expected_table: "featured_listing_orders",
+          expected_column: "id",
+          supabase_error: orderError,
+        }, { status: 404 });
+      }
+    }
+
     if (orderError) return NextResponse.json({ success: false, message: "Order lookup failed", action_taken: "lookup_error", orderType, orderId, error: orderError.message, debug_stage: debugStage }, { status: 500 });
     if (!orderRow) return NextResponse.json({ success: false, message: "Order not found", debug_stage: "order_loaded", received: { orderType, orderId }, expected_table: orderTable }, { status: 404 });
-    const shouldActivateLocalPaid = orderType === "institute" && orderRow.payment_status === "paid" && orderRow.order_status === "confirmed" && Boolean(orderRow.razorpay_payment_id);
-    let paymentIdForActivation = orderRow?.razorpay_payment_id ?? undefined;
+
+    const paymentStatus = String(orderRow.payment_status ?? "").toLowerCase();
+    const orderStatus = String(orderRow.order_status ?? "").toLowerCase();
+    const razorpayPaymentId = typeof orderRow.razorpay_payment_id === "string" ? orderRow.razorpay_payment_id : null;
+    const razorpayOrderId = typeof orderRow.razorpay_order_id === "string" ? orderRow.razorpay_order_id : null;
+    const shouldActivateLocalPaid = orderType === "institute" && paymentStatus === "paid" && orderStatus === "confirmed" && Boolean(razorpayPaymentId);
+
+    let paymentIdForActivation = razorpayPaymentId ?? undefined;
     if (shouldActivateLocalPaid) debugStage = "local_paid_fast_path";
     if (!shouldActivateLocalPaid) {
-      if (!orderRow.razorpay_order_id) return NextResponse.json({ success: false, message: "Razorpay order id missing", action_taken: "blocked_missing_razorpay_order_id", orderType, orderId, error: "Razorpay order id missing", debug_stage: debugStage }, { status: 400 });
-      const fetched = await fetchRazorpayPaymentForOrder(orderRow.razorpay_order_id);
+      if (!razorpayOrderId) return NextResponse.json({ success: false, message: "Razorpay order id missing", action_taken: "blocked_missing_razorpay_order_id", orderType, orderId, error: "Razorpay order id missing", debug_stage: debugStage }, { status: 400 });
+      const fetched = await fetchRazorpayPaymentForOrder(razorpayOrderId);
       if (!fetched.ok) return NextResponse.json({ success: false, message: "Razorpay fetch failed", action_taken: "razorpay_fetch_failed", orderType, orderId, error: fetched.error, debug_stage: debugStage }, { status: 502 });
       if (!fetched.paymentId) return NextResponse.json({ success: true, message: "Payment still pending", action_taken: "pending_no_captured_payment", orderType, orderId, debug_stage: debugStage });
       paymentIdForActivation = fetched.paymentId;
     }
+
     debugStage = "activation_helper_called";
-    const act = await activateFeaturedSubscriptionFromPaidOrder({ supabase: admin.data, orderType, orderId, razorpayOrderId: orderRow.razorpay_order_id ?? undefined, razorpayPaymentId: paymentIdForActivation, source: "admin_reconciliation", actorUserId, reason: "Paid confirmed local order missing subscription" });
+    const act = await activateFeaturedSubscriptionFromPaidOrder({ supabase: admin.data, orderType, orderId, razorpayOrderId: razorpayOrderId ?? undefined, razorpayPaymentId: paymentIdForActivation, source: "admin_reconciliation", actorUserId, reason: "Paid confirmed local order missing subscription" });
+
+    if (!act.ok && orderType === "institute" && String(act.error ?? "").includes("Order not found")) {
+      const hasSubscription = Boolean(orderRow.subscription_id);
+      const fallbackEligible = !hasSubscription && paymentStatus === "paid" && orderStatus === "confirmed" && Boolean(razorpayPaymentId);
+      if (fallbackEligible) {
+        debugStage = "direct_fallback";
+        const { data: plan, error: planError } = await admin.data
+          .from("featured_listing_plans")
+          .select("id,plan_code,price,currency,duration_days")
+          .eq("id", String(orderRow.plan_id ?? ""))
+          .maybeSingle<{ id: string; plan_code: string; price: number | null; currency: string | null; duration_days: number | null }>();
+        if (planError || !plan) {
+          return NextResponse.json({ success: false, message: "Activation failed", action_taken: "activation_failed", orderType, orderId, error: planError?.message ?? "Plan not found", debug_stage: debugStage }, { status: 500 });
+        }
+        const now = new Date();
+        const durationDays = Number(orderRow.duration_days ?? plan.duration_days ?? 0);
+        const endsAt = new Date(now.getTime() + durationDays * 86400000).toISOString();
+        const { data: inserted, error: insertError } = await admin.data
+          .from("institute_featured_subscriptions")
+          .insert({
+            institute_id: orderRow.institute_id,
+            created_by: orderRow.created_by,
+            plan_code: plan.plan_code,
+            amount: Number(orderRow.final_payable_amount ?? orderRow.amount ?? plan.price ?? 0),
+            currency: orderRow.currency ?? plan.currency ?? "INR",
+            duration_days: durationDays,
+            starts_at: now.toISOString(),
+            ends_at: endsAt,
+            status: "active",
+            plan_id: orderRow.plan_id,
+            order_id: orderRow.id,
+            queued_from_previous: false,
+            activated_at: now.toISOString(),
+            metadata: {
+              activation_source: "admin_reconciliation_direct_fallback",
+              razorpay_order_id: orderRow.razorpay_order_id ?? null,
+              razorpay_payment_id: orderRow.razorpay_payment_id ?? null,
+              reconciled_by: actorUserId,
+            },
+          })
+          .select("id")
+          .single<{ id: string }>();
+
+        if (insertError) {
+          return NextResponse.json({ success: false, message: "Activation failed", action_taken: "activation_failed", orderType, orderId, error: insertError.message, debug_stage: "subscription_insert_failed" }, { status: 500 });
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: "Reconciliation completed. Subscription is now active.",
+          action_taken: "created_missing_subscription",
+          orderType,
+          orderId,
+          subscription_id: inserted.id,
+        });
+      }
+    }
+
     if (!act.ok) {
       const activationDebugStage = act.debugStage ?? debugStage;
       return NextResponse.json({ success: false, message: "Activation failed", action_taken: "activation_failed", orderType, orderId, error: act.error, debug_stage: activationDebugStage }, { status: 500 });
     }
+
     return NextResponse.json({ success: true, message: act.idempotent ? "Subscription already exists for this order." : "Reconciliation completed and subscription activated.", action_taken: act.idempotent ? "already_exists" : "activated_subscription", orderType, orderId, subscription_id: act.subscriptionId ?? undefined, debug_stage: act.debugStage ?? "subscription_insert_success" });
   } catch (error) {
     const safeError = error instanceof Error ? error.message : String(error);
