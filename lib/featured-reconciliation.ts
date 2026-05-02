@@ -32,6 +32,11 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     durationDays: order.duration_days ?? selectedPlan?.duration_days ?? null,
   });
   if (!selectedPlan) return { ok: false, error: "Plan not found for order" };
+  if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id" };
+  if (!order.created_by) return { ok: false, error: "Missing required field: order.created_by" };
+  if (!order.plan_id) return { ok: false, error: "Missing required field: order.plan_id" };
+  if (!(selectedPlan.plan_code ?? selectedPlan.code)) return { ok: false, error: "Missing required field: plan.plan_code" };
+  if (selectedPlan.price == null) return { ok: false, error: "Missing required field: plan.price" };
 
   const paidPatch: Record<string, unknown> = {
     payment_status: params.source === "manual_admin_grant" ? "pending" : "paid",
@@ -66,14 +71,15 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
 
   const startsAt = nowIso;
   const durationDays = Number(order.duration_days ?? selectedPlan.duration_days ?? 0);
+  if (!durationDays || durationDays <= 0) return { ok: false, error: "Missing required field: duration_days" };
   const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
-  const amountSource = params.orderType === "institute" ? "plan.price" : "order.final_payable_amount_or_amount";
+  const amountSource = params.orderType === "institute" ? "order.final_payable_amount_or_amount_or_plan_price" : "order.final_payable_amount_or_amount";
   const subPayload: Record<string, unknown> = {
     institute_id: order.institute_id,
     order_id: order.id,
     plan_id: order.plan_id,
     plan_code: selectedPlan.plan_code ?? selectedPlan.code ?? null,
-    amount: params.orderType === "institute" ? Number(selectedPlan.price ?? 0) : Number(order.final_payable_amount ?? order.amount ?? selectedPlan.price ?? 0),
+    amount: params.orderType === "institute" ? Number(order.final_payable_amount ?? order.amount ?? selectedPlan.price ?? 0) : Number(order.final_payable_amount ?? order.amount ?? selectedPlan.price ?? 0),
     currency: order.currency ?? "INR",
     duration_days: durationDays,
     starts_at: startsAt,
@@ -82,10 +88,11 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     activated_at: nowIso,
     queued_from_previous: false,
     created_by: order.created_by ?? params.actorUserId ?? null,
-    metadata: {
+      metadata: {
       activation_source: params.source,
       razorpay_order_id: params.razorpayOrderId ?? order.razorpay_order_id ?? null,
       razorpay_payment_id: params.razorpayPaymentId ?? order.razorpay_payment_id ?? null,
+      reconciled_by: params.actorUserId ?? null,
     },
   };
   if (cfg.target && targetId) subPayload[cfg.target] = targetId;
@@ -96,14 +103,14 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     amountSource,
     payloadKeys: Object.keys(subPayload),
   });
-  const { data: inserted, error: subError } = await params.supabase.from(cfg.subTable).insert(subPayload).select("id").single();
+  const { data: inserted, error: subError } = await params.supabase.from(cfg.subTable).insert(subPayload).select("*").single();
   if (subError) {
     console.error("[featured/activate] insert_failed", { orderType: params.orderType, orderId: params.orderId, error: subError.message, details: subError.details, hint: subError.hint, code: subError.code });
-    return { ok: false, error: subError.message };
+    return { ok: false, error: `${subError.message}${subError.details ? ` | details: ${subError.details}` : ""}${subError.hint ? ` | hint: ${subError.hint}` : ""}` };
   }
 
   await writeAdminAuditLog({ adminUserId: params.actorUserId ?? null, actorUserId: params.actorUserId ?? null, action: `featured_${params.orderType}_activate`, targetTable: cfg.orderTable, targetId: params.orderId, description: params.reason ?? `source:${params.source}`, metadata: { source: params.source, subId: inserted?.id ?? null } });
-  return { ok: true, subscriptionId: inserted?.id ?? null };
+  return { ok: true, subscriptionId: inserted?.id ?? null, subscription: inserted };
 }
 
 export async function fetchRazorpayPaymentForOrder(razorpayOrderId: string) {
