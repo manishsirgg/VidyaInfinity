@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const { data: orderRow, error: orderError } = await admin.data.from(orderTable).select("id,payment_status,order_status,razorpay_order_id,razorpay_payment_id").eq("id", orderId).maybeSingle<{ id: string; payment_status: string; order_status: string; razorpay_order_id: string | null; razorpay_payment_id: string | null }>();
     debugStage = "order_loaded";
     if (orderError) return NextResponse.json({ success: false, message: "Order lookup failed", action_taken: "lookup_error", orderType, orderId, error: orderError.message, debug_stage: debugStage }, { status: 500 });
-    if (!orderRow) return NextResponse.json({ success: false, message: "Order not found", action_taken: "lookup_not_found", orderType, orderId, error: "Order not found", debug_stage: debugStage }, { status: 404 });
+    if (!orderRow) return NextResponse.json({ success: false, message: "Order not found", debug_stage: "order_loaded", received: { orderType, orderId }, expected_table: orderTable }, { status: 404 });
     const shouldActivateLocalPaid = orderType === "institute" && orderRow.payment_status === "paid" && orderRow.order_status === "confirmed" && Boolean(orderRow.razorpay_payment_id);
     let paymentIdForActivation = orderRow?.razorpay_payment_id ?? undefined;
     if (shouldActivateLocalPaid) debugStage = "local_paid_fast_path";

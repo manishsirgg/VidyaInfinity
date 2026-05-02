@@ -20,11 +20,26 @@ export async function GET() {
     ? await admin.data.from("institute_featured_subscriptions").select("order_id").in("order_id", paidConfirmedInstituteOrderIds)
     : { data: [] as Array<{ order_id: string | null }> };
   const subOrderIds = new Set((instituteSubs ?? []).map((row) => row.order_id).filter((v): v is string => Boolean(v)));
-  const markedInstituteOrders = instituteOrders.map((row) => ({
+  const toRow = (orderType: "institute" | "course" | "webinar", row: Record<string, unknown>, missingSubscription = false) => ({
     ...row,
-    missing_subscription: row.payment_status === "paid" && row.order_status === "confirmed" ? !subOrderIds.has(row.id) : false,
-    issue_label: row.payment_status === "paid" && row.order_status === "confirmed" && !subOrderIds.has(row.id) ? "Paid institute featured order missing subscription" : null,
-    recommended_action: row.payment_status === "paid" && row.order_status === "confirmed" && !subOrderIds.has(row.id) ? "Create missing active subscription" : null,
-  }));
-  return NextResponse.json({ instituteOrders: markedInstituteOrders, courseOrders: course.data ?? [], webinarOrders: webinar.data ?? [] });
+    orderType,
+    orderId: row.id,
+    targetId: orderType === "institute" ? row.institute_id : orderType === "course" ? row.course_id : row.webinar_id,
+    instituteId: row.institute_id,
+    razorpayOrderId: row.razorpay_order_id,
+    razorpayPaymentId: row.razorpay_payment_id,
+    missing_subscription: missingSubscription,
+    issue_label: missingSubscription ? "Paid institute featured order missing subscription" : null,
+    recommended_action: missingSubscription ? "Create missing active subscription" : null,
+  });
+
+  const markedInstituteOrders = instituteOrders.map((row) => {
+    const missingSubscription = row.payment_status === "paid" && row.order_status === "confirmed" ? !subOrderIds.has(row.id) : false;
+    return toRow("institute", row, missingSubscription);
+  });
+
+  const courseOrders = (course.data ?? []).map((row) => toRow("course", row));
+  const webinarOrders = (webinar.data ?? []).map((row) => toRow("webinar", row));
+
+  return NextResponse.json({ instituteOrders: markedInstituteOrders, courseOrders, webinarOrders });
 }
