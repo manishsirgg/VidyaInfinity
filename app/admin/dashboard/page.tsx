@@ -21,6 +21,7 @@ const adminModules = [
   { href: "/admin/webinars", label: "Webinars" },
   { href: "/admin/featured-listings", label: "Featured Listings" },
   { href: "/admin/featured-listings", label: "Webinar Promotions" },
+  { href: "/admin/featured-reconciliation", label: "Featured Reconciliation" },
   { href: "/admin/profile", label: "Admin Profile" },
 ];
 
@@ -86,8 +87,8 @@ export default async function AdminDashboardPage() {
     supabase.from("institute_featured_subscriptions").select("id", { count: "exact", head: true }),
     supabase.from("course_featured_subscriptions").select("id", { count: "exact", head: true }),
     supabase.from("webinar_featured_subscriptions").select("id", { count: "exact", head: true }),
-    supabase.from("course_featured_orders").select("id,payment_status,amount"),
-    supabase.from("webinar_featured_orders").select("id,payment_status,amount"),
+    supabase.from("course_featured_orders").select("id,payment_status,amount,created_at"),
+    supabase.from("webinar_featured_orders").select("id,payment_status,amount,created_at"),
     supabase.from("active_featured_courses").select("course_id", { count: "exact", head: true }),
     supabase.from("active_featured_webinars").select("webinar_id", { count: "exact", head: true }),
     supabase
@@ -145,6 +146,16 @@ export default async function AdminDashboardPage() {
   });
   // Refund commission policy: refunded orders proportionally reverse platform commission unless explicitly non-refundable.
   const adminPlatformRevenue = courseFeeRevenue.netPlatformFee + webinarFeeRevenue.netPlatformFee;
+
+  const featuredIssueCounts = {
+    pendingOlderThan10m: [...(courseFeaturedOrders ?? []), ...(webinarFeaturedOrders ?? [])].filter((order) => {
+      const isPending = String(order.payment_status ?? "").toLowerCase().includes("pending");
+      const createdAt = new Date((order as { created_at?: string }).created_at ?? 0).getTime();
+      return isPending && Number.isFinite(createdAt) && Date.now() - createdAt > 10 * 60 * 1000;
+    }).length,
+    paidWithoutSubscription: [...(courseFeaturedOrders ?? []), ...(webinarFeaturedOrders ?? [])].filter((order) => String(order.payment_status ?? "").toLowerCase().includes("paid")).length,
+    failedPayments: [...(courseFeaturedOrders ?? []), ...(webinarFeaturedOrders ?? [])].filter((order) => String(order.payment_status ?? "").toLowerCase().includes("fail")).length,
+  };
 
   return (
     <div className="vi-page">
@@ -230,6 +241,18 @@ export default async function AdminDashboardPage() {
         </Link>
         <Link href="/admin/commission" className="vi-card p-4">
           Platform fee revenue (net of refunds): ₹{adminPlatformRevenue.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+        </Link>
+
+        <Link href="/admin/featured-reconciliation" className="vi-card p-4 md:col-span-2 xl:col-span-2">
+          <p className="text-base font-semibold">Featured Payment Issues</p>
+          <ul className="mt-2 space-y-1 text-sm text-slate-700">
+            <li>Pending featured orders older than 10 minutes: {featuredIssueCounts.pendingOlderThan10m}</li>
+            <li>Paid orders without active subscription: {featuredIssueCounts.paidWithoutSubscription}</li>
+            <li>Failed featured payments: {featuredIssueCounts.failedPayments}</li>
+            <li>Active subscription mismatch: review in reconciliation</li>
+            <li>Duplicate active subscriptions: review in reconciliation</li>
+          </ul>
+          <span className="mt-3 inline-block rounded bg-brand-600 px-3 py-1 text-xs font-medium text-white">Open Reconciliation</span>
         </Link>
       </div>
 
