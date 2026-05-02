@@ -15,7 +15,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const nowIso = new Date().toISOString();
   const cfg = CFG[params.orderType];
   const { data: order } = await params.supabase.from(cfg.orderTable).select("id,institute_id,created_by,plan_id,duration_days,currency,amount,final_payable_amount,payment_status,order_status,paid_at,razorpay_order_id,razorpay_payment_id,metadata,course_id,webinar_id").eq("id", params.orderId).maybeSingle();
-  if (!order) return { ok: false, error: "Order not found" };
+  if (!order) return { ok: false, error: "Order not found", debugStage: "order_loaded" };
 
   const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status").eq("order_id", params.orderId).limit(1).maybeSingle();
   if (existingForOrder) return { ok: true, idempotent: true, subscriptionId: existingForOrder.id };
@@ -31,12 +31,12 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     planCode: selectedPlan?.plan_code ?? selectedPlan?.code ?? null,
     durationDays: order.duration_days ?? selectedPlan?.duration_days ?? null,
   });
-  if (!selectedPlan) return { ok: false, error: "Plan not found for order" };
-  if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id" };
-  if (!order.created_by) return { ok: false, error: "Missing required field: order.created_by" };
-  if (!order.plan_id) return { ok: false, error: "Missing required field: order.plan_id" };
-  if (!(selectedPlan.plan_code ?? selectedPlan.code)) return { ok: false, error: "Missing required field: plan.plan_code" };
-  if (selectedPlan.price == null) return { ok: false, error: "Missing required field: plan.price" };
+  if (!selectedPlan) return { ok: false, error: "Plan not found for order", debugStage: "plan_loaded" };
+  if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
+  if (!order.created_by) return { ok: false, error: "Missing required field: order.created_by", debugStage: "plan_loaded" };
+  if (!order.plan_id) return { ok: false, error: "Missing required field: order.plan_id", debugStage: "plan_loaded" };
+  if (!(selectedPlan.plan_code ?? selectedPlan.code)) return { ok: false, error: "Missing required field: plan.plan_code", debugStage: "plan_loaded" };
+  if (selectedPlan.price == null) return { ok: false, error: "Missing required field: plan.price", debugStage: "plan_loaded" };
 
   const paidPatch: Record<string, unknown> = {
     payment_status: params.source === "manual_admin_grant" ? "pending" : "paid",
@@ -48,7 +48,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     metadata: { ...(order.metadata ?? {}), payment_method: "razorpay", activation_source: params.source },
   };
   const { error: orderUpdateError } = await params.supabase.from(cfg.orderTable).update(paidPatch).eq("id", params.orderId).neq("order_status", "cancelled");
-  if (orderUpdateError) return { ok: false, error: orderUpdateError.message };
+  if (orderUpdateError) return { ok: false, error: orderUpdateError.message, debugStage: "activation_helper_called" };
 
   const activePlan = state.currentPlanId ? state.planById.get(String(state.currentPlanId)) ?? null : null;
   if (state.activeSubscription && activePlan) {
@@ -66,12 +66,12 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
       metadata: { ...metadata, superseded: true, superseded_by_order_id: params.orderId, superseded_at: nowIso },
     };
     const { error: cancelError } = await params.supabase.from(cfg.subTable).update(cancelPatch).eq("id", state.activeSubscription.id).eq("status", "active");
-    if (cancelError) return { ok: false, error: cancelError.message };
+    if (cancelError) return { ok: false, error: cancelError.message, debugStage: "activation_helper_called" };
   }
 
   const startsAt = nowIso;
   const durationDays = Number(order.duration_days ?? selectedPlan.duration_days ?? 0);
-  if (!durationDays || durationDays <= 0) return { ok: false, error: "Missing required field: duration_days" };
+  if (!durationDays || durationDays <= 0) return { ok: false, error: "Missing required field: duration_days", debugStage: "plan_loaded" };
   const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
   const amountSource = params.orderType === "institute" ? "order.final_payable_amount_or_amount_or_plan_price" : "order.final_payable_amount_or_amount";
   const subPayload: Record<string, unknown> = {
@@ -106,11 +106,11 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const { data: inserted, error: subError } = await params.supabase.from(cfg.subTable).insert(subPayload).select("*").single();
   if (subError) {
     console.error("[featured/activate] insert_failed", { orderType: params.orderType, orderId: params.orderId, error: subError.message, details: subError.details, hint: subError.hint, code: subError.code });
-    return { ok: false, error: `${subError.message}${subError.details ? ` | details: ${subError.details}` : ""}${subError.hint ? ` | hint: ${subError.hint}` : ""}` };
+    return { ok: false, error: `${subError.message}${subError.details ? ` | details: ${subError.details}` : ""}${subError.hint ? ` | hint: ${subError.hint}` : ""}`, debugStage: "subscription_insert_failed" };
   }
 
   await writeAdminAuditLog({ adminUserId: params.actorUserId ?? null, actorUserId: params.actorUserId ?? null, action: `featured_${params.orderType}_activate`, targetTable: cfg.orderTable, targetId: params.orderId, description: params.reason ?? `source:${params.source}`, metadata: { source: params.source, subId: inserted?.id ?? null } });
-  return { ok: true, subscriptionId: inserted?.id ?? null, subscription: inserted };
+  return { ok: true, subscriptionId: inserted?.id ?? null, subscription: inserted, debugStage: "subscription_insert_success" };
 }
 
 export async function fetchRazorpayPaymentForOrder(razorpayOrderId: string) {
