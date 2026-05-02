@@ -1,51 +1,82 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
-import { finalizeCoursePaymentFromRazorpay, finalizeWebinarPaymentFromRazorpay } from "@/lib/payments/finalize";
+import { compareFeaturedPlans, getCurrentFeaturedState, type FeaturedType } from "@/lib/featured-state";
 
-export type FeaturedOrderType = "institute" | "course" | "webinar";
+export type FeaturedOrderType = FeaturedType;
 
-export async function activateFeaturedSubscriptionFromPaidOrder(params: {
-  supabase: SupabaseClient;
-  orderType: FeaturedOrderType;
-  orderId: string;
-  razorpayOrderId?: string;
-  razorpayPaymentId?: string;
-  razorpaySignature?: string;
-  source: "verify" | "webhook" | "admin_reconciliation" | "manual_admin_grant";
-  actorUserId?: string;
-  reason?: string;
-  razorpayPayload?: Record<string, unknown>;
-}) {
+const CFG = {
+  institute: { orderTable: "featured_listing_orders", subTable: "institute_featured_subscriptions", planTable: "featured_listing_plans", target: null },
+  course: { orderTable: "course_featured_orders", subTable: "course_featured_subscriptions", planTable: "course_featured_plans", target: "course_id" },
+  webinar: { orderTable: "webinar_featured_orders", subTable: "webinar_featured_subscriptions", planTable: "webinar_featured_plans", target: "webinar_id" },
+} as const;
+
+export async function activateFeaturedSubscriptionFromPaidOrder(params: { supabase: SupabaseClient; orderType: FeaturedOrderType; orderId: string; razorpayOrderId?: string; razorpayPaymentId?: string; razorpaySignature?: string; source: "verify" | "webhook" | "admin_reconciliation" | "manual_admin_grant"; actorUserId?: string; reason?: string; razorpayPayload?: Record<string, unknown>; }) {
   const nowIso = new Date().toISOString();
-  if (params.orderType === "course") {
-    const { data: order } = await params.supabase.from("course_featured_orders").select("id,razorpay_order_id,payment_status,order_status,razorpay_payment_id").eq("id", params.orderId).maybeSingle();
-    if (!order) return { ok: false, error: "Order not found" };
-    if (order.payment_status === "paid") {
-      const { data: existingSub } = await params.supabase.from("course_featured_subscriptions").select("id,status").eq("order_id", params.orderId).in("status", ["active", "scheduled"]).limit(1).maybeSingle();
-      if (existingSub) return { ok: true, idempotent: true };
+  const cfg = CFG[params.orderType];
+  const { data: order } = await params.supabase.from(cfg.orderTable).select("id,institute_id,plan_id,duration_days,currency,amount,payment_status,order_status,paid_at,razorpay_order_id,razorpay_payment_id,metadata,course_id,webinar_id").eq("id", params.orderId).maybeSingle();
+  if (!order) return { ok: false, error: "Order not found" };
+
+  const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status").eq("order_id", params.orderId).limit(1).maybeSingle();
+  if (existingForOrder) return { ok: true, idempotent: true, subscriptionId: existingForOrder.id };
+
+  const targetId = params.orderType === "course" ? order.course_id : params.orderType === "webinar" ? order.webinar_id : undefined;
+  const state = await getCurrentFeaturedState({ supabase: params.supabase, type: params.orderType, instituteId: order.institute_id, targetId });
+  const selectedPlan = state.planById.get(String(order.plan_id));
+  if (!selectedPlan) return { ok: false, error: "Plan not found for order" };
+
+  const paidPatch: Record<string, unknown> = {
+    payment_status: params.source === "manual_admin_grant" ? "pending" : "paid",
+    order_status: params.source === "manual_admin_grant" ? "pending" : "confirmed",
+    paid_at: params.source === "manual_admin_grant" ? order.paid_at : (order.paid_at ?? nowIso),
+    razorpay_payment_id: params.razorpayPaymentId ?? order.razorpay_payment_id ?? null,
+    razorpay_signature: params.razorpaySignature ?? null,
+    updated_at: nowIso,
+    metadata: { ...(order.metadata ?? {}), payment_method: "razorpay", activation_source: params.source },
+  };
+  const { error: orderUpdateError } = await params.supabase.from(cfg.orderTable).update(paidPatch).eq("id", params.orderId).neq("order_status", "cancelled");
+  if (orderUpdateError) return { ok: false, error: orderUpdateError.message };
+
+  const activePlan = state.currentPlanId ? state.planById.get(String(state.currentPlanId)) ?? null : null;
+  if (state.activeSubscription && activePlan) {
+    const cmp = compareFeaturedPlans(activePlan, selectedPlan);
+    if (cmp <= 0) {
+      return { ok: true, skipped: true, message: "Same/lower plan payment verified; subscription unchanged" };
     }
-    if (params.source !== "manual_admin_grant") {
-      const res = await finalizeCoursePaymentFromRazorpay({ supabase: params.supabase, razorpayOrderId: params.razorpayOrderId ?? order.razorpay_order_id, razorpayPaymentId: params.razorpayPaymentId ?? order.razorpay_payment_id, razorpaySignature: params.razorpaySignature, razorpayStatus: "captured", source: params.source === "webhook" ? "webhook" : "verify_api" });
-      if (res.error) return { ok: false, error: res.error };
-    }
-    await writeAdminAuditLog({ adminUserId: params.actorUserId ?? null, actorUserId: params.actorUserId ?? null, action: `featured_${params.orderType}_activate`, targetTable: "course_featured_orders", targetId: params.orderId, description: params.reason ?? `source:${params.source}`, metadata: { source: params.source, razorpayOrderId: params.razorpayOrderId ?? order.razorpay_order_id, razorpayPaymentId: params.razorpayPaymentId ?? order.razorpay_payment_id, razorpayPayload: params.razorpayPayload ?? null, at: nowIso } });
-    return { ok: true };
+    const metadata = (state.activeSubscription.metadata ?? {}) as Record<string, unknown>;
+    const cancelPatch: Record<string, unknown> = {
+      status: "cancelled",
+      cancelled_at: nowIso,
+      cancelled_reason: "upgraded",
+      updated_at: nowIso,
+      metadata: { ...metadata, superseded: true, superseded_by_order_id: params.orderId, superseded_at: nowIso },
+    };
+    await params.supabase.from(cfg.subTable).update(cancelPatch).eq("id", state.activeSubscription.id).eq("status", "active");
   }
-  if (params.orderType === "webinar") {
-    const { data: order } = await params.supabase.from("webinar_featured_orders").select("id,razorpay_order_id,payment_status,order_status,razorpay_payment_id").eq("id", params.orderId).maybeSingle();
-    if (!order) return { ok: false, error: "Order not found" };
-    if (params.source !== "manual_admin_grant") {
-      const res = await finalizeWebinarPaymentFromRazorpay({ supabase: params.supabase, razorpayOrderId: params.razorpayOrderId ?? order.razorpay_order_id, razorpayPaymentId: params.razorpayPaymentId ?? order.razorpay_payment_id, razorpaySignature: params.razorpaySignature, razorpayStatus: "captured", source: params.source === "webhook" ? "webhook" : "verify_api" });
-      if (res.error) return { ok: false, error: res.error };
-    }
-    await writeAdminAuditLog({ adminUserId: params.actorUserId ?? null, actorUserId: params.actorUserId ?? null, action: `featured_${params.orderType}_activate`, targetTable: "webinar_featured_orders", targetId: params.orderId, description: params.reason ?? `source:${params.source}`, metadata: { source: params.source } });
-    return { ok: true };
-  }
-  const { error } = await params.supabase.from("featured_listing_orders").update({ payment_status: params.source === "manual_admin_grant" ? "pending" : "paid", order_status: params.source === "manual_admin_grant" ? "pending" : "confirmed", paid_at: params.source === "manual_admin_grant" ? null : nowIso, razorpay_payment_id: params.razorpayPaymentId ?? null, razorpay_signature: params.razorpaySignature ?? null, updated_at: nowIso }).eq("id", params.orderId);
-  if (error) return { ok: false, error: error.message };
-  await writeAdminAuditLog({ adminUserId: params.actorUserId ?? null, actorUserId: params.actorUserId ?? null, action: `featured_${params.orderType}_activate`, targetTable: "featured_listing_orders", targetId: params.orderId, description: params.reason ?? `source:${params.source}`, metadata: { source: params.source } });
-  return { ok: true };
+
+  const startsAt = nowIso;
+  const endsAt = new Date(Date.now() + Number(order.duration_days) * 86400000).toISOString();
+  const subPayload: Record<string, unknown> = {
+    institute_id: order.institute_id,
+    order_id: order.id,
+    plan_id: order.plan_id,
+    plan_code: selectedPlan.plan_code ?? selectedPlan.code ?? null,
+    amount: order.amount,
+    currency: order.currency,
+    duration_days: order.duration_days,
+    starts_at: startsAt,
+    ends_at: endsAt,
+    status: "active",
+    activated_at: nowIso,
+    queued_from_previous: false,
+    created_by: params.actorUserId ?? null,
+  };
+  if (cfg.target && targetId) subPayload[cfg.target] = targetId;
+  const { data: inserted, error: subError } = await params.supabase.from(cfg.subTable).insert(subPayload).select("id").single();
+  if (subError) return { ok: false, error: subError.message };
+
+  await writeAdminAuditLog({ adminUserId: params.actorUserId ?? null, actorUserId: params.actorUserId ?? null, action: `featured_${params.orderType}_activate`, targetTable: cfg.orderTable, targetId: params.orderId, description: params.reason ?? `source:${params.source}`, metadata: { source: params.source, subId: inserted?.id ?? null } });
+  return { ok: true, subscriptionId: inserted?.id ?? null };
 }
 
 export async function fetchRazorpayPaymentForOrder(razorpayOrderId: string) {
