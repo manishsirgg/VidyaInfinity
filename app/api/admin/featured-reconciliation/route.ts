@@ -12,5 +12,17 @@ export async function GET() {
     admin.data.from("course_featured_orders").select("id,institute_id,course_id,plan_id,amount,currency,payment_status,order_status,razorpay_order_id,razorpay_payment_id,created_at,paid_at").order("created_at", { ascending: false }).limit(300),
     admin.data.from("webinar_featured_orders").select("id,institute_id,webinar_id,plan_id,amount,currency,payment_status,order_status,razorpay_order_id,razorpay_payment_id,created_at,paid_at").order("created_at", { ascending: false }).limit(300),
   ]);
-  return NextResponse.json({ instituteOrders: inst.data ?? [], courseOrders: course.data ?? [], webinarOrders: webinar.data ?? [] });
+  const instituteOrders = inst.data ?? [];
+  const paidConfirmedInstituteOrderIds = instituteOrders
+    .filter((row) => row.payment_status === "paid" && row.order_status === "confirmed")
+    .map((row) => row.id);
+  const { data: instituteSubs } = paidConfirmedInstituteOrderIds.length
+    ? await admin.data.from("institute_featured_subscriptions").select("order_id").in("order_id", paidConfirmedInstituteOrderIds)
+    : { data: [] as Array<{ order_id: string | null }> };
+  const subOrderIds = new Set((instituteSubs ?? []).map((row) => row.order_id).filter((v): v is string => Boolean(v)));
+  const markedInstituteOrders = instituteOrders.map((row) => ({
+    ...row,
+    missing_subscription: row.payment_status === "paid" && row.order_status === "confirmed" ? !subOrderIds.has(row.id) : false,
+  }));
+  return NextResponse.json({ instituteOrders: markedInstituteOrders, courseOrders: course.data ?? [], webinarOrders: webinar.data ?? [] });
 }
