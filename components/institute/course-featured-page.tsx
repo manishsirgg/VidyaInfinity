@@ -216,14 +216,6 @@ export function InstituteCourseFeaturedPageClient() {
         return;
       }
 
-      if (createBody?.payment_required === false) {
-        setMessageType("success");
-        setMessage("Subscription activated using wallet balance.");
-        await loadData();
-        setBusyCourseId(null);
-        return;
-      }
-
       if (createBody?.payment_required !== true) {
         setMessageType("error");
         setMessage("Invalid payment response from server.");

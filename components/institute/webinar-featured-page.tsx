@@ -219,14 +219,6 @@ export function InstituteWebinarFeaturedPageClient() {
         return;
       }
 
-      if (createBody?.payment_required === false) {
-        setMessageType("success");
-        setMessage("Subscription activated using wallet balance.");
-        await loadData();
-        setBusyWebinarId(null);
-        return;
-      }
-
       if (!createBody?.order?.id) {
         setMessageType("error");
         setMessage("Unable to initiate Razorpay order.");

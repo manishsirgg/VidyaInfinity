@@ -210,15 +210,6 @@ export default function InstituteFeaturedPage() {
         return;
       }
 
-      if (createBody?.payment_required === false || createBody?.payment?.paidFromWalletOnly) {
-        const walletUsed = Number(createBody?.wallet?.usedAmount ?? 0);
-        setMessageType("success");
-        setMessage(walletUsed > 0 ? "Subscription activated using wallet balance." : "Featured subscription completed successfully.");
-        await loadData();
-        setBusyPlanId(null);
-        return;
-      }
-
       if (!createBody?.order?.id) {
         setMessage("Unable to initiate payment for selected plan.");
         setMessageType("error");
