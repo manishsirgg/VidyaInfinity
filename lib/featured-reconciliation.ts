@@ -17,15 +17,45 @@ const CFG = {
   webinar: { orderTable: "webinar_featured_orders", subTable: "webinar_featured_subscriptions", planTable: "webinar_featured_plans", target: "webinar_id" },
 } as const;
 
+// IMPORTANT regression guard:
+// Keep order selects type-specific so institute queries never reference course_id/webinar_id.
+const ORDER_SELECT_BY_TYPE = {
+  institute: "id,institute_id,created_by,plan_id,amount,base_amount,final_payable_amount,currency,duration_days,payment_status,order_status,razorpay_order_id,razorpay_payment_id,paid_at,metadata",
+  course: "id,institute_id,created_by,course_id,plan_id,amount,currency,duration_days,payment_status,order_status,razorpay_order_id,razorpay_payment_id,paid_at,metadata",
+  webinar: "id,institute_id,created_by,webinar_id,plan_id,amount,currency,duration_days,payment_status,order_status,razorpay_order_id,razorpay_payment_id,paid_at,metadata",
+} as const;
+
+type FeaturedOrderRow = {
+  id: string;
+  institute_id: string | null;
+  created_by: string | null;
+  plan_id: string | null;
+  amount: number | null;
+  base_amount?: number | null;
+  final_payable_amount?: number | null;
+  currency: string | null;
+  duration_days: number | null;
+  payment_status: string | null;
+  order_status: string | null;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+  paid_at: string | null;
+  metadata: Record<string, unknown> | null;
+  course_id?: string | null;
+  webinar_id?: string | null;
+};
+
 export async function activateFeaturedSubscriptionFromPaidOrder(params: { supabase: SupabaseClient; orderType: FeaturedOrderType; orderId: string; razorpayOrderId?: string; razorpayPaymentId?: string; razorpaySignature?: string; source: "verify" | "webhook" | "admin_reconciliation" | "manual_admin_grant"; actorUserId?: string; reason?: string; razorpayPayload?: Record<string, unknown>; }) {
   const nowIso = new Date().toISOString();
   const cfg = CFG[params.orderType];
   const orderTable = orderTableByType[params.orderType];
-  const { data: order, error: orderLookupError } = await params.supabase
-    .from(orderTable)
-    .select("id,institute_id,created_by,plan_id,duration_days,currency,amount,final_payable_amount,payment_status,order_status,paid_at,razorpay_order_id,razorpay_payment_id,metadata,course_id,webinar_id")
-    .eq("id", params.orderId)
-    .maybeSingle();
+  const orderQuery =
+    params.orderType === "institute"
+      ? params.supabase.from("featured_listing_orders").select(ORDER_SELECT_BY_TYPE.institute).eq("id", params.orderId).maybeSingle()
+      : params.orderType === "course"
+        ? params.supabase.from("course_featured_orders").select(ORDER_SELECT_BY_TYPE.course).eq("id", params.orderId).maybeSingle()
+        : params.supabase.from("webinar_featured_orders").select(ORDER_SELECT_BY_TYPE.webinar).eq("id", params.orderId).maybeSingle();
+  const { data: order, error: orderLookupError } = (await orderQuery) as { data: FeaturedOrderRow | null; error: { message: string } | null };
   if (orderLookupError) return { ok: false, error: orderLookupError.message, debugStage: "order_loaded" };
   if (!order) {
     const missingMessage = params.orderType === "institute"
@@ -37,9 +67,15 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status").eq("order_id", params.orderId).limit(1).maybeSingle();
   if (existingForOrder) return { ok: true, idempotent: true, subscriptionId: existingForOrder.id };
 
-  const targetId = params.orderType === "course" ? order.course_id : params.orderType === "webinar" ? order.webinar_id : undefined;
+  if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
+  const targetId = params.orderType === "course" ? (order.course_id ?? undefined) : params.orderType === "webinar" ? (order.webinar_id ?? undefined) : undefined;
   const state = await getCurrentFeaturedState({ supabase: params.supabase, type: params.orderType, instituteId: order.institute_id, targetId });
-  const selectedPlan = state.planById.get(String(order.plan_id));
+  const { data: selectedPlan, error: planLookupError } = await params.supabase
+    .from(cfg.planTable)
+    .select("id,plan_code,code,price,currency,duration_days")
+    .eq("id", String(order.plan_id))
+    .maybeSingle<{ id: string; plan_code?: string | null; code?: string | null; price?: number | null; currency?: string | null; duration_days?: number | null }>();
+  if (planLookupError) return { ok: false, error: planLookupError.message, debugStage: "plan_loaded" };
   console.info("[featured/activate] plan_lookup", {
     orderType: params.orderType,
     orderId: params.orderId,
@@ -49,7 +85,6 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     durationDays: order.duration_days ?? selectedPlan?.duration_days ?? null,
   });
   if (!selectedPlan) return { ok: false, error: "Plan not found for order", debugStage: "plan_loaded" };
-  if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
   if (!order.created_by) return { ok: false, error: "Missing required field: order.created_by", debugStage: "plan_loaded" };
   if (!order.plan_id) return { ok: false, error: "Missing required field: order.plan_id", debugStage: "plan_loaded" };
   if (!(selectedPlan.plan_code ?? selectedPlan.code)) return { ok: false, error: "Missing required field: plan.plan_code", debugStage: "plan_loaded" };
@@ -67,14 +102,20 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const { error: orderUpdateError } = await params.supabase.from(cfg.orderTable).update(paidPatch).eq("id", params.orderId).neq("order_status", "cancelled");
   if (orderUpdateError) return { ok: false, error: orderUpdateError.message, debugStage: "activation_helper_called" };
 
+  let activeExistingQuery = params.supabase.from(cfg.subTable).select("id,status,metadata").eq("status", "active").lte("starts_at", nowIso).gt("ends_at", nowIso);
+  if (params.orderType === "institute") activeExistingQuery = activeExistingQuery.eq("institute_id", order.institute_id);
+  if (params.orderType === "course" && targetId) activeExistingQuery = activeExistingQuery.eq("course_id", targetId);
+  if (params.orderType === "webinar" && targetId) activeExistingQuery = activeExistingQuery.eq("webinar_id", targetId);
+  const { data: activeExisting } = await activeExistingQuery.order("starts_at", { ascending: false }).limit(1).maybeSingle();
+  const selectedPlanForCompare = state.planById.get(String(order.plan_id));
   const activePlan = state.currentPlanId ? state.planById.get(String(state.currentPlanId)) ?? null : null;
-  if (state.activeSubscription && activePlan) {
-    const cmp = compareFeaturedPlans(activePlan, selectedPlan);
+  if (activeExisting && activePlan && selectedPlanForCompare) {
+    const cmp = compareFeaturedPlans(activePlan, selectedPlanForCompare);
     if (cmp <= 0) {
       console.warn("[featured/activate] skipped_same_or_lower", { orderType: params.orderType, orderId: params.orderId, instituteId: order.institute_id });
       return { ok: true, skipped: true, message: "Same/lower plan payment verified; subscription unchanged" };
     }
-    const metadata = (state.activeSubscription.metadata ?? {}) as Record<string, unknown>;
+    const metadata = (activeExisting.metadata ?? {}) as Record<string, unknown>;
     const cancelPatch: Record<string, unknown> = {
       status: "cancelled",
       cancelled_at: nowIso,
@@ -82,7 +123,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
       updated_at: nowIso,
       metadata: { ...metadata, superseded: true, superseded_by_order_id: params.orderId, superseded_at: nowIso },
     };
-    const { error: cancelError } = await params.supabase.from(cfg.subTable).update(cancelPatch).eq("id", state.activeSubscription.id).eq("status", "active");
+    const { error: cancelError } = await params.supabase.from(cfg.subTable).update(cancelPatch).eq("id", activeExisting.id).eq("status", "active");
     if (cancelError) return { ok: false, error: cancelError.message, debugStage: "activation_helper_called" };
   }
 
@@ -97,7 +138,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     plan_id: order.plan_id,
     plan_code: selectedPlan.plan_code ?? selectedPlan.code ?? null,
     amount: params.orderType === "institute" ? Number(order.final_payable_amount ?? order.amount ?? selectedPlan.price ?? 0) : Number(order.final_payable_amount ?? order.amount ?? selectedPlan.price ?? 0),
-    currency: order.currency ?? "INR",
+    currency: order.currency ?? selectedPlan.currency ?? "INR",
     duration_days: durationDays,
     starts_at: startsAt,
     ends_at: endsAt,
