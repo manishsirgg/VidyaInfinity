@@ -127,7 +127,9 @@ export default function InstituteFeaturedPage() {
   }, [plans, summary]);
 
   const activePlanLabel = useMemo(() => {
-    if (!summary?.current) return "No active featured plan";
+    const now = Date.now();
+    const isCurrentActive = Boolean(summary?.current && summary.current.status === "active" && new Date(summary.current.starts_at).getTime() <= now && new Date(summary.current.ends_at).getTime() > now);
+    if (!isCurrentActive || !summary?.current) return "No active featured plan";
     const name = activePlan?.name ?? summary.current.plan_code;
     return `${name} · ${inr(Number(summary.current.amount ?? 0), summary.current.currency ?? "INR")}`;
   }, [activePlan, summary]);
@@ -252,15 +254,16 @@ export default function InstituteFeaturedPage() {
             return;
           }
 
+          await loadData();
+          const confirmedStatus = verifyBody?.status;
           setMessageType("success");
           setMessage(
-            verifyBody?.isUpgrade
-              ? "Upgrade successful. New featured plan is active immediately."
-              : verifyBody?.status === "scheduled"
-                ? "Payment successful. Plan purchased and scheduled to start after your current plan."
-                : "Payment successful. Featured listing is active now."
+            confirmedStatus === "active"
+              ? "Payment successful. Featured plan is active."
+              : confirmedStatus === "scheduled"
+                ? "Payment successful. Featured plan has been scheduled."
+                : "Payment received. Activation is being reconciled."
           );
-          await loadData();
           setBusyPlanId(null);
         },
         modal: {
@@ -314,22 +317,17 @@ export default function InstituteFeaturedPage() {
   function getPlanState(plan: FeaturedPlan) {
     const currentPlan = activePlan;
     if (!summary?.current || !currentPlan) {
-      return { disabled: false, badge: null as string | null, isUpgrade: false, willQueue: false };
+      return { disabled: false, badge: null as string | null, isUpgrade: false, willQueue: false, buttonLabel: "Activate plan" };
     }
 
+    const hasScheduledSamePlan = Boolean(summary?.nextScheduled && summary.nextScheduled.plan_id === plan.id);
     if (plan.id === currentPlan.id) {
-      return { disabled: true, badge: "Current Plan", isUpgrade: false, willQueue: false };
+      return { disabled: true, badge: "Current Plan", isUpgrade: false, willQueue: false, buttonLabel: "Current plan active" };
     }
-
-    if (plan.tierRank < currentPlan.tierRank) {
-      return { disabled: false, badge: "Lower Tier", isUpgrade: false, willQueue: true };
+    if (plan.tierRank <= currentPlan.tierRank || hasScheduledSamePlan) {
+      return { disabled: true, badge: "Lower/Equal", isUpgrade: false, willQueue: false, buttonLabel: "Lower plan unavailable" };
     }
-
-    if (plan.tierRank === currentPlan.tierRank) {
-      return { disabled: false, badge: "Scheduled", isUpgrade: false, willQueue: true };
-    }
-
-    return { disabled: false, badge: "Upgrade", isUpgrade: true, willQueue: false };
+    return { disabled: false, badge: "Upgrade", isUpgrade: true, willQueue: false, buttonLabel: "Upgrade to bigger plan" };
   }
 
   const renewalMode = summary?.current?.end_behavior === "auto_renew" ? "Auto renew enabled" : "Stops after expiry";
@@ -435,7 +433,7 @@ export default function InstituteFeaturedPage() {
                   onClick={() => void activatePlan(plan)}
                   className="mt-4 w-full rounded bg-brand-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {busyPlanId === plan.id ? "Processing..." : state.isUpgrade ? "Upgrade Now" : state.badge === "Current Plan" ? "Current Plan" : "Activate plan"}
+                  {busyPlanId === plan.id ? "Processing..." : state.buttonLabel}
                 </button>
               </article>
             );
