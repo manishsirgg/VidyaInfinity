@@ -3,10 +3,8 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
-import { loadInstituteWalletSnapshot } from "@/lib/institute/payouts";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type PlanRow = Record<string, unknown>;
@@ -208,14 +206,10 @@ export async function POST(request: Request) {
 
   const payableAfterUpgradeCredit = Math.max(0, baseAmount - creditAdjustmentAmount);
 
-  const walletSnapshot = await loadInstituteWalletSnapshot(institute.id, { ledgerLimit: 1, payoutHistoryLimit: 1 });
-  if (walletSnapshot.error || !walletSnapshot.data) {
-    return NextResponse.json({ error: walletSnapshot.error ?? "Unable to load institute wallet snapshot." }, { status: 500 });
-  }
-  const walletAvailable = Math.max(0, toNumber(walletSnapshot.data.summary.available_balance));
-  const walletAdjustmentAmount = walletAvailable >= payableAfterUpgradeCredit ? payableAfterUpgradeCredit : 0;
-  const finalPayableAmount = Math.max(0, payableAfterUpgradeCredit - walletAdjustmentAmount);
-  const totalCreditAdjustmentAmount = Math.max(0, creditAdjustmentAmount + walletAdjustmentAmount);
+  const walletAvailable = 0;
+  const walletAdjustmentAmount = 0;
+  const finalPayableAmount = payableAfterUpgradeCredit;
+  const totalCreditAdjustmentAmount = creditAdjustmentAmount;
 
 
   if (previewOnly) {
@@ -232,27 +226,24 @@ export async function POST(request: Request) {
     });
   }
 
-  let order: { id: string; receipt?: string | null } | null = null;
-  if (finalPayableAmount > 0) {
-    const razorpay = getRazorpayClient();
-    if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
+  const razorpay = getRazorpayClient();
+  if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
 
-    const receipt = `featured_${String(planId).slice(0, 8)}_${Date.now()}`;
-    order = await razorpay.data.orders.create({
-      amount: Math.round(finalPayableAmount * 100),
-      currency,
-      receipt,
-      notes: {
-        instituteId: institute.id,
-        userId: auth.user.id,
-        planId,
-        productType: "featured_listing_subscription",
-        isUpgrade: isUpgrade ? "true" : "false",
-        queuedOrder: queuedOrder ? "true" : "false",
-        autoRenewRequested: autoRenewRequested ? "true" : "false",
-      },
-    });
-  }
+  const receipt = `featured_${String(planId).slice(0, 8)}_${Date.now()}`;
+  const order = await razorpay.data.orders.create({
+    amount: Math.round(finalPayableAmount * 100),
+    currency,
+    receipt,
+    notes: {
+      instituteId: institute.id,
+      userId: auth.user.id,
+      planId,
+      productType: "featured_listing_subscription",
+      isUpgrade: isUpgrade ? "true" : "false",
+      queuedOrder: queuedOrder ? "true" : "false",
+      autoRenewRequested: autoRenewRequested ? "true" : "false",
+    },
+  });
 
   const { data: insertedOrder, error: insertError } = await admin.data
     .from("featured_listing_orders")
@@ -383,56 +374,7 @@ export async function POST(request: Request) {
     instantActivationStatus = status;
   }
 
-  if (walletAdjustmentAmount > 0) {
-    const nowIso = new Date().toISOString();
-    const debitInsert = await admin.data.from("institute_payouts").insert({
-      institute_id: institute.id,
-      amount_payable: -walletAdjustmentAmount,
-      payout_amount: -walletAdjustmentAmount,
-      gross_amount: 0,
-      platform_fee_amount: 0,
-      refund_amount: 0,
-      payout_status: "available",
-      payout_source: "refund_adjustment",
-      source_reference_type: "featured_wallet_debit",
-      source_reference_id: insertedOrder.id,
-      payout_currency: "INR",
-      due_at: nowIso,
-      scheduled_at: nowIso,
-      created_at: nowIso,
-      updated_at: nowIso,
-      metadata: {
-        reason: "featured_subscription_wallet_debit",
-        order_table: "featured_listing_orders",
-        order_id: insertedOrder.id,
-      },
-    });
-    if (debitInsert.error && debitInsert.error.code !== "23505") {
-      return NextResponse.json({ error: debitInsert.error.message }, { status: 500 });
-    }
 
-    const auditResult = await logInstituteWalletEvent({
-      instituteId: institute.id,
-      eventType: "featured_subscription_wallet_debit",
-      sourceTable: "featured_listing_orders",
-      sourceId: insertedOrder.id,
-      orderId: insertedOrder.id,
-      orderKind: "featured_institute",
-      amount: walletAdjustmentAmount,
-      actorUserId: auth.user.id,
-      actorRole: "institute",
-      idempotencyKey: `wallet_debit:featured_listing_orders:${insertedOrder.id}`,
-      metadata: {
-        payment_method: "wallet",
-        balance_before: walletAvailable,
-        balance_after: Math.max(0, walletAvailable - walletAdjustmentAmount),
-        plan_id: planId,
-        target_type: "institute",
-        target_id: institute.id,
-      },
-    });
-    if (!auditResult.ok) return NextResponse.json({ error: auditResult.error }, { status: 500 });
-  }
 
   return NextResponse.json({
     order,
