@@ -9,6 +9,7 @@ import { reconcileRefundAccessAndOrderState } from "@/lib/payments/refund-reconc
 import { reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
 import { finalizeCoursePaymentFromRazorpay, finalizeWebinarPaymentFromRazorpay } from "@/lib/payments/finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { activateFeaturedSubscriptionFromPaidOrder, fetchRazorpayPaymentForOrder } from "@/lib/featured-reconciliation";
 import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -352,8 +353,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, skipped: true, reason: "Missing order id" });
     }
 
+    
     const isPaidEvent = eventType === "payment.captured" || eventType === "order.paid";
     const isFailureEvent = eventType === "payment.failed" || paymentStatus === "failed";
+
+    if (isPaidEvent) {
+      const featuredTables = [
+        { table: "featured_listing_orders", type: "institute" as const },
+        { table: "course_featured_orders", type: "course" as const },
+        { table: "webinar_featured_orders", type: "webinar" as const },
+      ];
+      for (const item of featuredTables) {
+        const { data: featureOrder } = await admin.data.from(item.table).select("id,payment_status,razorpay_order_id,razorpay_payment_id").eq("razorpay_order_id", razorpayOrderId).limit(1).maybeSingle();
+        if (!featureOrder) continue;
+        const paymentIdResolved = razorpayPaymentId ?? featureOrder.razorpay_payment_id ?? (await fetchRazorpayPaymentForOrder(razorpayOrderId)).paymentId ?? undefined;
+        if (featureOrder.payment_status === "paid") {
+          await updateWebhookLogBestEffort({ admin: admin.data, enabled: webhookLogAvailable, logId: insertedLogId, patch: { processed: true, processed_at: new Date().toISOString(), notes: `${item.type}_featured_idempotent` }, eventType, eventId });
+          return NextResponse.json({ ok: true, reconciled: `${item.type}_featured_idempotent` });
+        }
+        const activated = await activateFeaturedSubscriptionFromPaidOrder({ supabase: admin.data, orderType: item.type, orderId: featureOrder.id, razorpayOrderId, razorpayPaymentId: paymentIdResolved, razorpaySignature: signature || undefined, source: "webhook", razorpayPayload: payload });
+        if (activated.ok) {
+          await updateWebhookLogBestEffort({ admin: admin.data, enabled: webhookLogAvailable, logId: insertedLogId, patch: { processed: true, processed_at: new Date().toISOString(), notes: `${item.type}_featured_reconciled` }, eventType, eventId });
+          return NextResponse.json({ ok: true, reconciled: `${item.type}_featured_order` });
+        }
+      }
+    }
+
 
     const courseOrderLookupClauses = [`razorpay_order_id.eq.${razorpayOrderId}`];
     if (noteCourseOrderId) courseOrderLookupClauses.push(`id.eq.${noteCourseOrderId}`);
