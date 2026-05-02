@@ -70,9 +70,12 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
   const targetId = params.orderType === "course" ? (order.course_id ?? undefined) : params.orderType === "webinar" ? (order.webinar_id ?? undefined) : undefined;
   const state = await getCurrentFeaturedState({ supabase: params.supabase, type: params.orderType, instituteId: order.institute_id, targetId });
+  // featured_listing_plans uses plan_code and price, not code/amount.
   const { data: selectedPlan, error: planLookupError } = await params.supabase
     .from(cfg.planTable)
-    .select("id,plan_code,code,price,currency,duration_days")
+    .select(params.orderType === "institute"
+      ? "id,name,slug,plan_code,duration_days,price,currency,metadata"
+      : "id,plan_code,code,price,currency,duration_days")
     .eq("id", String(order.plan_id))
     .maybeSingle<{ id: string; plan_code?: string | null; code?: string | null; price?: number | null; currency?: string | null; duration_days?: number | null }>();
   if (planLookupError) return { ok: false, error: planLookupError.message, debugStage: "plan_loaded" };
@@ -81,13 +84,16 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     orderId: params.orderId,
     planId: order.plan_id,
     planFound: Boolean(selectedPlan),
-    planCode: selectedPlan?.plan_code ?? selectedPlan?.code ?? null,
+    planCode: params.orderType === "institute" ? (selectedPlan?.plan_code ?? null) : (selectedPlan?.plan_code ?? selectedPlan?.code ?? null),
     durationDays: order.duration_days ?? selectedPlan?.duration_days ?? null,
   });
   if (!selectedPlan) return { ok: false, error: "Plan not found for order", debugStage: "plan_loaded" };
+  const normalizedPlanCode = params.orderType === "institute" ? (selectedPlan.plan_code ?? null) : (selectedPlan.plan_code ?? selectedPlan.code ?? null);
+  const normalizedAmount = params.orderType === "institute" ? selectedPlan.price : selectedPlan.price;
+  const normalizedDurationDays = params.orderType === "institute" ? selectedPlan.duration_days : selectedPlan.duration_days;
   if (!order.created_by) return { ok: false, error: "Missing required field: order.created_by", debugStage: "plan_loaded" };
   if (!order.plan_id) return { ok: false, error: "Missing required field: order.plan_id", debugStage: "plan_loaded" };
-  if (!(selectedPlan.plan_code ?? selectedPlan.code)) return { ok: false, error: "Missing required field: plan.plan_code", debugStage: "plan_loaded" };
+  if (!normalizedPlanCode) return { ok: false, error: "Missing required field: plan.plan_code", debugStage: "plan_loaded" };
   if (selectedPlan.price == null) return { ok: false, error: "Missing required field: plan.price", debugStage: "plan_loaded" };
 
   const paidPatch: Record<string, unknown> = {
@@ -128,7 +134,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   }
 
   const startsAt = nowIso;
-  const durationDays = Number(order.duration_days ?? selectedPlan.duration_days ?? 0);
+  const durationDays = Number(order.duration_days ?? normalizedDurationDays ?? 0);
   if (!durationDays || durationDays <= 0) return { ok: false, error: "Missing required field: duration_days", debugStage: "plan_loaded" };
   const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
   const amountSource = params.orderType === "institute" ? "order.final_payable_amount_or_amount_or_plan_price" : "order.final_payable_amount_or_amount";
@@ -136,8 +142,8 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     institute_id: order.institute_id,
     order_id: order.id,
     plan_id: order.plan_id,
-    plan_code: selectedPlan.plan_code ?? selectedPlan.code ?? null,
-    amount: params.orderType === "institute" ? Number(order.final_payable_amount ?? order.amount ?? selectedPlan.price ?? 0) : Number(order.final_payable_amount ?? order.amount ?? selectedPlan.price ?? 0),
+    plan_code: normalizedPlanCode,
+    amount: params.orderType === "institute" ? Number(order.final_payable_amount ?? order.amount ?? normalizedAmount ?? 0) : Number(order.final_payable_amount ?? order.amount ?? normalizedAmount ?? 0),
     currency: order.currency ?? selectedPlan.currency ?? "INR",
     duration_days: durationDays,
     starts_at: startsAt,
