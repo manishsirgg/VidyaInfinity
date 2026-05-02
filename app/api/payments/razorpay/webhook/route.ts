@@ -367,10 +367,6 @@ export async function POST(request: Request) {
         const { data: featureOrder } = await admin.data.from(item.table).select("id,payment_status,razorpay_order_id,razorpay_payment_id").eq("razorpay_order_id", razorpayOrderId).limit(1).maybeSingle();
         if (!featureOrder) continue;
         const paymentIdResolved = razorpayPaymentId ?? featureOrder.razorpay_payment_id ?? (await fetchRazorpayPaymentForOrder(razorpayOrderId)).paymentId ?? undefined;
-        if (featureOrder.payment_status === "paid") {
-          await updateWebhookLogBestEffort({ admin: admin.data, enabled: webhookLogAvailable, logId: insertedLogId, patch: { processed: true, processed_at: new Date().toISOString(), notes: `${item.type}_featured_idempotent` }, eventType, eventId });
-          return NextResponse.json({ ok: true, reconciled: `${item.type}_featured_idempotent` });
-        }
         const activated = await activateFeaturedSubscriptionFromPaidOrder({ supabase: admin.data, orderType: item.type, orderId: featureOrder.id, razorpayOrderId, razorpayPaymentId: paymentIdResolved, razorpaySignature: signature || undefined, source: "webhook", razorpayPayload: payload });
         if (activated.ok) {
           await updateWebhookLogBestEffort({ admin: admin.data, enabled: webhookLogAvailable, logId: insertedLogId, patch: { processed: true, processed_at: new Date().toISOString(), notes: `${item.type}_featured_reconciled` }, eventType, eventId });

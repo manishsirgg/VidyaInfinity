@@ -8,10 +8,17 @@ export async function POST(request: Request) {
   if ("error" in auth) return auth.error;
   const body = (await request.json()) as { orderType: FeaturedOrderType; orderId: string; razorpayOrderId: string };
   const admin = getSupabaseAdmin(); if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
-  const fetched = await fetchRazorpayPaymentForOrder(body.razorpayOrderId);
-  if (!fetched.ok) return NextResponse.json({ error: fetched.error }, { status: 502 });
-  if (!fetched.paymentId) return NextResponse.json({ ok: true, status: "pending" });
-  const act = await activateFeaturedSubscriptionFromPaidOrder({ supabase: admin.data, orderType: body.orderType, orderId: body.orderId, razorpayOrderId: body.razorpayOrderId, razorpayPaymentId: fetched.paymentId, source: "admin_reconciliation", actorUserId: auth.user.id });
+  const orderTable = body.orderType === "institute" ? "featured_listing_orders" : body.orderType === "course" ? "course_featured_orders" : "webinar_featured_orders";
+  const { data: orderRow } = await admin.data.from(orderTable).select("id,payment_status,order_status,razorpay_payment_id").eq("id", body.orderId).maybeSingle<{ id: string; payment_status: string; order_status: string; razorpay_payment_id: string | null }>();
+  const shouldActivateLocalPaid = body.orderType === "institute" && orderRow?.payment_status === "paid" && orderRow?.order_status === "confirmed" && Boolean(orderRow.razorpay_payment_id);
+  let paymentIdForActivation = orderRow?.razorpay_payment_id ?? undefined;
+  if (!shouldActivateLocalPaid) {
+    const fetched = await fetchRazorpayPaymentForOrder(body.razorpayOrderId);
+    if (!fetched.ok) return NextResponse.json({ error: fetched.error }, { status: 502 });
+    if (!fetched.paymentId) return NextResponse.json({ ok: true, status: "pending" });
+    paymentIdForActivation = fetched.paymentId;
+  }
+  const act = await activateFeaturedSubscriptionFromPaidOrder({ supabase: admin.data, orderType: body.orderType, orderId: body.orderId, razorpayOrderId: body.razorpayOrderId, razorpayPaymentId: paymentIdForActivation, source: "admin_reconciliation", actorUserId: auth.user.id });
   if (!act.ok) return NextResponse.json({ error: act.error }, { status: 500 });
   return NextResponse.json({ ok: true, status: "paid_reconciled" });
 }

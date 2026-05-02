@@ -23,6 +23,8 @@ export async function GET() {
   const markedInstituteOrders = instituteOrders.map((row) => ({
     ...row,
     missing_subscription: row.payment_status === "paid" && row.order_status === "confirmed" ? !subOrderIds.has(row.id) : false,
+    issue_label: row.payment_status === "paid" && row.order_status === "confirmed" && !subOrderIds.has(row.id) ? "Paid institute featured order missing subscription" : null,
+    recommended_action: row.payment_status === "paid" && row.order_status === "confirmed" && !subOrderIds.has(row.id) ? "Create missing active subscription" : null,
   }));
   return NextResponse.json({ instituteOrders: markedInstituteOrders, courseOrders: course.data ?? [], webinarOrders: webinar.data ?? [] });
 }
