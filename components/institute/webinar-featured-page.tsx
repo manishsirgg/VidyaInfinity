@@ -337,16 +337,19 @@ export function InstituteWebinarFeaturedPageClient() {
             const selectedPlan = plans.find((plan) => plan.id === selectedPlanId);
             const isUpgrade = Boolean(state.active && selectedPlan && activePlan && isHigherTierPlan(selectedPlan, activePlan));
             const hasActivePlan = Boolean(state.active);
-            const disableForNonUpgradeWhileActive = Boolean(hasActivePlan && selectedPlan && activePlan && !isHigherTierPlan(selectedPlan, activePlan));
-            const hasScheduledPlan = Boolean(state.active !== null && state.scheduled !== null);
-            const isButtonDisabled = Boolean(busyWebinarId) || plans.length === 0 || disableForNonUpgradeWhileActive || (hasScheduledPlan && !isUpgrade);
+            const samePlanSelected = Boolean(selectedPlan && activePlan && selectedPlan.id === activePlan.id);
+            const lowerOrEqualSelected = Boolean(hasActivePlan && selectedPlan && activePlan && !isHigherTierPlan(selectedPlan, activePlan));
+            const duplicateScheduledSamePlan = Boolean(state.scheduled && selectedPlan && state.scheduled.plan_id === selectedPlan.id);
+            const isButtonDisabled = Boolean(busyWebinarId) || plans.length === 0 || lowerOrEqualSelected || duplicateScheduledSamePlan;
             const actionText = hasActivePlan
               ? isUpgrade
                 ? "Upgrade to bigger plan"
-                : selectedPlan && activePlan && !isHigherTierPlan(selectedPlan, activePlan)
-                  ? "Choose higher plan to upgrade"
-                  : "Current plan active (choose higher to upgrade)"
-              : "Feature this webinar";
+                : samePlanSelected
+                  ? "Current plan active"
+                  : "Lower plan unavailable"
+              : duplicateScheduledSamePlan
+                ? "Current plan active"
+                : "Feature this webinar";
 
             return (
               <div key={webinar.id} className="rounded border p-4">

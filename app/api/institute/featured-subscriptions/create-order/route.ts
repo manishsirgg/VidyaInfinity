@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
+import { compareFeaturedPlans, getCurrentFeaturedState } from "@/lib/featured-state";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type PlanRow = Record<string, unknown>;
@@ -172,6 +173,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid featured plan configuration" }, { status: 400 });
   }
 
+  const featuredState = await getCurrentFeaturedState({ supabase: admin.data, type: "institute", instituteId: institute.id });
+  const selectedPlan = { id: planId, plan_code: typeof plan.plan_code === "string" ? plan.plan_code : null, code: typeof plan.code === "string" ? plan.code : null, duration_days: durationDays, amount: baseAmount, price: toNumber(plan.price), tier_rank: selectedTierRank };
+  const currentPlan = featuredState.currentPlanId ? featuredState.planById.get(String(featuredState.currentPlanId)) ?? null : null;
+  if (featuredState.activeSubscription && currentPlan) {
+    const cmp = compareFeaturedPlans(currentPlan, selectedPlan);
+    if (cmp === 0 || String(currentPlan.id) === String(selectedPlan.id)) {
+      return NextResponse.json({ error: "This plan is already active." }, { status: 409 });
+    }
+    if (cmp < 0) {
+      return NextResponse.json({ error: "You already have an active higher or equal featured plan." }, { status: 409 });
+    }
+  }
+
   const active = await getCurrentActiveSubscription(admin.data, institute.id);
   const window = await getNextSubscriptionWindow(admin.data, institute.id);
   let currentTierRank = -1;
@@ -260,7 +274,7 @@ export async function POST(request: Request) {
       currency,
       duration_days: durationDays,
       payment_status: finalPayableAmount > 0 ? "pending" : "paid",
-      order_status: finalPayableAmount > 0 ? "pending" : "paid",
+      order_status: "pending",
       auto_renew_requested: Boolean(autoRenewRequested),
       razorpay_order_id: order?.id ?? null,
       razorpay_receipt: order?.receipt ?? null,
@@ -270,9 +284,7 @@ export async function POST(request: Request) {
         queued_order: queuedOrder,
         selected_tier_rank: selectedTierRank,
         current_tier_rank: currentTierRank,
-        wallet_available_amount: walletAvailable,
-        wallet_adjustment_amount: walletAdjustmentAmount,
-        payment_method: finalPayableAmount > 0 ? "razorpay" : "wallet",
+        payment_method: "razorpay",
         upgrade_credit_amount: creditAdjustmentAmount,
       },
     })
@@ -380,9 +392,9 @@ export async function POST(request: Request) {
     order,
     orderRecordId: insertedOrder.id,
     plan: { id: planId, baseAmount, creditAdjustmentAmount: totalCreditAdjustmentAmount, finalPayableAmount, currency, durationDays },
-    wallet: { availableBalance: walletAvailable, usedAmount: walletAdjustmentAmount },
-    payment: { requiresRazorpay: finalPayableAmount > 0, paidFromWalletOnly: finalPayableAmount <= 0 },
-    payment_required: finalPayableAmount > 0,
+    wallet: { availableBalance: 0, usedAmount: 0 },
+    payment: { requiresRazorpay: true, paidFromWalletOnly: false },
+    payment_required: true,
     subscription: { activated: finalPayableAmount <= 0, status: instantActivationStatus },
     purchaseMode: {
       isUpgrade,
