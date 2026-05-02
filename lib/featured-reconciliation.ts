@@ -14,7 +14,7 @@ const CFG = {
 export async function activateFeaturedSubscriptionFromPaidOrder(params: { supabase: SupabaseClient; orderType: FeaturedOrderType; orderId: string; razorpayOrderId?: string; razorpayPaymentId?: string; razorpaySignature?: string; source: "verify" | "webhook" | "admin_reconciliation" | "manual_admin_grant"; actorUserId?: string; reason?: string; razorpayPayload?: Record<string, unknown>; }) {
   const nowIso = new Date().toISOString();
   const cfg = CFG[params.orderType];
-  const { data: order } = await params.supabase.from(cfg.orderTable).select("id,institute_id,plan_id,duration_days,currency,amount,payment_status,order_status,paid_at,razorpay_order_id,razorpay_payment_id,metadata,course_id,webinar_id").eq("id", params.orderId).maybeSingle();
+  const { data: order } = await params.supabase.from(cfg.orderTable).select("id,institute_id,plan_id,duration_days,currency,amount,final_payable_amount,payment_status,order_status,paid_at,razorpay_order_id,razorpay_payment_id,metadata,course_id,webinar_id").eq("id", params.orderId).maybeSingle();
   if (!order) return { ok: false, error: "Order not found" };
 
   const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status").eq("order_id", params.orderId).limit(1).maybeSingle();
@@ -61,7 +61,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     order_id: order.id,
     plan_id: order.plan_id,
     plan_code: selectedPlan.plan_code ?? selectedPlan.code ?? null,
-    amount: order.amount,
+    amount: Number(order.final_payable_amount ?? order.amount ?? 0),
     currency: order.currency,
     duration_days: order.duration_days,
     starts_at: startsAt,

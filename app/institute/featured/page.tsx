@@ -206,6 +206,12 @@ export default function InstituteFeaturedPage() {
 
       const createBody = await createResponse.json().catch(() => null);
       if (!createResponse.ok) {
+        if (createResponse.status === 409) {
+          setMessage(createBody?.error ?? "Selected plan cannot be activated right now.");
+          setMessageType("info");
+          setBusyPlanId(null);
+          return;
+        }
         setMessage(createBody?.error ?? "Unable to initiate payment for selected plan.");
         setMessageType("error");
         setBusyPlanId(null);
@@ -227,6 +233,12 @@ export default function InstituteFeaturedPage() {
       }
 
       const order = createBody.order as { id: string; amount: number; currency: string };
+      if (!order?.id) {
+        setMessage("Unable to initiate payment for selected plan.");
+        setMessageType("error");
+        setBusyPlanId(null);
+        return;
+      }
 
       const razorpay = new window.Razorpay({
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,

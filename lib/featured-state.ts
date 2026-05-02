@@ -39,7 +39,13 @@ export async function getCurrentFeaturedState(params: { supabase: SupabaseClient
   const scheduledSubscription = subs.filter((s)=> s.status === "scheduled" || new Date(s.starts_at).getTime() > nowMs)
     .sort((a,b)=>new Date(a.starts_at).getTime()-new Date(b.starts_at).getTime())[0] ?? null;
   const { data: plans } = await params.supabase.from(planTable).select("id,plan_code,code,duration_days,amount,price,tier_rank").or("is_active.eq.true,is_active.is.null");
-  const planRows = (plans ?? []) as Plan[];
+  const planRows = ((plans ?? []) as Plan[]).map((plan) => {
+    if (params.type === "institute") {
+      const canonicalAmount = Number(plan.price ?? plan.amount ?? 0);
+      return { ...plan, amount: canonicalAmount, price: canonicalAmount };
+    }
+    return plan;
+  });
   const planById = new Map(planRows.map((p)=>[String(p.id), p]));
   const currentPlan = activeSubscription?.plan_id ? planById.get(String(activeSubscription.plan_id)) ?? null : null;
   return { activeSubscription, scheduledSubscription, currentPlanId: currentPlan?.id ?? activeSubscription?.plan_id ?? null, currentPlanCode: currentPlan?.plan_code ?? currentPlan?.code ?? null, currentPlanDurationDays: currentPlan?.duration_days ?? activeSubscription?.duration_days ?? null, currentPlanAmount: currentPlan?.amount ?? activeSubscription?.amount ?? null, expiresAt: activeSubscription?.ends_at ?? null, duplicateActiveWarning, plans: planRows, planById };

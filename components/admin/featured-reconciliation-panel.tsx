@@ -18,6 +18,7 @@ type ReconciliationOrder = {
   paid_at: string | null;
   course_id?: string | null;
   webinar_id?: string | null;
+  missing_subscription?: boolean;
 };
 
 type Row = ReconciliationOrder & {
@@ -68,6 +69,9 @@ export function FeaturedReconciliationPanel() {
           if (pendingOver10m) {
             issue = "pending_over_10m";
             recommendedAction = "Reconcile with Razorpay";
+          } else if (isPaid && orderType === "institute" && order.missing_subscription) {
+            issue = "paid_needs_reconciliation";
+            recommendedAction = "Create missing active subscription";
           } else if (isPaid) {
             issue = "paid_needs_reconciliation";
             recommendedAction = "Reconcile or manual correction";
