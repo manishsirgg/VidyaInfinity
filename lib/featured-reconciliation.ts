@@ -42,7 +42,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: {
     await writeAdminAuditLog({ adminUserId: params.actorUserId ?? null, actorUserId: params.actorUserId ?? null, action: `featured_${params.orderType}_activate`, targetTable: "webinar_featured_orders", targetId: params.orderId, description: params.reason ?? `source:${params.source}`, metadata: { source: params.source } });
     return { ok: true };
   }
-  const { error } = await params.supabase.from("featured_listing_orders").update({ payment_status: params.source === "manual_admin_grant" ? "pending" : "paid", order_status: params.source === "manual_admin_grant" ? "manual_granted" : "confirmed", paid_at: params.source === "manual_admin_grant" ? null : nowIso, razorpay_payment_id: params.razorpayPaymentId ?? null, razorpay_signature: params.razorpaySignature ?? null, updated_at: nowIso }).eq("id", params.orderId);
+  const { error } = await params.supabase.from("featured_listing_orders").update({ payment_status: params.source === "manual_admin_grant" ? "pending" : "paid", order_status: params.source === "manual_admin_grant" ? "pending" : "confirmed", paid_at: params.source === "manual_admin_grant" ? null : nowIso, razorpay_payment_id: params.razorpayPaymentId ?? null, razorpay_signature: params.razorpaySignature ?? null, updated_at: nowIso }).eq("id", params.orderId);
   if (error) return { ok: false, error: error.message };
   await writeAdminAuditLog({ adminUserId: params.actorUserId ?? null, actorUserId: params.actorUserId ?? null, action: `featured_${params.orderType}_activate`, targetTable: "featured_listing_orders", targetId: params.orderId, description: params.reason ?? `source:${params.source}`, metadata: { source: params.source } });
   return { ok: true };
