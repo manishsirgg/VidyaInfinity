@@ -5,6 +5,7 @@ import { resolveFeaturedPlan } from "@/lib/featured-plan-resolution";
 import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser } from "@/lib/course-featured";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
+import { compareFeaturedPlans, getCurrentFeaturedState } from "@/lib/featured-state";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type RequestBody = {
@@ -246,6 +247,18 @@ export async function POST(request: Request) {
     });
 
     const payableAmount = amount;
+    const state = await getCurrentFeaturedState({ supabase: admin.data, type: "course", instituteId, targetId: body.courseId });
+    const selectedPlan = { id: String(resolvedPlan.id), plan_code: resolvedPlan.plan_code, code: resolvedPlan.code, duration_days: durationDays, amount, price: resolvedPlan.price, tier_rank: resolvedPlan.tier_rank };
+    const activePlan = state.currentPlanId ? state.planById.get(String(state.currentPlanId)) ?? null : null;
+    if (state.activeSubscription && activePlan) {
+      const cmp = compareFeaturedPlans(activePlan, selectedPlan);
+      if (cmp === 0 || String(activePlan.id) === String(selectedPlan.id)) {
+        return NextResponse.json({ error: "This plan is already active." }, { status: 409 });
+      }
+      if (cmp < 0) {
+        return NextResponse.json({ error: "You already have an active higher or equal featured plan." }, { status: 409 });
+      }
+    }
 
     stage = "local_order_insert";
     const nowIso = new Date().toISOString();
@@ -271,6 +284,7 @@ export async function POST(request: Request) {
           plan_resolution: planResolution.resolution,
           razorpay_stage: "not_created",
           payment_method: "razorpay",
+          is_upgrade: Boolean(state.activeSubscription),
         },
         updated_at: nowIso,
       })
@@ -305,7 +319,7 @@ export async function POST(request: Request) {
       await admin.data
         .from("course_featured_orders")
         .update({
-          order_status: "failed",
+          order_status: "cancelled",
           metadata: {
             source: "course_featured_create_order_api",
             tier_rank: resolvedPlan.tier_rank ?? null,
@@ -355,7 +369,7 @@ export async function POST(request: Request) {
       await admin.data
         .from("course_featured_orders")
         .update({
-          order_status: "failed",
+          order_status: "cancelled",
           metadata: {
             source: "course_featured_create_order_api",
             tier_rank: resolvedPlan.tier_rank ?? null,
