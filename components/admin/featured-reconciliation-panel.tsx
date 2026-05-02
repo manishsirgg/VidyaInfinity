@@ -110,7 +110,11 @@ export function FeaturedReconciliationPanel() {
       }
       const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const body = await response.json();
-      if (!response.ok) throw new Error(body?.error ?? body?.message ?? "Action failed.");
+      if (!response.ok) {
+        console.error("[featured-reconciliation] action_failed", { path, payload, status: response.status, body });
+        const errorText = [body?.message, body?.error, body?.debug_stage ? `stage: ${body.debug_stage}` : null].filter(Boolean).join(" | ");
+        throw new Error(errorText || "Action failed.");
+      }
       setToast({ type: "success", text: body?.message ?? successText });
       setModal(null);
       setReason("");
