@@ -65,10 +65,20 @@ export async function POST(request: Request) {
 
   if (!existingOrder) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
+  // Featured subscriptions are Razorpay-only. Wallet-first featured activation is intentionally unsupported.
   const paymentMethod = String(existingOrder.metadata?.payment_method ?? "").toLowerCase();
-  const isWalletPaidOrder = paymentMethod === "wallet" && existingOrder.payment_status === "paid";
+  if (paymentMethod === "wallet") {
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Featured subscriptions are Razorpay-only. Wallet payments are not supported for this purchase.",
+        code: "FEATURED_WALLET_PAYMENT_UNSUPPORTED",
+      },
+      { status: 400 },
+    );
+  }
 
-  if (isSuccessfulPaymentStatus(existingOrder.payment_status) && !isWalletPaidOrder) {
+  if (isSuccessfulPaymentStatus(existingOrder.payment_status)) {
     const { data: existingSubscription } = await admin.data
       .from("webinar_featured_subscriptions")
       .select("id,status,starts_at,ends_at,queued_from_previous")
@@ -93,35 +103,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Order is not eligible for verification" }, { status: 409 });
   }
 
-  if (isWalletPaidOrder && (!paymentId || !signature)) {
-    // proceed to subscription activation idempotently without Razorpay checks.
-  } else if (!paymentId || !signature) {
+  if (!paymentId || !signature) {
     return NextResponse.json({ error: "paymentId and signature are required for Razorpay payments" }, { status: 400 });
   }
 
-  if (!isWalletPaidOrder) {
-    const signatureResult = verifyRazorpaySignature({ orderId, paymentId: paymentId!, signature: signature! });
-    if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
-    if (!signatureResult.valid) {
-      await admin.data
-        .from("webinar_featured_orders")
-        .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
-        .eq("id", existingOrder.id)
-        .in("payment_status", ["pending", "failed"]);
-      await notifyInstituteAndAdmins({
-        admin: admin.data,
-        instituteUserId: auth.user.id,
-        title: "Webinar promotion payment failed",
-        message: "Webinar promotion payment signature verification failed.",
-        metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "invalid_signature" },
-      });
-      return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
-    }
+  const signatureResult = verifyRazorpaySignature({ orderId, paymentId: paymentId!, signature: signature! });
+  if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
+  if (!signatureResult.valid) {
+    await admin.data
+      .from("webinar_featured_orders")
+      .update({ payment_status: "failed", order_status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", existingOrder.id)
+      .in("payment_status", ["pending", "failed"]);
+    await notifyInstituteAndAdmins({
+      admin: admin.data,
+      instituteUserId: auth.user.id,
+      title: "Webinar promotion payment failed",
+      message: "Webinar promotion payment signature verification failed.",
+      metadata: { orderId: existingOrder.id, razorpayOrderId: orderId, reason: "invalid_signature" },
+    });
+    return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
   }
 
-  if (!isWalletPaidOrder) {
-    const razorpay = getRazorpayClient();
-    if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
+  const razorpay = getRazorpayClient();
+  if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
 
   type RazorpayPayment = {
     id?: string;
@@ -163,26 +168,22 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ error: "Payment validation failed" }, { status: 400 });
     }
-  }
-
   const nowIso = new Date().toISOString();
-  if (!isWalletPaidOrder) {
-    const { error: paidUpdateError } = await admin.data
-      .from("webinar_featured_orders")
-      .update({
-        payment_status: "paid",
-        order_status: "confirmed",
-        paid_at: nowIso,
-        razorpay_payment_id: paymentId!,
-        razorpay_signature: signature!,
-        updated_at: nowIso,
-      })
-      .eq("id", existingOrder.id)
-      .in("payment_status", ["pending", "failed"])
-      .neq("order_status", "cancelled");
+  const { error: paidUpdateError } = await admin.data
+    .from("webinar_featured_orders")
+    .update({
+      payment_status: "paid",
+      order_status: "confirmed",
+      paid_at: nowIso,
+      razorpay_payment_id: paymentId!,
+      razorpay_signature: signature!,
+      updated_at: nowIso,
+    })
+    .eq("id", existingOrder.id)
+    .in("payment_status", ["pending", "failed"])
+    .neq("order_status", "cancelled");
 
-    if (paidUpdateError) return NextResponse.json({ error: paidUpdateError.message }, { status: 500 });
-  }
+  if (paidUpdateError) return NextResponse.json({ error: paidUpdateError.message }, { status: 500 });
 
   const { data: webinar } = await admin.data
     .from("webinars")
