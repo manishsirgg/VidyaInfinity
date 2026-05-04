@@ -24,7 +24,7 @@ export async function GET() {
   const webinarPlanById = new Map((webinarPlansQ.data ?? []).map((p)=>[String(p.id),p]));
 
   type PlanLike = { id: string; plan_code: string | null; code: string | null; duration_days: number; amount: number | null; price?: number | null; tier_rank?: number | null };
-  type OrderLike = Record<string, unknown> & { id: string; plan_id: string | null; payment_status: string | null; order_status: string | null; created_at: string; course_id?: string; webinar_id?: string };
+  type OrderLike = Record<string, unknown> & { id: string; plan_id: string | null; payment_status: string | null; order_status: string | null; created_at: string; course_id?: string; webinar_id?: string; razorpay_order_id?: string | null; razorpay_payment_id?: string | null };
   type SubLike = { id: string; order_id: string | null; status: string; plan_id: string | null; starts_at: string; ends_at: string; course_id?: string; webinar_id?: string };
   const build = (type: "course"|"webinar", orders: OrderLike[], subs: SubLike[], planById: Map<string, PlanLike>, key: "course_id"|"webinar_id") => {
     const subByOrder = new Map(subs.filter(s=>s.order_id).map(s=>[s.order_id,s]));
@@ -34,7 +34,8 @@ export async function GET() {
       if (!isPaidConfirmed) continue;
       const s = subByOrder.get(o.id);
       if (!s) {
-        issues.push({ orderType:type, orderId:o.id, targetId:o[key], issue:"paid_featured_order_missing_subscription", recommended_action:"Create missing active subscription" });
+        const fallbackPlan = planById.get(String(o.plan_id));
+        issues.push({ orderType:type, orderId:o.id, targetId:o[key], issue:"paid_featured_order_missing_subscription", subscriptionId: null, planCode: fallbackPlan?.plan_code ?? fallbackPlan?.code ?? null, amount: fallbackPlan?.amount ?? fallbackPlan?.price ?? null, durationDays: fallbackPlan?.duration_days ?? null, localPayment: o.payment_status ?? null, localOrder: o.order_status ?? null, razorpayOrderId: o.razorpay_order_id ?? null, razorpayPaymentId: o.razorpay_payment_id ?? null, canReconcile: true, recommended_action:"Create missing active subscription" });
         continue;
       }
       const active = subs.find(x=>x[key]===o[key]&&x.status==="active"&&new Date(x.starts_at).getTime()<=now&&new Date(x.ends_at).getTime()>now);
@@ -55,7 +56,7 @@ export async function GET() {
           computed_issue: computedIssue,
         });
         if (computedIssue) {
-          issues.push({ orderType:type, orderId:o.id, targetId:o[key], subscriptionId: s.id, currentActiveSubscriptionId: active.id, paidPlanCode: scheduledPlan?.plan_code ?? scheduledPlan?.code ?? null, activePlanCode: activePlan?.plan_code ?? activePlan?.code ?? null, issue:computedIssue, recommended_action:"Activate upgraded plan and cancel old lower plan" });
+          issues.push({ orderType:type, orderId:o.id, targetId:o[key], subscriptionId: s.id, currentActiveSubscriptionId: active.id, planCode: scheduledPlan?.plan_code ?? scheduledPlan?.code ?? null, paidPlanCode: scheduledPlan?.plan_code ?? scheduledPlan?.code ?? null, activePlanCode: activePlan?.plan_code ?? activePlan?.code ?? null, amount: scheduledPlan?.amount ?? scheduledPlan?.price ?? null, durationDays: scheduledPlan?.duration_days ?? null, localPayment: o.payment_status ?? null, localOrder: o.order_status ?? null, razorpayOrderId: o.razorpay_order_id ?? null, razorpayPaymentId: o.razorpay_payment_id ?? null, issue:computedIssue, canReconcile: true, recommended_action:"Activate upgraded plan and cancel old lower plan" });
         }
       }
     }
@@ -68,7 +69,11 @@ export async function GET() {
     }
     for (const [target, arr] of grouped) if (arr.length>1) {
       arr.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
-      for (let i=1;i<arr.length;i++) issues.push({ orderType:type, orderId:arr[i].id, targetId:target, issue:"duplicate_paid_scheduled_upgrade", recommended_action:"Review duplicate: refund manually or extend after admin decision" });
+      for (let i=1;i<arr.length;i++) {
+        const duplicateSub = subByOrder.get(arr[i].id);
+        const duplicatePlan = planById.get(String(duplicateSub?.plan_id ?? arr[i].plan_id));
+        issues.push({ orderType:type, orderId:arr[i].id, targetId:target, subscriptionId: duplicateSub?.id ?? null, planCode: duplicatePlan?.plan_code ?? duplicatePlan?.code ?? null, amount: duplicatePlan?.amount ?? duplicatePlan?.price ?? null, durationDays: duplicatePlan?.duration_days ?? null, localPayment: arr[i].payment_status ?? null, localOrder: arr[i].order_status ?? null, razorpayOrderId: arr[i].razorpay_order_id ?? null, razorpayPaymentId: arr[i].razorpay_payment_id ?? null, issue:"duplicate_paid_scheduled_upgrade", canReconcile: false, details: "This is an older duplicate paid scheduled upgrade. Do not activate automatically. Decide whether to refund manually or extend duration.", recommended_action:"Review duplicate: refund manually or extend after admin decision" });
+      }
     }
     const paidScheduledCourseUpgradeCandidates = grouped.size;
     const courseUpgradeIssuesReturned = issues.filter((x) => x.issue === `${type}_upgrade_paid_but_scheduled`).length;
