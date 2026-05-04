@@ -27,34 +27,18 @@ export async function POST(request: Request) {
 
     if (!test || !test.is_active) return NextResponse.json({ error: "Invalid test" }, { status: 400 });
 
-    const [{ data: paidOrder }, { data: unlockedAttempt }] = await Promise.all([
-      admin.data
-        .from("psychometric_orders")
-        .select("id")
-        .eq("user_id", profile.id)
-        .eq("test_id", test.id)
-        .eq("payment_status", "paid")
-        .limit(1)
-        .maybeSingle(),
-      admin.data
-        .from("test_attempts")
-        .select("id,status")
-        .eq("user_id", profile.id)
-        .eq("test_id", test.id)
-        .eq("status", "unlocked")
-        .limit(1)
-        .maybeSingle(),
-    ]);
+    const { data: activePaidAttempt } = await admin.data
+      .from("test_attempts")
+      .select("id,status")
+      .eq("user_id", profile.id)
+      .eq("test_id", test.id)
+      .in("status", ["not_started", "unlocked", "in_progress", "submitted"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (paidOrder || unlockedAttempt) {
-      console.info("[payments/test/create-order] psychometric_purchase_disabled_existing_active_access", {
-        event: "psychometric_purchase_disabled_existing_active_access",
-        userId: profile.id,
-        testId: test.id,
-        paidOrderId: paidOrder?.id ?? null,
-        unlockedAttemptId: unlockedAttempt?.id ?? null,
-      });
-      return NextResponse.json({ error: "You have already purchased this assessment." }, { status: 409 });
+    if (activePaidAttempt) {
+      return NextResponse.json({ error: "You already have an active attempt for this assessment." }, { status: 409 });
     }
 
     let finalAmount = Number(test.price);
@@ -97,8 +81,20 @@ export async function POST(request: Request) {
       },
     });
 
-    const localOrderId = crypto.randomUUID();
-    const { error: insertOrderError } = await admin.data.from("psychometric_orders").insert({
+    const { data: reusableOrder } = await admin.data
+      .from("psychometric_orders")
+      .select("id")
+      .eq("user_id", profile.id)
+      .eq("test_id", test.id)
+      .in("payment_status", ["created", "failed"])
+      .is("paid_at", null)
+      .is("attempt_id", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    const localOrderId = reusableOrder?.id ?? crypto.randomUUID();
+
+    const payload = {
       id: localOrderId,
       user_id: profile.id,
       test_id: test.id,
@@ -111,10 +107,15 @@ export async function POST(request: Request) {
       final_amount: finalAmount,
       currency: "INR",
       razorpay_order_id: order.id,
+      razorpay_payment_id: null,
+      razorpay_signature: null,
       metadata: { source: "test_create_order_api" },
-    });
+    };
+    const orderMutation = reusableOrder
+      ? await admin.data.from("psychometric_orders").update(payload).eq("id", reusableOrder.id)
+      : await admin.data.from("psychometric_orders").insert(payload);
 
-    if (insertOrderError) return NextResponse.json({ error: insertOrderError.message }, { status: 500 });
+    if (orderMutation.error) return NextResponse.json({ error: orderMutation.error.message }, { status: 500 });
 
     return NextResponse.json({ order, finalAmount, localOrderId, key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? process.env.RAZORPAY_KEY_ID ?? null });
   } catch (error) {

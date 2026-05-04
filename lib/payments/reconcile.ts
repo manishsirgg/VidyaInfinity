@@ -396,7 +396,7 @@ export async function reconcileCourseOrderPaid({
 
   const resolvedAccessEndAt = resolveAccessEndAt(effectivePaidAt, courseForDuration?.duration_value ?? null, courseForDuration?.duration_unit ?? null);
 
-  if (canonicalPaidOrderId === order.id && order.payment_status !== "paid") {
+  if (order.payment_status !== "paid") {
     const { error: updateError } = await supabase
       .from("course_orders")
       .update({
@@ -443,7 +443,7 @@ export async function reconcileCourseOrderPaid({
     } else {
       effectivePaidAt = now;
     }
-  } else if (canonicalPaidOrderId === order.id && order.payment_status === "paid") {
+  } else if (order.payment_status === "paid") {
     console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
       event: "reconciliation_skipped_already_finalized",
       orderId: order.id,
@@ -803,30 +803,9 @@ export async function reconcilePsychometricOrderPaid({
     source,
   });
 
-  let canonicalPaidOrderId = order.id;
+  const canonicalPaidOrderId = order.id;
 
-  const { data: existingPaidOrder } = await supabase
-    .from("psychometric_orders")
-    .select("id,payment_status,paid_at,razorpay_payment_id")
-    .eq("user_id", order.user_id)
-    .eq("test_id", order.test_id)
-    .eq("payment_status", "paid")
-    .limit(1)
-    .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; razorpay_payment_id: string | null }>();
-
-  if (existingPaidOrder) {
-    canonicalPaidOrderId = existingPaidOrder.id;
-    console.info("[payments/reconcile] already_paid_order_found", {
-      event: "already_paid_order_found",
-      orderId: order.id,
-      existingPaidOrderId: existingPaidOrder.id,
-      userId: order.user_id,
-      testId: order.test_id,
-      source,
-    });
-  }
-
-  if (canonicalPaidOrderId === order.id && order.payment_status !== "paid") {
+  if (order.payment_status !== "paid") {
     const { error: updateError } = await supabase
       .from("psychometric_orders")
       .update({
@@ -839,50 +818,17 @@ export async function reconcilePsychometricOrderPaid({
       .in("payment_status", ["created", "failed"]);
 
     if (updateError) {
-      if (isUniqueViolation(updateError)) {
-        const { data: paidOrderAfterConflict } = await supabase
-          .from("psychometric_orders")
-          .select("id,payment_status,paid_at,razorpay_payment_id")
-          .eq("user_id", order.user_id)
-          .eq("test_id", order.test_id)
-          .eq("payment_status", "paid")
-          .limit(1)
-          .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; razorpay_payment_id: string | null }>();
-
-        if (paidOrderAfterConflict) {
-          canonicalPaidOrderId = paidOrderAfterConflict.id;
-          console.info("[payments/reconcile] duplicate_paid_order_treated_as_success", {
-            event: "duplicate_paid_order_treated_as_success",
-            orderId: order.id,
-            existingPaidOrderId: paidOrderAfterConflict.id,
-            userId: order.user_id,
-            testId: order.test_id,
-            source,
-          });
-        } else {
-          console.error("[payments/reconcile] reconciliation_failed", {
-            event: "reconciliation_failed",
-            orderId: order.id,
-            razorpayOrderId,
-            razorpayPaymentId,
-            source,
-            error: updateError.message,
-          });
-          return { error: updateError.message };
-        }
-      } else {
-        console.error("[payments/reconcile] reconciliation_failed", {
-          event: "reconciliation_failed",
-          orderId: order.id,
-          razorpayOrderId,
-          razorpayPaymentId,
-          source,
-          error: updateError.message,
-        });
-        return { error: updateError.message };
-      }
+      console.error("[payments/reconcile] reconciliation_failed", {
+        event: "reconciliation_failed",
+        orderId: order.id,
+        razorpayOrderId,
+        razorpayPaymentId,
+        source,
+        error: updateError.message,
+      });
+      return { error: updateError.message };
     }
-  } else if (canonicalPaidOrderId === order.id && order.payment_status === "paid") {
+  } else if (order.payment_status === "paid") {
     console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
       event: "reconciliation_skipped_already_finalized",
       orderId: order.id,
@@ -932,8 +878,8 @@ export async function reconcilePsychometricOrderPaid({
   const { data: existingUnlockedAttempt } = await supabase
     .from("test_attempts")
     .select("id,status")
-    .eq("user_id", order.user_id)
-    .eq("test_id", order.test_id)
+    .eq("order_id", canonicalPaidOrderId)
+    .in("status", ["not_started", "unlocked", "in_progress", "submitted"])
     .limit(1)
     .maybeSingle<{ id: string; status: string | null }>();
 
@@ -952,10 +898,11 @@ export async function reconcilePsychometricOrderPaid({
     {
       user_id: order.user_id,
       test_id: order.test_id,
+      order_id: canonicalPaidOrderId,
       status: "unlocked",
       started_at: null,
     },
-    { onConflict: "user_id,test_id" }
+    { onConflict: "order_id" }
   );
 
   if (attemptError) {
@@ -981,9 +928,8 @@ export async function reconcilePsychometricOrderPaid({
   const { data: convergedAttempt, error: convergedAttemptError } = await supabase
     .from("test_attempts")
     .select("id,status")
-    .eq("user_id", order.user_id)
-    .eq("test_id", order.test_id)
-    .eq("status", "unlocked")
+        .eq("order_id", canonicalPaidOrderId)
+    .in("status", ["not_started", "unlocked", "in_progress", "submitted", "completed"])
     .limit(1)
     .maybeSingle<{ id: string; status: string | null }>();
 
@@ -1173,7 +1119,7 @@ export async function reconcileWebinarOrderPaid({
         return { error: updateError.message };
       }
     }
-  } else if (canonicalPaidOrderId === order.id && order.payment_status === "paid") {
+  } else if (order.payment_status === "paid") {
     console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
       event: "reconciliation_skipped_already_finalized",
       orderId: order.id,
