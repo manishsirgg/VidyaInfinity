@@ -25,6 +25,18 @@ const ORDER_SELECT_BY_TYPE = {
   webinar: "id,institute_id,created_by,webinar_id,plan_id,amount,currency,duration_days,payment_status,order_status,razorpay_order_id,razorpay_payment_id,paid_at,metadata",
 } as const;
 
+// IMPORTANT regression guard:
+// Keep plan selects type-specific. Do not assume a shared schema across
+// featured_listing_plans, course_featured_plans, and webinar_featured_plans.
+// - featured_listing_plans uses plan_code and price (not code/amount).
+// - course_featured_plans does not have code in production; do not select it.
+// - webinar_featured_plans may differ from institute schema; keep selects explicit.
+const ORDER_PLAN_SELECT_BY_TYPE = {
+  institute: "id,name,slug,plan_code,duration_days,price,currency,metadata",
+  course: "id,name,slug,plan_code,duration_days,price,amount,currency,metadata",
+  webinar: "id,name,slug,plan_code,duration_days,price,amount,currency,metadata",
+} as const;
+
 type FeaturedOrderRow = {
   id: string;
   institute_id: string | null;
@@ -69,31 +81,28 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
   const targetId = params.orderType === "course" ? (order.course_id ?? undefined) : params.orderType === "webinar" ? (order.webinar_id ?? undefined) : undefined;
   const state = await getCurrentFeaturedState({ supabase: params.supabase, type: params.orderType, instituteId: order.institute_id, targetId });
-  // featured_listing_plans uses plan_code and price, not code/amount.
   const { data: selectedPlan, error: planLookupError } = await params.supabase
     .from(cfg.planTable)
-    .select(params.orderType === "institute"
-      ? "id,name,slug,plan_code,duration_days,price,currency,metadata"
-      : "id,plan_code,code,price,currency,duration_days")
+    .select(ORDER_PLAN_SELECT_BY_TYPE[params.orderType])
     .eq("id", String(order.plan_id))
-    .maybeSingle<{ id: string; plan_code?: string | null; code?: string | null; price?: number | null; currency?: string | null; duration_days?: number | null }>();
+    .maybeSingle<{ id: string; plan_code?: string | null; code?: string | null; slug?: string | null; price?: number | null; amount?: number | null; currency?: string | null; duration_days?: number | null }>();
   if (planLookupError) return { ok: false, error: planLookupError.message, debugStage: "plan_loaded" };
   console.info("[featured/activate] plan_lookup", {
     orderType: params.orderType,
     orderId: params.orderId,
     planId: order.plan_id,
     planFound: Boolean(selectedPlan),
-    planCode: params.orderType === "institute" ? (selectedPlan?.plan_code ?? null) : (selectedPlan?.plan_code ?? selectedPlan?.code ?? null),
+    planCode: selectedPlan?.plan_code ?? selectedPlan?.code ?? selectedPlan?.slug ?? null,
     durationDays: order.duration_days ?? selectedPlan?.duration_days ?? null,
   });
   if (!selectedPlan) return { ok: false, error: "Plan not found for order", debugStage: "plan_loaded" };
-  const normalizedPlanCode = params.orderType === "institute" ? (selectedPlan.plan_code ?? null) : (selectedPlan.plan_code ?? selectedPlan.code ?? null);
-  const normalizedAmount = params.orderType === "institute" ? selectedPlan.price : selectedPlan.price;
-  const normalizedDurationDays = params.orderType === "institute" ? selectedPlan.duration_days : selectedPlan.duration_days;
+  const normalizedPlanCode = selectedPlan.plan_code ?? selectedPlan.code ?? selectedPlan.slug ?? null;
+  const normalizedAmount = order.final_payable_amount ?? order.amount ?? selectedPlan.amount ?? selectedPlan.price ?? null;
+  const normalizedDurationDays = order.duration_days ?? selectedPlan.duration_days ?? null;
   if (!order.created_by) return { ok: false, error: "Missing required field: order.created_by", debugStage: "plan_loaded" };
   if (!order.plan_id) return { ok: false, error: "Missing required field: order.plan_id", debugStage: "plan_loaded" };
   if (!normalizedPlanCode) return { ok: false, error: "Missing required field: plan.plan_code", debugStage: "plan_loaded" };
-  if (selectedPlan.price == null) return { ok: false, error: "Missing required field: plan.price", debugStage: "plan_loaded" };
+  if (normalizedAmount == null) return { ok: false, error: "Missing required field: amount", debugStage: "plan_loaded" };
 
   const paidPatch: Record<string, unknown> = {
     payment_status: params.source === "manual_admin_grant" ? "pending" : "paid",
@@ -141,13 +150,13 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const durationDays = Number(order.duration_days ?? normalizedDurationDays ?? 0);
   if (!durationDays || durationDays <= 0) return { ok: false, error: "Missing required field: duration_days", debugStage: "plan_loaded" };
   const endsAt = new Date(new Date(startsAt).getTime() + durationDays * 86400000).toISOString();
-  const amountSource = params.orderType === "institute" ? "order.final_payable_amount_or_amount_or_plan_price" : "order.final_payable_amount_or_amount";
+  const amountSource = "order.final_payable_amount_or_amount_or_plan_amount_or_plan_price";
   const subPayload: Record<string, unknown> = {
     institute_id: order.institute_id,
     order_id: order.id,
     plan_id: order.plan_id,
     plan_code: normalizedPlanCode,
-    amount: params.orderType === "institute" ? Number(order.final_payable_amount ?? order.amount ?? normalizedAmount ?? 0) : Number(order.final_payable_amount ?? order.amount ?? normalizedAmount ?? 0),
+    amount: Number(normalizedAmount ?? 0),
     currency: order.currency ?? selectedPlan.currency ?? "INR",
     duration_days: durationDays,
     starts_at: startsAt,
