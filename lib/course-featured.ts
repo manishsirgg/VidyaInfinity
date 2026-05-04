@@ -82,11 +82,11 @@ export function parseCourseFeaturedPlans(rows: Array<Record<string, unknown>>): 
   return rows
     .map((row) => ({
       id: pickString(row.id),
-      code: pickString(row.plan_code ?? row.code),
-      name: pickString(row.name ?? row.plan_code ?? row.code, "Course Featured Plan"),
+      code: pickString(row.plan_code),
+      name: pickString(row.name ?? row.plan_code, "Course Featured Plan"),
       description: typeof row.description === "string" ? row.description : null,
       durationDays: toNumber(row.duration_days),
-      amount: toNumber(row.price ?? row.amount),
+      amount: toNumber(row.price),
       currency: pickString(row.currency, "INR"),
       isActive: row.is_active === null ? true : toBoolean(row.is_active),
       sortOrder: toNumber(row.sort_order),

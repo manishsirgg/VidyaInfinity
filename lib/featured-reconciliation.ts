@@ -76,7 +76,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     return { ok: false, error: missingMessage, debugStage: "order_loaded" };
   }
 
-  const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,metadata").eq("order_id", params.orderId).limit(1).maybeSingle();
+  const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,plan_code,duration_days,metadata").eq("order_id", params.orderId).limit(1).maybeSingle();
 
   if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
   const targetId = params.orderType === "course" ? (order.course_id ?? undefined) : params.orderType === "webinar" ? (order.webinar_id ?? undefined) : undefined;
@@ -127,6 +127,59 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const isUpgrade = purchaseIntent === "upgrade" || (activeExisting && activePlan && selectedPlanForCompare ? compareFeaturedPlans(activePlan, selectedPlanForCompare) > 0 : false);
   const isRenewal = purchaseIntent === "renewal" || (!isUpgrade && Boolean(activeExisting));
 
+  let actionTaken = "none";
+  if (existingForOrder?.status === "active") {
+    actionTaken = "already_active_for_order";
+    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, existingSubscriptionId: existingForOrder.id, existingSubscriptionStatus: existingForOrder.status, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activePlan?.plan_code ?? null, currentActiveDurationDays: activePlan?.duration_days ?? null, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, computedIntent: isUpgrade ? "upgrade" : (isRenewal ? "renewal" : "new"), actionTaken });
+    return { ok: true, idempotent: true, subscriptionId: existingForOrder.id, activationStatus: "active", message: "Subscription already active for this order.", actionTaken };
+  }
+
+  if (existingForOrder?.status === "scheduled") {
+    const computedIntent = isUpgrade ? "upgrade" : (isRenewal ? "renewal" : "new");
+    if (!isUpgrade) {
+      actionTaken = "renewal_already_scheduled";
+      console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, existingSubscriptionId: existingForOrder.id, existingSubscriptionStatus: existingForOrder.status, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activePlan?.plan_code ?? null, currentActiveDurationDays: activePlan?.duration_days ?? null, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, computedIntent, actionTaken });
+      return { ok: true, idempotent: true, subscriptionId: existingForOrder.id, activationStatus: "scheduled", message: "Renewal already scheduled for this order.", actionTaken };
+    }
+
+    if (activeExisting) {
+      const metadata = (activeExisting.metadata ?? {}) as Record<string, unknown>;
+      const cancelPatch: Record<string, unknown> = {
+        status: "cancelled",
+        cancelled_at: nowIso,
+        cancelled_reason: "upgraded",
+        updated_at: nowIso,
+        metadata: { ...metadata, superseded: true, superseded_by_order_id: params.orderId, superseded_at: nowIso },
+      };
+      const { error: cancelError } = await params.supabase.from(cfg.subTable).update(cancelPatch).eq("id", activeExisting.id).eq("status", "active");
+      if (cancelError) return { ok: false, error: cancelError.message, debugStage: "activation_helper_called" };
+    }
+
+    const durationDaysUpgrade = Number(order.duration_days ?? normalizedDurationDays ?? existingForOrder.duration_days ?? 0);
+    if (!durationDaysUpgrade || durationDaysUpgrade <= 0) return { ok: false, error: "Missing required field: duration_days", debugStage: "plan_loaded" };
+    const endsAtUpgrade = new Date(new Date(nowIso).getTime() + durationDaysUpgrade * 86400000).toISOString();
+    const existingMetadata = (existingForOrder.metadata ?? {}) as Record<string, unknown>;
+    const { data: upgradedSub, error: upgradeError } = await params.supabase.from(cfg.subTable).update({
+      status: "active",
+      starts_at: nowIso,
+      activated_at: nowIso,
+      ends_at: endsAtUpgrade,
+      queued_from_previous: false,
+      updated_at: nowIso,
+      metadata: { ...existingMetadata, activation_corrected_from_scheduled: true, activation_source: params.source, previous_subscription_id: activeExisting?.id ?? null },
+    }).eq("id", existingForOrder.id).eq("status", "scheduled").select("*").single();
+    if (upgradeError) return { ok: false, error: upgradeError.message, debugStage: "activation_helper_called" };
+    actionTaken = "upgraded_subscription_activated";
+    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, existingSubscriptionId: existingForOrder.id, existingSubscriptionStatus: existingForOrder.status, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activePlan?.plan_code ?? null, currentActiveDurationDays: activePlan?.duration_days ?? null, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, computedIntent, actionTaken });
+    return { ok: true, subscriptionId: upgradedSub?.id ?? existingForOrder.id, subscription: upgradedSub ?? null, debugStage: "subscription_insert_success", message: "Featured upgrade reconciled. Bigger plan is now active.", actionTaken };
+  }
+
+  if (existingForOrder?.status && ["cancelled", "expired"].includes(existingForOrder.status)) {
+    actionTaken = "manual_review_required_existing_inactive";
+    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, existingSubscriptionId: existingForOrder.id, existingSubscriptionStatus: existingForOrder.status, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activePlan?.plan_code ?? null, currentActiveDurationDays: activePlan?.duration_days ?? null, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, computedIntent: isUpgrade ? "upgrade" : (isRenewal ? "renewal" : "new"), actionTaken });
+    return { ok: false, error: `Existing subscription ${existingForOrder.id} is ${existingForOrder.status}; manual review required`, debugStage: "activation_helper_called", actionTaken };
+  }
+
   if (activeExisting && isUpgrade) {
     const metadata = (activeExisting.metadata ?? {}) as Record<string, unknown>;
     const cancelPatch: Record<string, unknown> = {
@@ -138,12 +191,6 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     };
     const { error: cancelError } = await params.supabase.from(cfg.subTable).update(cancelPatch).eq("id", activeExisting.id).eq("status", "active");
     if (cancelError) return { ok: false, error: cancelError.message, debugStage: "activation_helper_called" };
-  }
-
-  if (existingForOrder?.status === "active") return { ok: true, idempotent: true, subscriptionId: existingForOrder.id, activationStatus: "active" };
-
-  if (existingForOrder?.status === "scheduled" && !isUpgrade) {
-    return { ok: true, idempotent: true, subscriptionId: existingForOrder.id, activationStatus: "scheduled" };
   }
 
   const startsAt = isRenewal && activeExisting ? activeExisting.ends_at : nowIso;
