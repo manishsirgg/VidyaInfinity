@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Role } from "@/types/domain";
 
 type ProfileRow = {
+  id: string;
   role: Role;
   approval_status: string | null;
 };
@@ -39,7 +40,7 @@ export async function requireApiUser(role?: Role, options?: { requireApproved?: 
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role,approval_status")
+    .select("id,role,approval_status")
     .eq("id", user.id)
     .maybeSingle<ProfileRow>();
 

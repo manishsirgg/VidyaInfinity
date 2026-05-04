@@ -23,7 +23,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     .eq("id", attemptId)
     .maybeSingle();
   if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
-  if (attempt.user_id !== auth.user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (attempt.user_id !== auth.profile.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const existingReport = Array.isArray(attempt.psychometric_reports) ? attempt.psychometric_reports[0] : attempt.psychometric_reports;
   if (attempt.status === "completed" && existingReport?.id) {
@@ -73,7 +73,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   const content = buildReportContent({ testTitle: test.title ?? "Psychometric Test", percentage, resultBand });
 
   const reportUpsert = {
-    attempt_id: attempt.id, test_id: attempt.test_id, user_id: auth.user.id, order_id: attempt.order_id,
+    attempt_id: attempt.id, test_id: attempt.test_id, user_id: auth.profile.id, order_id: attempt.order_id,
     total_score: total, max_score: max, percentage_score: percentage, result_band: resultBand,
     summary: content.summary, strengths: content.strengths, improvement_areas: content.improvementAreas, recommendations: content.recommendations,
     dimension_scores: dimension, answers_snapshot: snapshot, report_html: `<h1>Vidya Infinity Psychometric Report</h1><p>${content.summary}</p>`,

@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/server";
 export default async function Page({params}:{params:Promise<{reportId:string}>}){
   const {reportId}=await params;
   const {profile}=await requireUser();
+  if (profile.role === "institute") redirect("/institute/dashboard");
+  if (profile.role !== "student" && profile.role !== "admin") redirect("/");
   const supabase=await createClient();
   const {data:report}=await supabase.from("psychometric_reports").select("*,psychometric_tests(title),profiles(full_name)").eq("id",reportId).maybeSingle();
   if(!report) redirect("/dashboard/psychometric");

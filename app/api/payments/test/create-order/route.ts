@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
     const auth = await requireApiUser("student");
     if ("error" in auth) return auth.error;
-    const { user } = auth;
+    const { profile } = auth;
     const { testId, couponCode } = await request.json();
 
     if (!testId) {
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       admin.data
         .from("psychometric_orders")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", profile.id)
         .eq("test_id", test.id)
         .eq("payment_status", "paid")
         .limit(1)
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       admin.data
         .from("test_attempts")
         .select("id,status")
-        .eq("user_id", user.id)
+        .eq("user_id", profile.id)
         .eq("test_id", test.id)
         .eq("status", "unlocked")
         .limit(1)
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     if (paidOrder || unlockedAttempt) {
       console.info("[payments/test/create-order] psychometric_purchase_disabled_existing_active_access", {
         event: "psychometric_purchase_disabled_existing_active_access",
-        userId: user.id,
+        userId: profile.id,
         testId: test.id,
         paidOrderId: paidOrder?.id ?? null,
         unlockedAttemptId: unlockedAttempt?.id ?? null,
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
       amount: Math.round(finalAmount * 100),
       currency: "INR",
       notes: {
-        userId: user.id,
+        userId: profile.id,
         testId,
       },
     });
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     const localOrderId = crypto.randomUUID();
     const { error: insertOrderError } = await admin.data.from("psychometric_orders").insert({
       id: localOrderId,
-      user_id: user.id,
+      user_id: profile.id,
       test_id: test.id,
       coupon_id: couponId,
       order_kind: "psychometric_test",
