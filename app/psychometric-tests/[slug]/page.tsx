@@ -11,6 +11,7 @@ export default async function TestDetailsPage({ params }: { params: Promise<{ sl
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const { data: profile } = user ? await supabase.from("profiles").select("id,role").eq("id", user.id).maybeSingle<{ id: string; role: string }>() : { data: null };
 
   const { data: test } = await supabase
     .from("psychometric_tests")
@@ -23,19 +24,19 @@ export default async function TestDetailsPage({ params }: { params: Promise<{ sl
   let hasAccess = false;
   let purchaseLocked = false;
 
-  if (user) {
+  if (profile?.role === "student") {
     const [{ data: paidOrder }, { data: unlockedAttempt }] = await Promise.all([
       supabase
         .from("psychometric_orders")
         .select("id")
-        .eq("user_id", user.id)
+        .eq("user_id", profile.id)
         .eq("test_id", test.id)
         .eq("payment_status", "paid")
         .maybeSingle(),
       supabase
         .from("test_attempts")
         .select("id,status")
-        .eq("user_id", user.id)
+        .eq("user_id", profile.id)
         .eq("test_id", test.id)
         .eq("status", "unlocked")
         .maybeSingle(),
@@ -64,9 +65,14 @@ export default async function TestDetailsPage({ params }: { params: Promise<{ sl
             <p className="mt-4 text-sm text-amber-700">
               Purchase this test to unlock questions and the report pipeline. Access is gated by paid psychometric_orders.
             </p>
-            <PsychometricPurchaseCard testId={test.id} testTitle={test.title} price={Number(test.price ?? 0)} purchaseLocked={purchaseLocked} />
+            <PsychometricPurchaseCard testId={test.id} testTitle={test.title} price={Number(test.price ?? 0)} purchaseLocked={purchaseLocked} role={profile?.role ?? null} />
           </>
         )}
+        {profile && profile.role !== "student" ? (
+          <p className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            {profile.role === "admin" ? "Student purchase required." : "Psychometric tests are available for student accounts only."}
+          </p>
+        ) : null}
       </article>
 
       {hasAccess && questions?.length ? <PsychometricTestRunner testId={test.id} questions={questions} /> : null}

@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   let query = admin.data
     .from("psychometric_orders")
     .select("id,user_id,test_id,payment_status,final_paid_amount,currency,paid_at,razorpay_order_id,razorpay_payment_id")
-    .eq("user_id", auth.user.id)
+    .eq("user_id", auth.profile.id)
     .limit(1);
 
   if (orderId) {
@@ -85,7 +85,7 @@ export async function GET(request: Request) {
   const { data: entitlementRow } = await admin.data
     .from("test_attempts")
     .select("id")
-    .eq("user_id", auth.user.id)
+    .eq("user_id", auth.profile.id)
     .eq("test_id", order.test_id)
     .eq("status", "unlocked")
     .limit(1)
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
   const { data: finalEntitlementRow } = await admin.data
     .from("test_attempts")
     .select("id")
-    .eq("user_id", auth.user.id)
+    .eq("user_id", auth.profile.id)
     .eq("test_id", order.test_id)
     .eq("status", "unlocked")
     .limit(1)

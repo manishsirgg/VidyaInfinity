@@ -12,7 +12,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ reportId: 
   const admin = getSupabaseAdmin(); if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
   const { data: report } = await admin.data.from("psychometric_reports").select("*,psychometric_tests(title),profiles(full_name)").eq("id", reportId).single();
   if (!report) return NextResponse.json({ error: "Report not found" }, { status: 404 });
-  if (auth.profile.role !== "admin" && report.user_id !== auth.user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (auth.profile.role !== "admin" && report.user_id !== auth.profile.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const lines = ["Vidya Infinity Psychometric Report",`Student: ${report.profiles?.full_name ?? "Student"}`,`Test: ${report.psychometric_tests?.title ?? "Psychometric Test"}`,`Generated: ${report.generated_at}`,`Total Score: ${report.total_score}`,`Percentage: ${report.percentage_score}%`,`Result Band: ${report.result_band ?? "N/A"}`,`Summary: ${report.summary ?? ""}`,"Disclaimer: This report is for educational and guidance purposes only. It is not a medical, psychiatric, or clinical diagnosis."];
   const pdf = mkPdf(lines);
   return new NextResponse(pdf, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename=vidya-infinity-psychometric-report-${reportId}.pdf` } });

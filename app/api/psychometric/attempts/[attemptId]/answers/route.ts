@@ -16,7 +16,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
     .from("test_attempts")
     .select("id,user_id,test_id,status,order_id,psychometric_orders(payment_status,final_paid_amount)")
     .eq("id", attemptId)
-    .eq("user_id", auth.user.id)
+    .eq("user_id", auth.profile.id)
     .single();
   if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   if (!["not_started", "in_progress", "unlocked"].includes(String(attempt.status))) return NextResponse.json({ error: "Attempt is locked" }, { status: 400 });
@@ -64,7 +64,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
     safeAnswerText = answerText ?? null;
   }
 
-  const payload = { attempt_id: attempt.id, test_id: attempt.test_id, user_id: auth.user.id, question_id: question.id, option_id: safeOptionId, selected_values: safeSelectedValues, answer_text: safeAnswerText, numeric_value: safeNumericValue, awarded_score: awardedScore };
+  const payload = { attempt_id: attempt.id, test_id: attempt.test_id, user_id: auth.profile.id, question_id: question.id, option_id: safeOptionId, selected_values: safeSelectedValues, answer_text: safeAnswerText, numeric_value: safeNumericValue, awarded_score: awardedScore };
   const { data: saved, error } = await admin.data.from("psychometric_answers").upsert(payload, { onConflict: "attempt_id,question_id" }).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

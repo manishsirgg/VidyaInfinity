@@ -14,11 +14,13 @@ export function PsychometricPurchaseCard({
   testTitle,
   price,
   purchaseLocked,
+  role,
 }: {
   testId: string;
   testTitle: string;
   price: number;
   purchaseLocked?: boolean;
+  role?: string | null;
 }) {
   const [couponCode, setCouponCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -46,6 +48,10 @@ export function PsychometricPurchaseCard({
     if (!createRes.ok || !createBody?.order?.id || !createBody?.localOrderId || !createBody?.key) {
       setLoading(false);
       setIsError(true);
+      if (createRes.status === 401) {
+        window.location.href = "/auth/login";
+        return;
+      }
       setMessage(createBody?.error ?? "Unable to start payment.");
       return;
     }
@@ -115,10 +121,10 @@ export function PsychometricPurchaseCard({
       <button
         type="button"
         onClick={payNow}
-        disabled={loading || Boolean(purchaseLocked)}
+        disabled={loading || Boolean(purchaseLocked) || Boolean(role && role !== "student")}
         className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
       >
-        {loading ? "Processing..." : purchaseLocked ? "Already Purchased" : "Pay & Unlock Test"}
+        {loading ? "Processing..." : purchaseLocked ? "Already Purchased" : role === "admin" ? "Student purchase required" : role && role !== "student" ? "Available for student accounts only" : "Pay & Unlock Test"}
       </button>
       {message ? <p className={`mt-2 text-xs ${isError ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
     </div>

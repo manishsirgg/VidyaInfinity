@@ -10,10 +10,10 @@ export async function GET(_: Request, { params }: { params: Promise<{ reportId: 
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
   const { data: report, error } = await admin.data
     .from("psychometric_reports")
-    .select("*, psychometric_tests(title,category,description), profiles(full_name,email,phone), test_attempts(id,status,created_at,submitted_at,completed_at)")
+    .select("*, psychometric_tests(title,category,description), profiles(full_name), test_attempts(id,status,created_at,submitted_at,completed_at)")
     .eq("id", reportId)
     .single();
   if (error || !report) return NextResponse.json({ error: "Report not found" }, { status: 404 });
-  if (auth.profile.role !== "admin" && report.user_id !== auth.user.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (auth.profile.role !== "admin" && report.user_id !== auth.profile.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   return NextResponse.json({ success: true, report });
 }

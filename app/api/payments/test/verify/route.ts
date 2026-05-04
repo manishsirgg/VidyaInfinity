@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
     const auth = await requireApiUser("student");
     if ("error" in auth) return auth.error;
-    const { user } = auth;
+    const { profile } = auth;
     const body = await request.json();
     const localOrderId = typeof body?.local_order_id === "string" ? body.local_order_id : undefined;
     const orderId = typeof body?.razorpay_order_id === "string" ? body.razorpay_order_id : body?.orderId;
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       .select("id,user_id,test_id,payment_status,final_amount,currency,attempt_id")
       .eq("id", localOrderId)
       .eq("razorpay_order_id", orderId)
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .single();
 
     if (orderFetchError || !order) {
