@@ -5,7 +5,7 @@ import { resolveFeaturedPlan } from "@/lib/featured-plan-resolution";
 import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
 import { getInstituteIdForUser } from "@/lib/course-featured";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
-import { compareFeaturedPlans, getCurrentFeaturedState } from "@/lib/featured-state";
+import { getCurrentFeaturedState, resolveFeaturedPurchasePolicy } from "@/lib/featured-state";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { isWebinarPromotable } from "@/lib/webinar-featured";
 
@@ -179,11 +179,8 @@ export async function POST(request: Request) {
     const state = await getCurrentFeaturedState({ supabase: admin.data, type: "webinar", instituteId, targetId: body.webinarId });
     const selectedPlan = { id: String(resolvedPlan.id), plan_code: resolvedPlan.plan_code, code: resolvedPlan.code, duration_days: durationDays, amount, price: resolvedPlan.price, tier_rank: resolvedPlan.tier_rank };
     const activePlan = state.currentPlanId ? state.planById.get(String(state.currentPlanId)) ?? null : null;
-    if (state.activeSubscription && activePlan) {
-      const cmp = compareFeaturedPlans(activePlan, selectedPlan);
-      if (cmp === 0 || String(activePlan.id) === String(selectedPlan.id)) return NextResponse.json({ error: "This plan is already active." }, { status: 409 });
-      if (cmp < 0) return NextResponse.json({ error: "You already have an active higher or equal featured plan." }, { status: 409 });
-    }
+    const policy = resolveFeaturedPurchasePolicy(activePlan, selectedPlan);
+    if (policy.purchase_intent === "blocked") return NextResponse.json({ error: "A higher or equal featured plan is already active." }, { status: 409 });
 
     stage = "local_order_insert";
     const nowIso = new Date().toISOString();
@@ -209,7 +206,13 @@ export async function POST(request: Request) {
           plan_resolution: planResolution.resolution,
           razorpay_stage: "not_created",
           payment_method: "razorpay",
-          is_upgrade: Boolean(state.activeSubscription),
+          is_upgrade: policy.purchase_intent === "upgrade",
+          purchase_intent: policy.purchase_intent,
+          activation_mode: policy.activation_mode,
+          previous_subscription_id: state.activeSubscription?.id ?? null,
+          previous_plan_code: state.currentPlanCode ?? null,
+          previous_ends_at: state.activeSubscription?.ends_at ?? null,
+          selected_plan_code: resolvedPlan.plan_code ?? resolvedPlan.code ?? null,
         },
         updated_at: nowIso,
       })
