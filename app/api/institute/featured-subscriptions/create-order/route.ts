@@ -174,19 +174,19 @@ export async function POST(request: Request) {
   }
 
   const featuredState = await getCurrentFeaturedState({ supabase: admin.data, type: "institute", instituteId: institute.id });
-  const selectedPlan = { id: planId, plan_code: typeof plan.plan_code === "string" ? plan.plan_code : null, code: typeof plan.code === "string" ? plan.code : null, duration_days: durationDays, amount: baseAmount, price: toNumber(plan.price), tier_rank: selectedTierRank };
+  const selectedPlan = { id: planId, plan_code: typeof plan.plan_code === "string" ? plan.plan_code : null, duration_days: durationDays, amount: baseAmount, price: toNumber(plan.price), tier_rank: selectedTierRank };
   const currentPlan = featuredState.currentPlanId ? featuredState.planById.get(String(featuredState.currentPlanId)) ?? null : null;
   let decision: "fresh_purchase" | "upgrade" | "blocked_same" | "blocked_lower_equal" = "fresh_purchase";
   if (featuredState.activeSubscription && currentPlan) {
     const cmp = compareFeaturedPlans(currentPlan, selectedPlan);
     if (cmp === 0 || String(currentPlan.id) === String(selectedPlan.id)) {
       decision = "blocked_same";
-      console.info("[featured.create-order]", { selectedPlanId: planId, foundPlanId: plan.id, planPrice: baseAmount, planCode: selectedPlan.plan_code, durationDays, currentActivePlanId: currentPlan.id, currentActivePlanCode: currentPlan.plan_code ?? currentPlan.code, decision });
+      console.info("[featured.create-order]", { selectedPlanId: planId, foundPlanId: plan.id, planPrice: baseAmount, planCode: selectedPlan.plan_code, durationDays, currentActivePlanId: currentPlan.id, currentActivePlanCode: currentPlan.plan_code, decision });
       return NextResponse.json({ error: "This plan is already active." }, { status: 409 });
     }
     if (cmp < 0) {
       decision = "blocked_lower_equal";
-      console.info("[featured.create-order]", { selectedPlanId: planId, foundPlanId: plan.id, planPrice: baseAmount, planCode: selectedPlan.plan_code, durationDays, currentActivePlanId: currentPlan.id, currentActivePlanCode: currentPlan.plan_code ?? currentPlan.code, decision });
+      console.info("[featured.create-order]", { selectedPlanId: planId, foundPlanId: plan.id, planPrice: baseAmount, planCode: selectedPlan.plan_code, durationDays, currentActivePlanId: currentPlan.id, currentActivePlanCode: currentPlan.plan_code, decision });
       return NextResponse.json({ error: "You already have an active higher or equal featured plan." }, { status: 409 });
     }
   }
@@ -225,7 +225,7 @@ export async function POST(request: Request) {
   if (!isUpgrade && window.shouldQueue) queuedOrder = true;
 
   const payableAfterUpgradeCredit = Math.max(0, baseAmount - creditAdjustmentAmount);
-  console.info("[featured.create-order]", { selectedPlanId: planId, foundPlanId: plan.id, planPrice: baseAmount, planCode: selectedPlan.plan_code, durationDays, currentActivePlanId: currentPlan?.id ?? null, currentActivePlanCode: currentPlan?.plan_code ?? currentPlan?.code ?? null, decision });
+  console.info("[featured.create-order]", { selectedPlanId: planId, foundPlanId: plan.id, planPrice: baseAmount, planCode: selectedPlan.plan_code, durationDays, currentActivePlanId: currentPlan?.id ?? null, currentActivePlanCode: currentPlan?.plan_code ?? null, decision });
 
   const walletAvailable = 0;
   const walletAdjustmentAmount = 0;
@@ -315,10 +315,10 @@ export async function POST(request: Request) {
 
     const { data: planDetails } = await admin.data
       .from("featured_listing_plans")
-      .select("plan_code,code")
+      .select("plan_code")
       .eq("id", planId)
-      .maybeSingle<{ plan_code: string | null; code: string | null }>();
-    const planCode = planDetails?.plan_code ?? planDetails?.code;
+      .maybeSingle<{ plan_code: string | null }>();
+    const planCode = planDetails?.plan_code;
     if (!planCode) return NextResponse.json({ error: "Unable to resolve featured plan details" }, { status: 500 });
 
     const shouldQueue = !isUpgrade && window.shouldQueue;

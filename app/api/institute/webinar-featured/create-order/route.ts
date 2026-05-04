@@ -17,9 +17,7 @@ type RequestBody = {
 type PlanRow = {
   id: string | number;
   plan_code: string | null;
-  code: string | null;
   duration_days: number;
-  amount: number | null;
   price: number | null;
   currency: string | null;
   is_active: boolean | null;
@@ -140,14 +138,14 @@ export async function POST(request: Request) {
 
     const { data: canonicalPlan } = await admin.data
       .from("webinar_featured_plans")
-      .select("id,plan_code,code,duration_days,amount,price,currency,is_active,tier_rank")
+      .select("id,plan_code,duration_days,price,currency,is_active,tier_rank")
       .eq("id", String(plan.id))
       .or("is_active.eq.true,is_active.is.null")
       .maybeSingle<PlanRow>();
     const resolvedPlan = canonicalPlan ?? plan;
 
     const durationDays = toNumber(resolvedPlan.duration_days);
-    const amount = toNumber(resolvedPlan.amount ?? resolvedPlan.price);
+    const amount = toNumber(resolvedPlan.price);
     const currency = typeof resolvedPlan.currency === "string" && resolvedPlan.currency.length > 0 ? resolvedPlan.currency : "INR";
 
     if (durationDays <= 0 || amount <= 0) {
@@ -177,7 +175,7 @@ export async function POST(request: Request) {
       durationDays,
     });
     const state = await getCurrentFeaturedState({ supabase: admin.data, type: "webinar", instituteId, targetId: body.webinarId });
-    const selectedPlan = { id: String(resolvedPlan.id), plan_code: resolvedPlan.plan_code, code: resolvedPlan.code, duration_days: durationDays, amount, price: resolvedPlan.price, tier_rank: resolvedPlan.tier_rank };
+    const selectedPlan = { id: String(resolvedPlan.id), plan_code: resolvedPlan.plan_code, duration_days: durationDays, price: resolvedPlan.price, tier_rank: resolvedPlan.tier_rank };
     const activePlan = state.currentPlanId ? state.planById.get(String(state.currentPlanId)) ?? null : null;
     const policy = resolveFeaturedPurchasePolicy(activePlan, selectedPlan);
     if (policy.purchase_intent === "blocked") return NextResponse.json({ error: "A higher or equal featured plan is already active." }, { status: 409 });
@@ -212,7 +210,7 @@ export async function POST(request: Request) {
           previous_subscription_id: state.activeSubscription?.id ?? null,
           previous_plan_code: state.currentPlanCode ?? null,
           previous_ends_at: state.activeSubscription?.ends_at ?? null,
-          selected_plan_code: resolvedPlan.plan_code ?? resolvedPlan.code ?? null,
+          selected_plan_code: resolvedPlan.plan_code ?? null,
         },
         updated_at: nowIso,
       })
@@ -383,7 +381,7 @@ export async function POST(request: Request) {
         durationDays,
         amount,
         currency,
-        planCode: resolvedPlan.plan_code ?? resolvedPlan.code ?? "",
+        planCode: resolvedPlan.plan_code ?? "",
       },
     });
   } catch (error) {

@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     actorUserId: auth.user.id,
     reason: "Institute featured payment verification",
   });
-  if (!activation.ok) return NextResponse.json({ error: activation.error }, { status: 500 });
+  if (!activation.ok) return NextResponse.json({ payment_received: true, activation_status: "needs_reconciliation", message: "Payment received. Activation is being reconciled.", orderId: existingOrder.id, error: activation.error }, { status: 202 });
 
   await createAccountNotification({
     userId: auth.user.id,
