@@ -174,7 +174,7 @@ export default async function StudentDashboardPage() {
     { data: recentRefundRequests },
   ] = await Promise.all([
     dataClient.from("course_orders").select("id,course_id,payment_status,paid_at,created_at").eq("student_id", user.id).order("created_at", { ascending: false }),
-    supabase.from("psychometric_orders").select("id,payment_status,paid_at").eq("user_id", user.id).returns<PsychometricOrderRow[]>(),
+    supabase.from("psychometric_orders").select("id,payment_status,paid_at").eq("user_id", profile.id).returns<PsychometricOrderRow[]>(),
     dataClient
       .from("course_enrollments")
       .select("id,course_id,enrollment_status,created_at,access_end_at")
