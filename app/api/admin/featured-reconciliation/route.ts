@@ -30,7 +30,8 @@ export async function GET() {
     const subByOrder = new Map(subs.filter(s=>s.order_id).map(s=>[s.order_id,s]));
     const issues: Array<Record<string, unknown>> = [];
     for (const o of orders) {
-      if (!(o.payment_status === "paid" && o.order_status === "confirmed")) continue;
+      const isPaidConfirmed = o.payment_status === "paid" && (o.order_status === "confirmed" || o.order_status === "paid");
+      if (!isPaidConfirmed) continue;
       const s = subByOrder.get(o.id);
       if (!s) {
         issues.push({ orderType:type, orderId:o.id, targetId:o[key], issue:"paid_featured_order_missing_subscription", recommended_action:"Create missing active subscription" });
@@ -39,23 +40,40 @@ export async function GET() {
       const active = subs.find(x=>x[key]===o[key]&&x.status==="active"&&new Date(x.starts_at).getTime()<=now&&new Date(x.ends_at).getTime()>now);
       if (s.status === "scheduled" && active) {
         const activePlan = planById.get(String(active.plan_id));
-        const selectedPlan = planById.get(String(o.plan_id));
-        if (activePlan && selectedPlan && compareFeaturedPlans(activePlan, selectedPlan) > 0) {
-          issues.push({ orderType:type, orderId:o.id, targetId:o[key], issue:`${type}_upgrade_paid_but_scheduled`, recommended_action:"Activate upgraded plan and cancel old lower plan" });
+        const scheduledPlan = planById.get(String(s.plan_id)) ?? planById.get(String(o.plan_id));
+        const byDuration = Number(scheduledPlan?.duration_days ?? 0) > Number(activePlan?.duration_days ?? 0);
+        const byRank = activePlan && scheduledPlan ? compareFeaturedPlans(activePlan, scheduledPlan) > 0 : false;
+        const computedIssue = (byDuration || byRank) ? `${type}_upgrade_paid_but_scheduled` : null;
+        console.log("[admin/featured-reconciliation] upgrade_candidate_row", {
+          paid_order_id: o.id,
+          paid_subscription_id: s.id,
+          paid_plan_code: scheduledPlan?.plan_code ?? scheduledPlan?.code ?? null,
+          paid_duration_days: scheduledPlan?.duration_days ?? null,
+          active_subscription_id: active.id,
+          active_plan_code: activePlan?.plan_code ?? activePlan?.code ?? null,
+          active_duration_days: activePlan?.duration_days ?? null,
+          computed_issue: computedIssue,
+        });
+        if (computedIssue) {
+          issues.push({ orderType:type, orderId:o.id, targetId:o[key], subscriptionId: s.id, currentActiveSubscriptionId: active.id, paidPlanCode: scheduledPlan?.plan_code ?? scheduledPlan?.code ?? null, activePlanCode: activePlan?.plan_code ?? activePlan?.code ?? null, issue:computedIssue, recommended_action:"Activate upgraded plan and cancel old lower plan" });
         }
       }
     }
     const grouped = new Map<string, OrderLike[]>();
     for (const o of orders) {
       const s = subByOrder.get(o.id);
-      if (o.payment_status==="paid"&&o.order_status==="confirmed"&&s?.status==="scheduled") {
+      if (o.payment_status==="paid"&&(o.order_status==="confirmed"||o.order_status==="paid")&&s?.status==="scheduled") {
         const k=String(o[key]); grouped.set(k,[...(grouped.get(k)??[]),o]);
       }
     }
     for (const [target, arr] of grouped) if (arr.length>1) {
       arr.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
-      for (let i=1;i<arr.length;i++) issues.push({ orderType:type, orderId:arr[i].id, targetId:target, issue:"duplicate_paid_scheduled_upgrade", recommended_action:"Review: activate latest, extend duration, or refund duplicate manually" });
+      for (let i=1;i<arr.length;i++) issues.push({ orderType:type, orderId:arr[i].id, targetId:target, issue:"duplicate_paid_scheduled_upgrade", recommended_action:"Review duplicate: refund manually or extend after admin decision" });
     }
+    const paidScheduledCourseUpgradeCandidates = grouped.size;
+    const courseUpgradeIssuesReturned = issues.filter((x) => x.issue === `${type}_upgrade_paid_but_scheduled`).length;
+    const duplicatePaidScheduledUpgradeIssuesReturned = issues.filter((x) => x.issue === "duplicate_paid_scheduled_upgrade").length;
+    console.log("[admin/featured-reconciliation] upgrade_detection_counts", { type, paidScheduledCourseUpgradeCandidates, courseUpgradeIssuesReturned, duplicatePaidScheduledUpgradeIssuesReturned });
     return issues;
   };
 
