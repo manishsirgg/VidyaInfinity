@@ -224,7 +224,7 @@ export default async function Page({
 }: {
   searchParams?: Promise<{ kind?: string | string[] }>;
 }) {
-  const { user } = await requireUser("student");
+  const { user, profile } = await requireUser("student");
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
@@ -233,7 +233,7 @@ export default async function Page({
 
   console.info("[student/purchases] purchases_page_load_started", {
     event: "purchases_page_load_started",
-    user_id: user.id,
+    user_id: profile.id,
     purchase_kind: purchaseKind,
   });
 
@@ -248,19 +248,19 @@ export default async function Page({
     dataClient
       .from("course_orders")
       .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,paid_at,created_at,razorpay_order_id,razorpay_payment_id")
-      .eq("student_id", user.id)
+      .eq("student_id", profile.id)
       .order("created_at", { ascending: false }),
     dataClient
       .from("psychometric_orders")
       .select("id,final_paid_amount,payment_status,paid_at,test_id,razorpay_order_id,razorpay_payment_id,created_at")
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .order("created_at", { ascending: false }),
     dataClient
       .from("webinar_orders")
       .select(
         "id,webinar_id,student_id,institute_id,amount,currency,payment_status,paid_at,order_status,access_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_delivery_status,access_start_at,access_end_at,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))",
       )
-      .eq("student_id", user.id)
+      .eq("student_id", profile.id)
       .order("created_at", { ascending: false }),
   ]);
 
@@ -270,13 +270,13 @@ export default async function Page({
     sectionErrors.webinarOrders = webinarResult.error.message;
     console.error("[student/purchases] purchases_page_webinar_orders_failed", {
       event: "purchases_page_webinar_orders_failed",
-      user_id: user.id,
+      user_id: profile.id,
       error: webinarResult.error.message,
     });
   } else {
     console.info("[student/purchases] purchases_page_webinar_orders_loaded", {
       event: "purchases_page_webinar_orders_loaded",
-      user_id: user.id,
+      user_id: profile.id,
       count: webinarResult.data?.length ?? 0,
     });
   }
@@ -355,14 +355,14 @@ export default async function Page({
         dataClient
           .from("course_orders")
           .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,paid_at,created_at,razorpay_order_id,razorpay_payment_id")
-          .eq("student_id", user.id)
+          .eq("student_id", profile.id)
           .order("created_at", { ascending: false }),
         dataClient
           .from("webinar_orders")
           .select(
             "id,webinar_id,student_id,institute_id,amount,currency,payment_status,paid_at,order_status,access_status,razorpay_order_id,razorpay_payment_id,created_at,webinar_registrations(id,webinar_order_id,webinar_id,created_at,registered_at,registration_status,payment_status,access_status,access_delivery_status,access_start_at,access_end_at,access_granted_at,reveal_started_at,email_sent_at,whatsapp_sent_at),webinars(title,starts_at,webinar_mode,meeting_provider,institutes(name))",
           )
-          .eq("student_id", user.id)
+          .eq("student_id", profile.id)
           .order("created_at", { ascending: false }),
       ]);
 
@@ -374,20 +374,20 @@ export default async function Page({
   const { data: refundsData, error: refundsError } = await dataClient
     .from("refunds")
     .select("id,refund_status,order_kind,reason,amount,requested_at,processed_at,created_at,razorpay_payment_id,course_order_id,psychometric_order_id,webinar_order_id")
-    .eq("user_id", user.id)
+    .eq("user_id", profile.id)
     .returns<RefundRecord[]>();
 
   if (refundsError) {
     sectionErrors.webinarRefunds = refundsError.message;
     console.error("[student/purchases] purchases_page_webinar_refunds_failed", {
       event: "purchases_page_webinar_refunds_failed",
-      user_id: user.id,
+      user_id: profile.id,
       error: refundsError.message,
     });
   } else {
     console.info("[student/purchases] purchases_page_webinar_refunds_loaded", {
       event: "purchases_page_webinar_refunds_loaded",
-      user_id: user.id,
+      user_id: profile.id,
       count: refundsData?.filter((item) => item.order_kind === "webinar_registration").length ?? 0,
     });
   }
@@ -395,16 +395,16 @@ export default async function Page({
   const enrollmentWithStatus = await dataClient
     .from("course_enrollments")
     .select("course_id,course_order_id,enrollment_status")
-    .eq("student_id", user.id)
+    .eq("student_id", profile.id)
     .in("enrollment_status", [...ENROLLMENT_STATUSES_VISIBLE]);
 
   const enrollmentResult =
     enrollmentWithStatus.error && enrollmentWithStatus.error.message.toLowerCase().includes("enrollment_status")
-      ? await dataClient.from("course_enrollments").select("course_id,course_order_id").eq("student_id", user.id)
+      ? await dataClient.from("course_enrollments").select("course_id,course_order_id").eq("student_id", profile.id)
       : enrollmentWithStatus;
 
   if (enrollmentResult.error) {
-    console.error("[student/purchases] enrollment fetch failed", { user_id: user.id, error: enrollmentResult.error.message });
+    console.error("[student/purchases] enrollment fetch failed", { user_id: profile.id, error: enrollmentResult.error.message });
   }
 
   const enrollmentRows = (enrollmentResult.data ?? []) as EnrollmentRow[];
@@ -478,7 +478,7 @@ export default async function Page({
           return [order.id, resolvedAccess] as const;
         } catch (error) {
           console.error("[student/purchases] webinar access resolution failed", {
-            user_id: user.id,
+            user_id: profile.id,
             webinar_order_id: order.id,
             webinar_id: order.webinar_id,
             error: error instanceof Error ? error.message : String(error),
@@ -493,7 +493,7 @@ export default async function Page({
 
   console.info("[student/purchases] purchases_page_render_completed", {
     event: "purchases_page_render_completed",
-    user_id: user.id,
+    user_id: profile.id,
     purchase_kind: purchaseKind,
     counts: {
       courses: courseOrders.length,
@@ -599,7 +599,7 @@ export default async function Page({
 
                 console.info("[student/purchases] webinar_purchase_state_resolved", {
                   event: "webinar_purchase_state_resolved",
-                  user_id: user.id,
+                  user_id: profile.id,
                   webinar_order_id: order.id,
                   webinar_id: order.webinar_id,
                   registration_status: registrationStatus,
@@ -610,7 +610,7 @@ export default async function Page({
                 if (deliveryStatus === "pending" && String(accessStatus).toLowerCase() === "granted") {
                   console.info("[student/purchases] webinar_delivery_status_ignored_for_access_truth", {
                     event: "webinar_delivery_status_ignored_for_access_truth",
-                    user_id: user.id,
+                    user_id: profile.id,
                     webinar_order_id: order.id,
                     webinar_id: order.webinar_id,
                     access_status: accessStatus,

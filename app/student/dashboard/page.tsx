@@ -174,7 +174,7 @@ export default async function StudentDashboardPage() {
     { data: recentRefundRequests },
   ] = await Promise.all([
     dataClient.from("course_orders").select("id,course_id,payment_status,paid_at,created_at").eq("student_id", user.id).order("created_at", { ascending: false }),
-    supabase.from("psychometric_orders").select("id,payment_status,paid_at").eq("user_id", user.id).returns<PsychometricOrderRow[]>(),
+    supabase.from("psychometric_orders").select("id,payment_status,paid_at").eq("user_id", profile.id).returns<PsychometricOrderRow[]>(),
     dataClient
       .from("course_enrollments")
       .select("id,course_id,enrollment_status,created_at,access_end_at")
@@ -380,12 +380,12 @@ export default async function StudentDashboardPage() {
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/approval-status">View Approval Status</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/leads">My Inquiries</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/enrollments">My Enrollments</Link>
-          <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/tests">My Psychometric Tests</Link>
+          <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/dashboard/psychometric">My Psychometric Tests / Reports</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/saved-courses">Saved</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/cart">Checkout Cart</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/courses">Browse Courses</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/webinars">Browse Webinars</Link>
-          <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/psychometric-tests">Take Psychometric Test</Link>
+          <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/psychometric-tests">Browse Psychometric Tests</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/dashboard/psychometric">My Psychometric Reports</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/purchases">View Purchases</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/refund-cancellation-policy">Refund Policy</Link>

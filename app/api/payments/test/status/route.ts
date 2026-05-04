@@ -31,7 +31,7 @@ export async function GET(request: Request) {
 
   let query = admin.data
     .from("psychometric_orders")
-    .select("id,user_id,test_id,payment_status,final_paid_amount,currency,paid_at,razorpay_order_id,razorpay_payment_id,attempt_id")
+    .select("id,user_id,test_id,payment_status,final_paid_amount,currency,paid_at,razorpay_order_id,razorpay_payment_id,attempt_id,psychometric_tests(slug)")
     .eq("user_id", auth.user.id)
     .limit(1);
 
@@ -61,6 +61,7 @@ export async function GET(request: Request) {
     razorpay_order_id: string | null;
     razorpay_payment_id: string | null;
     attempt_id: string | null;
+    psychometric_tests: { slug: string | null } | { slug: string | null }[] | null;
   }>();
 
   if (!order) return NextResponse.json({ ok: false, error: "Psychometric order not found" }, { status: 404 });
@@ -114,11 +115,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, state: "repairable", error: "Payment is captured but attempt is not linked yet. Please retry shortly." }, { status: 202 });
   }
 
+  const testRef = Array.isArray(order.psychometric_tests) ? order.psychometric_tests[0] : order.psychometric_tests;
+
   if (normalize(order.payment_status) === "failed") {
     return NextResponse.json({
       ok: true,
       state: "failed",
-      redirectTo: `/student/payments/failed?kind=psychometric&order_id=${encodeURIComponent(order.razorpay_order_id ?? order.id)}&payment_id=${encodeURIComponent(effectivePaymentId ?? "")}`,
+      redirectTo: `/student/payments/failed?kind=psychometric&order_id=${encodeURIComponent(order.razorpay_order_id ?? order.id)}&payment_id=${encodeURIComponent(effectivePaymentId ?? "")}&slug=${encodeURIComponent(testRef?.slug ?? "")}`,
     });
   }
 
