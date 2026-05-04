@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     const orderStatus = String(orderRow.order_status ?? "").toLowerCase();
     const razorpayPaymentId = typeof orderRow.razorpay_payment_id === "string" ? orderRow.razorpay_payment_id : null;
     const razorpayOrderId = typeof orderRow.razorpay_order_id === "string" ? orderRow.razorpay_order_id : null;
-    const shouldActivateLocalPaid = orderType === "institute" && paymentStatus === "paid" && orderStatus === "confirmed" && Boolean(razorpayPaymentId);
+    const shouldActivateLocalPaid = paymentStatus === "paid" && ["confirmed","paid"].includes(orderStatus) && Boolean(razorpayPaymentId);
 
     let paymentIdForActivation = razorpayPaymentId ?? undefined;
     if (shouldActivateLocalPaid) debugStage = "local_paid_fast_path";
@@ -72,63 +72,6 @@ export async function POST(request: Request) {
 
     debugStage = "activation_helper_called";
     const act = await activateFeaturedSubscriptionFromPaidOrder({ supabase: admin.data, orderType, orderId, razorpayOrderId: razorpayOrderId ?? undefined, razorpayPaymentId: paymentIdForActivation, source: "admin_reconciliation", actorUserId, reason: "Paid confirmed local order missing subscription" });
-
-    if (!act.ok && orderType === "institute" && String(act.error ?? "").includes("Order not found")) {
-      const hasSubscription = Boolean(orderRow.subscription_id);
-      const fallbackEligible = !hasSubscription && paymentStatus === "paid" && orderStatus === "confirmed" && Boolean(razorpayPaymentId);
-      if (fallbackEligible) {
-        debugStage = "direct_fallback";
-        const { data: plan, error: planError } = await admin.data
-          .from("featured_listing_plans")
-          .select("id,plan_code,price,currency,duration_days")
-          .eq("id", String(orderRow.plan_id ?? ""))
-          .maybeSingle<{ id: string; plan_code: string; price: number | null; currency: string | null; duration_days: number | null }>();
-        if (planError || !plan) {
-          return NextResponse.json({ success: false, message: "Activation failed", action_taken: "activation_failed", orderType, orderId, error: planError?.message ?? "Plan not found", debug_stage: debugStage }, { status: 500 });
-        }
-        const now = new Date();
-        const durationDays = Number(orderRow.duration_days ?? plan.duration_days ?? 0);
-        const endsAt = new Date(now.getTime() + durationDays * 86400000).toISOString();
-        const { data: inserted, error: insertError } = await admin.data
-          .from("institute_featured_subscriptions")
-          .insert({
-            institute_id: orderRow.institute_id,
-            created_by: orderRow.created_by,
-            plan_code: plan.plan_code,
-            amount: Number(orderRow.final_payable_amount ?? orderRow.amount ?? plan.price ?? 0),
-            currency: orderRow.currency ?? plan.currency ?? "INR",
-            duration_days: durationDays,
-            starts_at: now.toISOString(),
-            ends_at: endsAt,
-            status: "active",
-            plan_id: orderRow.plan_id,
-            order_id: orderRow.id,
-            queued_from_previous: false,
-            activated_at: now.toISOString(),
-            metadata: {
-              activation_source: "admin_reconciliation_direct_fallback",
-              razorpay_order_id: orderRow.razorpay_order_id ?? null,
-              razorpay_payment_id: orderRow.razorpay_payment_id ?? null,
-              reconciled_by: actorUserId,
-            },
-          })
-          .select("id")
-          .single<{ id: string }>();
-
-        if (insertError) {
-          return NextResponse.json({ success: false, message: "Activation failed", action_taken: "activation_failed", orderType, orderId, error: insertError.message, debug_stage: "subscription_insert_failed" }, { status: 500 });
-        }
-
-        return NextResponse.json({
-          success: true,
-          message: "Reconciliation completed. Subscription is now active.",
-          action_taken: "created_missing_subscription",
-          orderType,
-          orderId,
-          subscription_id: inserted.id,
-        });
-      }
-    }
 
     if (!act.ok) {
       const activationDebugStage = act.debugStage ?? debugStage;

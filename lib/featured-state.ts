@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type FeaturedType = "institute" | "course" | "webinar";
 
-type Plan = { id: string; plan_code: string | null; code: string | null; duration_days: number; amount: number | null; price?: number | null; tier_rank?: number | null };
+type Plan = { id: string; plan_code: string | null; slug?: string | null; duration_days: number; price: number | null; tier_rank?: number | null };
 
 type Subscription = { id: string; plan_id: string | null; status: string; starts_at: string; ends_at: string; activated_at: string | null; created_at: string; amount: number; duration_days: number; metadata?: Record<string, unknown> | null };
 
@@ -12,14 +12,14 @@ function codeRank(code?: string | null) { return rankMap[String(code ?? "").toLo
 
 export function compareFeaturedPlans(current: Plan | null | undefined, selected: Plan | null | undefined) {
   if (!current || !selected) return 0;
-  const cr = Number(current.tier_rank ?? 0) || codeRank(current.plan_code ?? current.code);
-  const sr = Number(selected.tier_rank ?? 0) || codeRank(selected.plan_code ?? selected.code);
+  const cr = Number(current.tier_rank ?? 0) || codeRank(current.plan_code ?? current.slug);
+  const sr = Number(selected.tier_rank ?? 0) || codeRank(selected.plan_code ?? selected.slug);
   if (cr > 0 || sr > 0) return sr - cr;
   const cDur = Number(current.duration_days ?? 0);
   const sDur = Number(selected.duration_days ?? 0);
   if (cDur !== sDur) return sDur - cDur;
-  const cAmt = Number(current.amount ?? current.price ?? 0);
-  const sAmt = Number(selected.amount ?? selected.price ?? 0);
+  const cAmt = Number(current.price ?? 0);
+  const sAmt = Number(selected.price ?? 0);
   return sAmt - cAmt;
 }
 
@@ -51,15 +51,9 @@ export async function getCurrentFeaturedState(params: { supabase: SupabaseClient
   const duplicateActiveWarning = validActive.length > 1;
   const scheduledSubscription = subs.filter((s)=> s.status === "scheduled" || new Date(s.starts_at).getTime() > nowMs)
     .sort((a,b)=>new Date(a.starts_at).getTime()-new Date(b.starts_at).getTime())[0] ?? null;
-  const { data: plans } = await params.supabase.from(planTable).select("id,plan_code,code,duration_days,amount,price,tier_rank").or("is_active.eq.true,is_active.is.null");
-  const planRows = ((plans ?? []) as Plan[]).map((plan) => {
-    if (params.type === "institute") {
-      const canonicalAmount = Number(plan.price ?? plan.amount ?? 0);
-      return { ...plan, amount: canonicalAmount, price: canonicalAmount };
-    }
-    return plan;
-  });
+  const { data: plans } = await params.supabase.from(planTable).select("id,plan_code,slug,duration_days,price,tier_rank").or("is_active.eq.true,is_active.is.null");
+  const planRows = (plans ?? []) as Plan[];
   const planById = new Map(planRows.map((p)=>[String(p.id), p]));
   const currentPlan = activeSubscription?.plan_id ? planById.get(String(activeSubscription.plan_id)) ?? null : null;
-  return { activeSubscription, scheduledSubscription, currentPlanId: currentPlan?.id ?? activeSubscription?.plan_id ?? null, currentPlanCode: currentPlan?.plan_code ?? currentPlan?.code ?? null, currentPlanDurationDays: currentPlan?.duration_days ?? activeSubscription?.duration_days ?? null, currentPlanAmount: currentPlan?.amount ?? activeSubscription?.amount ?? null, expiresAt: activeSubscription?.ends_at ?? null, duplicateActiveWarning, plans: planRows, planById };
+  return { activeSubscription, scheduledSubscription, currentPlanId: currentPlan?.id ?? activeSubscription?.plan_id ?? null, currentPlanCode: currentPlan?.plan_code ?? currentPlan?.slug ?? null, currentPlanDurationDays: currentPlan?.duration_days ?? activeSubscription?.duration_days ?? null, currentPlanAmount: currentPlan?.price ?? activeSubscription?.amount ?? null, expiresAt: activeSubscription?.ends_at ?? null, duplicateActiveWarning, plans: planRows, planById };
 }
