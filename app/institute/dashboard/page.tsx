@@ -386,6 +386,9 @@ export default async function InstituteDashboardPage() {
             <Link href="/institute/webinars/featured" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Promote webinars
             </Link>
+            <Link href="/psychometric-tests" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              Psychometric tests
+            </Link>
           </div>
           <div className="mt-3 rounded border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-900">
             {activeFeaturedStatus ? (

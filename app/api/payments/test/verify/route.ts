@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     if (
       payment.id !== paymentId ||
       payment.order_id !== orderId ||
-      payment.status !== "captured" ||
+      !["paid", "captured", "success", "confirmed"].includes(String(payment.status ?? "").toLowerCase()) ||
       Number(payment.amount ?? 0) !== expectedAmountInPaise ||
       (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase()
     ) {
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
       .select("attempt_id")
       .eq("id", localOrderId)
       .maybeSingle<{ attempt_id: string | null }>();
-    const attemptId = resolvedOrder?.attempt_id ?? order.attempt_id ?? null;
+    const attemptId = reconciled.attemptId ?? resolvedOrder?.attempt_id ?? order.attempt_id ?? null;
     const redirectTo = attemptId ? `/dashboard/psychometric/attempts/${attemptId}` : "/dashboard/psychometric";
 
     return NextResponse.json({ ok: true, idempotent: order.payment_status === "paid", attemptId, redirectTo });

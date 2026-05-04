@@ -13,6 +13,7 @@ export default async function PaymentFailedPage({ searchParams }: { searchParams
   const paymentId = first(params.payment_id) || first(params.razorpay_payment_id);
   const reason = first(params.reason);
   const kindRaw = first(params.kind).trim().toLowerCase();
+  const psychometricSlug = first(params.slug).trim();
   const kind = kindRaw === "webinar" || kindRaw === "psychometric" ? kindRaw : "course";
 
   return (
@@ -28,7 +29,7 @@ export default async function PaymentFailedPage({ searchParams }: { searchParams
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link href={kind === "webinar" ? "/webinars" : kind === "psychometric" ? "/psychometric-tests" : "/courses"} className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white">Retry payment</Link>
+          <Link href={kind === "webinar" ? "/webinars" : kind === "psychometric" ? (psychometricSlug ? `/psychometric-tests/${psychometricSlug}` : "/psychometric-tests") : "/courses"} className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white">Retry payment</Link>
           <Link href="/contact" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Contact support</Link>
         </div>
       </div>
