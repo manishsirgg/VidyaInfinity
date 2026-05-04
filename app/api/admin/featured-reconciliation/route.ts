@@ -7,6 +7,7 @@ type FeatureType = "institute" | "course" | "webinar";
 type AuditStatus =
   | "healthy_paid_linked"
   | "paid_missing_subscription"
+  | "duplicate_subscription_same_order_id"
   | "paid_upgrade_scheduled_while_lower_active"
   | "duplicate_paid_scheduled_upgrade"
   | "pending_over_10m"
@@ -75,11 +76,16 @@ export async function GET() {
 
   function pushRows(type: FeatureType, orders: LooseRow[], subs: LooseRow[], targetKey: "institute_id" | "course_id" | "webinar_id") {
     scanned[type] = orders.length;
-    const subByOrder = new Map(subs.filter((s) => s.order_id).map((s) => [String(s.order_id), s]));
+    const subByOrderList = new Map<string, LooseRow[]>();
+    for (const sub of subs.filter((s) => s.order_id)) {
+      const key = String(sub.order_id);
+      subByOrderList.set(key, [...(subByOrderList.get(key) ?? []), sub]);
+    }
     for (const o of orders) {
       if (!o?.id) { skipped.push({ type, reason: "missing_order_id" }); continue; }
       const orderId = String(o.id);
-      const sub = subByOrder.get(orderId);
+      const byOrder = subByOrderList.get(orderId) ?? [];
+      const sub = byOrder[0];
       const plan = planMap[type].get(String(sub?.plan_id ?? o.plan_id ?? ""));
       const paymentStatus = o.payment_status ? String(o.payment_status) : null;
       const orderStatus = o.order_status ? String(o.order_status) : null;
@@ -90,7 +96,8 @@ export async function GET() {
       let auditStatus: AuditStatus = "review";
       if (isFailed) auditStatus = "failed_or_cancelled";
       else if (isPending10m) auditStatus = "pending_over_10m";
-      else if (isPaidConfirmed && !sub) auditStatus = "paid_missing_subscription";
+      else if (isPaidConfirmed && byOrder.length === 0) auditStatus = "paid_missing_subscription";
+      else if (isPaidConfirmed && byOrder.length > 1) auditStatus = "duplicate_subscription_same_order_id";
       else if (isPaidConfirmed && sub) auditStatus = "healthy_paid_linked";
 
       auditRows.push({
@@ -149,7 +156,7 @@ export async function GET() {
   pushRows("webinar", wO.data ?? [], wS.data ?? [], "webinar_id");
 
   const issues = auditRows
-    .filter((r) => ["paid_missing_subscription", "paid_upgrade_scheduled_while_lower_active", "duplicate_paid_scheduled_upgrade"].includes(r.auditStatus))
+    .filter((r) => ["paid_missing_subscription", "paid_upgrade_scheduled_while_lower_active", "duplicate_paid_scheduled_upgrade", "duplicate_subscription_same_order_id"].includes(r.auditStatus))
     .map((r) => {
       const issue = r.auditStatus === "paid_upgrade_scheduled_while_lower_active" ? `${r.featureType}_upgrade_paid_but_scheduled` : r.auditStatus;
       return {
@@ -157,7 +164,7 @@ export async function GET() {
         id: `${issue}:${r.orderId}:${r.subscriptionId ?? "none"}`,
         issue,
         canReconcile: issue === "paid_missing_subscription" || issue === "course_upgrade_paid_but_scheduled" || issue === "webinar_upgrade_paid_but_scheduled" || issue === "paid_upgrade_scheduled_while_lower_active",
-        recommendedAction: issue === "paid_missing_subscription" ? "Create missing active subscription" : issue === "duplicate_paid_scheduled_upgrade" ? "Review duplicate: refund manually or extend after admin decision" : "Activate upgraded plan and cancel old lower plan",
+        recommendedAction: issue === "paid_missing_subscription" ? "Create missing active subscription" : issue === "duplicate_subscription_same_order_id" ? "Cancel duplicate subscription row manually; keep one subscription per paid order." : issue === "duplicate_paid_scheduled_upgrade" ? "Review duplicate: refund manually or extend after admin decision" : "Activate upgraded plan and cancel old lower plan",
       };
     });
 

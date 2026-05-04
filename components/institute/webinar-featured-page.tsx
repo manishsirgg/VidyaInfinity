@@ -265,6 +265,10 @@ export function InstituteWebinarFeaturedPageClient() {
             setBusyWebinarId(null);
             return;
           }
+          if (verifyBody?.activation_status === "needs_reconciliation") {
+            setMessageType("info");
+            setMessage("Payment received. Activation is being reconciled. Please contact support if this does not update shortly.");
+          }
 
           let refreshedSubscriptions: Subscription[] = [];
           try {
@@ -297,7 +301,7 @@ export function InstituteWebinarFeaturedPageClient() {
           } else if (nextState.hasScheduled) {
             setMessage("Payment successful. Featured plan has been scheduled.");
           } else {
-            setMessage("Payment received. Activation is being reconciled.");
+            setMessage("Payment received but activation is pending. Admin reconciliation required.");
           }
           setBusyWebinarId(null);
         },
