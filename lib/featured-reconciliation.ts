@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
-import { compareFeaturedPlans, getCurrentFeaturedState, type FeaturedType } from "@/lib/featured-state";
+import { getCurrentFeaturedState, type FeaturedType } from "@/lib/featured-state";
 
 export type FeaturedOrderType = FeaturedType;
 
@@ -16,6 +16,17 @@ const CFG = {
   course: { orderTable: "course_featured_orders", subTable: "course_featured_subscriptions", planTable: "course_featured_plans", target: "course_id" },
   webinar: { orderTable: "webinar_featured_orders", subTable: "webinar_featured_subscriptions", planTable: "webinar_featured_plans", target: "webinar_id" },
 } as const;
+const FEATURED_PLAN_RANK: Record<string, number> = { three_days: 1, weekly: 2, monthly: 3, quarterly: 4, half_yearly: 5, yearly: 6 };
+function planRank(code: string | null | undefined) { return FEATURED_PLAN_RANK[String(code ?? "").toLowerCase()] ?? 0; }
+function compareSubStrength(current: { plan_code?: string | null; duration_days?: number | null; amount?: number | null }, next: { plan_code?: string | null; duration_days?: number | null; amount?: number | null }) {
+  const cr = planRank(current.plan_code);
+  const nr = planRank(next.plan_code);
+  if (cr > 0 || nr > 0) return nr - cr;
+  const cd = Number(current.duration_days ?? 0);
+  const nd = Number(next.duration_days ?? 0);
+  if (cd !== nd) return nd - cd;
+  return Number(next.amount ?? 0) - Number(current.amount ?? 0);
+}
 
 // IMPORTANT regression guard:
 // Keep order selects type-specific so institute queries never reference course_id/webinar_id.
@@ -76,7 +87,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     return { ok: false, error: missingMessage, debugStage: "order_loaded" };
   }
 
-  const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,plan_code,duration_days,metadata").eq("order_id", params.orderId).limit(1).maybeSingle();
+  const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,plan_code,duration_days,amount,metadata,created_at").eq("order_id", params.orderId).limit(1).maybeSingle();
 
   if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
   const targetId = params.orderType === "course" ? (order.course_id ?? undefined) : params.orderType === "webinar" ? (order.webinar_id ?? undefined) : undefined;
@@ -116,16 +127,19 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const { error: orderUpdateError } = await params.supabase.from(cfg.orderTable).update(paidPatch).eq("id", params.orderId).neq("order_status", "cancelled");
   if (orderUpdateError) return { ok: false, error: orderUpdateError.message, debugStage: "activation_helper_called" };
 
-  let activeExistingQuery = params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,metadata").eq("status", "active").lte("starts_at", nowIso).gt("ends_at", nowIso);
+  let activeExistingQuery = params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,metadata,plan_code,duration_days,amount").eq("status", "active").lte("starts_at", nowIso).gt("ends_at", nowIso);
   if (params.orderType === "institute") activeExistingQuery = activeExistingQuery.eq("institute_id", order.institute_id);
   if (params.orderType === "course" && targetId) activeExistingQuery = activeExistingQuery.eq("course_id", targetId);
   if (params.orderType === "webinar" && targetId) activeExistingQuery = activeExistingQuery.eq("webinar_id", targetId);
   const { data: activeExisting } = await activeExistingQuery.order("starts_at", { ascending: false }).limit(1).maybeSingle();
-  const selectedPlanForCompare = state.planById.get(String(order.plan_id));
   const activePlan = state.currentPlanId ? state.planById.get(String(state.currentPlanId)) ?? null : null;
   const purchaseIntent = String((order.metadata ?? {}).purchase_intent ?? "");
-  const isUpgrade = purchaseIntent === "upgrade" || (activeExisting && activePlan && selectedPlanForCompare ? compareFeaturedPlans(activePlan, selectedPlanForCompare) > 0 : false);
-  const isRenewal = purchaseIntent === "renewal" || (!isUpgrade && Boolean(activeExisting));
+  const metadataActivationMode = String((order.metadata ?? {}).activation_mode ?? "");
+  const scheduledPlan = { plan_code: existingForOrder?.plan_code ?? normalizedPlanCode, duration_days: existingForOrder?.duration_days ?? normalizedDurationDays, amount: existingForOrder?.amount ?? normalizedAmount };
+  const currentActivePlan = { plan_code: activeExisting?.plan_code ?? activePlan?.plan_code ?? null, duration_days: activeExisting?.duration_days ?? activePlan?.duration_days ?? null, amount: activeExisting?.amount ?? activePlan?.price ?? null };
+  const strengthDelta = activeExisting ? compareSubStrength(currentActivePlan, scheduledPlan) : 0;
+  const isUpgrade = Boolean(activeExisting) && (purchaseIntent === "upgrade" || strengthDelta > 0);
+  const isRenewal = Boolean(activeExisting) && !isUpgrade && purchaseIntent === "renewal" && metadataActivationMode === "scheduled_after_current_expiry";
 
   let actionTaken = "none";
   if (existingForOrder?.status === "active") {
@@ -136,6 +150,16 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
 
   if (existingForOrder?.status === "scheduled") {
     const computedIntent = isUpgrade ? "upgrade" : (isRenewal ? "renewal" : "new");
+    if ((params.orderType === "course" || params.orderType === "webinar") && targetId) {
+      let dupQuery = params.supabase.from(cfg.subTable).select("id,order_id,created_at,status").eq("status", "scheduled");
+      dupQuery = params.orderType === "course" ? dupQuery.eq("course_id", targetId) : dupQuery.eq("webinar_id", targetId);
+      const { data: scheduledRows } = await dupQuery.order("created_at", { ascending: false });
+      const latestScheduled = (scheduledRows ?? [])[0];
+      if (latestScheduled && latestScheduled.id !== existingForOrder.id && isUpgrade) {
+        actionTaken = "duplicate_paid_scheduled_upgrade_manual_review";
+        return { ok: false, error: "Older duplicate paid scheduled upgrade; latest scheduled row must be reconciled first.", debugStage: "activation_helper_called", actionTaken };
+      }
+    }
     if (!isUpgrade) {
       actionTaken = "renewal_already_scheduled";
       console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, existingSubscriptionId: existingForOrder.id, existingSubscriptionStatus: existingForOrder.status, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activePlan?.plan_code ?? null, currentActiveDurationDays: activePlan?.duration_days ?? null, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, computedIntent, actionTaken });
@@ -149,7 +173,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
         cancelled_at: nowIso,
         cancelled_reason: "upgraded",
         updated_at: nowIso,
-        metadata: { ...metadata, superseded: true, superseded_by_order_id: params.orderId, superseded_at: nowIso },
+        metadata: { ...metadata, superseded: true, superseded_by_order_id: params.orderId, superseded_by_subscription_id: existingForOrder.id, superseded_at: nowIso },
       };
       const { error: cancelError } = await params.supabase.from(cfg.subTable).update(cancelPatch).eq("id", activeExisting.id).eq("status", "active");
       if (cancelError) return { ok: false, error: cancelError.message, debugStage: "activation_helper_called" };
@@ -166,11 +190,11 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
       ends_at: endsAtUpgrade,
       queued_from_previous: false,
       updated_at: nowIso,
-      metadata: { ...existingMetadata, activation_corrected_from_scheduled: true, activation_source: params.source, previous_subscription_id: activeExisting?.id ?? null },
+      metadata: { ...existingMetadata, activation_corrected_from_scheduled: true, activation_source: params.source, previous_subscription_id: activeExisting?.id ?? null, previous_plan_code: activeExisting?.plan_code ?? null },
     }).eq("id", existingForOrder.id).eq("status", "scheduled").select("*").single();
     if (upgradeError) return { ok: false, error: upgradeError.message, debugStage: "activation_helper_called" };
     actionTaken = "upgraded_subscription_activated";
-    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, existingSubscriptionId: existingForOrder.id, existingSubscriptionStatus: existingForOrder.status, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activePlan?.plan_code ?? null, currentActiveDurationDays: activePlan?.duration_days ?? null, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, computedIntent, actionTaken });
+    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, targetId: targetId ?? null, existingSubscriptionId: existingForOrder.id, existingStatus: existingForOrder.status, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, existingAmount: existingForOrder.amount ?? normalizedAmount, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activeExisting?.plan_code ?? activePlan?.plan_code ?? null, currentActiveDurationDays: activeExisting?.duration_days ?? activePlan?.duration_days ?? null, currentActiveAmount: activeExisting?.amount ?? activePlan?.price ?? null, metadataPurchaseIntent: purchaseIntent || null, metadataActivationMode: metadataActivationMode || null, computedIntent, actionTaken });
     return { ok: true, subscriptionId: upgradedSub?.id ?? existingForOrder.id, subscription: upgradedSub ?? null, debugStage: "subscription_insert_success", message: "Featured upgrade reconciled. Bigger plan is now active.", actionTaken };
   }
 
