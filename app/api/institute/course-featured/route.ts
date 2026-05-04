@@ -92,12 +92,12 @@ export async function GET() {
   );
   const orders = (ordersResult.data ?? []) as CourseFeaturedOrderRow[];
 
-  const historicalPlanRowsResult = await admin.data.from("course_featured_plans").select("id,name,plan_code,code");
-  const planRows = (historicalPlanRowsResult.data ?? []) as Array<{ id: string; name: string | null; plan_code: string | null; code: string | null }>;
+  const historicalPlanRowsResult = await admin.data.from("course_featured_plans").select("id,name,plan_code");
+  const planRows = (historicalPlanRowsResult.data ?? []) as Array<{ id: string; name: string | null; plan_code: string | null }>;
   const planNameByToken = new Map<string, string>();
   for (const item of planRows) {
-    const planName = item.name ?? item.plan_code ?? item.code ?? "Course Plan";
-    for (const token of [item.id, item.plan_code, item.code]) {
+    const planName = item.name ?? item.plan_code ?? "Course Plan";
+    for (const token of [item.id, item.plan_code]) {
       if (typeof token === "string" && token.length > 0) planNameByToken.set(normalizePlanToken(token), planName);
     }
   }

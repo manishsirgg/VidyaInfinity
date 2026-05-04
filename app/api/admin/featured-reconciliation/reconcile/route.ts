@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Activation failed", action_taken: "activation_failed", orderType, orderId, error: act.error, debug_stage: activationDebugStage }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, message: act.idempotent ? "Subscription already exists for this order." : "Featured upgrade reconciled. Bigger plan is now active.", action_taken: act.idempotent ? "already_exists" : "activated_subscription", orderType, orderId, subscription_id: act.subscriptionId ?? undefined, debug_stage: act.debugStage ?? "subscription_insert_success" });
+    return NextResponse.json({ success: true, message: act.message ?? (act.idempotent ? "Subscription already exists for this order." : "Featured upgrade reconciled. Bigger plan is now active."), action_taken: act.actionTaken ?? (act.idempotent ? "already_exists" : "activated_subscription"), orderType, orderId, subscription_id: act.subscriptionId ?? undefined, debug_stage: act.debugStage ?? "subscription_insert_success" });
   } catch (error) {
     const safeError = error instanceof Error ? error.message : String(error);
     console.error("[admin/featured-reconciliation/reconcile] failed", { debugStage, error: safeError });
