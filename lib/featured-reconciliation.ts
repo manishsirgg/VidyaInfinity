@@ -87,7 +87,15 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     return { ok: false, error: missingMessage, debugStage: "order_loaded" };
   }
 
-  const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,plan_code,duration_days,amount,metadata,created_at").eq("order_id", params.orderId).limit(1).maybeSingle();
+  const { data: subsForOrder } = await params.supabase
+    .from(cfg.subTable)
+    .select("id,status,starts_at,ends_at,plan_code,duration_days,amount,metadata,created_at")
+    .eq("order_id", params.orderId)
+    .order("created_at", { ascending: true });
+  const existingForOrder = (subsForOrder ?? [])[0] ?? null;
+  if ((subsForOrder ?? []).length > 1) {
+    return { ok: false, error: `Duplicate subscriptions found for order ${params.orderId}; manual review required`, debugStage: "duplicate_subscription_detected", actionTaken: "manual_review_duplicate_order_subscriptions" };
+  }
 
   if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
   const targetId = params.orderType === "course" ? (order.course_id ?? undefined) : params.orderType === "webinar" ? (order.webinar_id ?? undefined) : undefined;
@@ -142,14 +150,14 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const isRenewal = Boolean(activeExisting) && !isUpgrade && purchaseIntent === "renewal" && metadataActivationMode === "scheduled_after_current_expiry";
 
   let actionTaken = "none";
+  const computedIntent = isUpgrade ? "upgrade" : (isRenewal ? "renewal" : "new");
   if (existingForOrder?.status === "active") {
     actionTaken = "already_active_for_order";
-    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, existingSubscriptionId: existingForOrder.id, existingSubscriptionStatus: existingForOrder.status, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activePlan?.plan_code ?? null, currentActiveDurationDays: activePlan?.duration_days ?? null, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, computedIntent: isUpgrade ? "upgrade" : (isRenewal ? "renewal" : "new"), actionTaken });
+    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, targetId: targetId ?? null, planId: order.plan_id, normalizedPlanCode, normalizedAmount, normalizedDurationDays, currentActiveSubscriptionId: activeExisting?.id ?? null, existingForOrderId: existingForOrder.id, computedIntent, actionTaken });
     return { ok: true, idempotent: true, subscriptionId: existingForOrder.id, activationStatus: "active", message: "Subscription already active for this order.", actionTaken };
   }
 
   if (existingForOrder?.status === "scheduled") {
-    const computedIntent = isUpgrade ? "upgrade" : (isRenewal ? "renewal" : "new");
     if ((params.orderType === "course" || params.orderType === "webinar") && targetId) {
       let dupQuery = params.supabase.from(cfg.subTable).select("id,order_id,created_at,status").eq("status", "scheduled");
       dupQuery = params.orderType === "course" ? dupQuery.eq("course_id", targetId) : dupQuery.eq("webinar_id", targetId);
@@ -157,7 +165,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
       const latestScheduled = (scheduledRows ?? [])[0];
       if (latestScheduled && latestScheduled.id !== existingForOrder.id && isUpgrade) {
         actionTaken = "duplicate_paid_scheduled_upgrade_manual_review";
-        return { ok: false, error: "Older duplicate paid scheduled upgrade; latest scheduled row must be reconciled first.", debugStage: "activation_helper_called", actionTaken };
+      return { ok: false, error: "Older duplicate paid scheduled upgrade; latest scheduled row must be reconciled first.", debugStage: "activation_helper_called", actionTaken };
       }
     }
     if (!isUpgrade) {
@@ -200,7 +208,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
 
   if (existingForOrder?.status && ["cancelled", "expired"].includes(existingForOrder.status)) {
     actionTaken = "manual_review_required_existing_inactive";
-    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, existingSubscriptionId: existingForOrder.id, existingSubscriptionStatus: existingForOrder.status, currentActiveSubscriptionId: activeExisting?.id ?? null, currentActivePlanCode: activePlan?.plan_code ?? null, currentActiveDurationDays: activePlan?.duration_days ?? null, existingPlanCode: existingForOrder.plan_code ?? normalizedPlanCode, existingDurationDays: existingForOrder.duration_days ?? normalizedDurationDays, computedIntent: isUpgrade ? "upgrade" : (isRenewal ? "renewal" : "new"), actionTaken });
+    console.info("[featured/activate] existing_subscription_case", { orderType: params.orderType, orderId: params.orderId, targetId: targetId ?? null, planId: order.plan_id, normalizedPlanCode, normalizedAmount, normalizedDurationDays, currentActiveSubscriptionId: activeExisting?.id ?? null, existingForOrderId: existingForOrder.id, computedIntent, actionTaken });
     return { ok: false, error: `Existing subscription ${existingForOrder.id} is ${existingForOrder.status}; manual review required`, debugStage: "activation_helper_called", actionTaken };
   }
 
@@ -251,14 +259,16 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     amountSource,
     payloadKeys: Object.keys(subPayload),
   });
-  const write = existingForOrder
-    ? await params.supabase.from(cfg.subTable).update({
-      ...subPayload,
-      metadata: { ...((existingForOrder.metadata as Record<string, unknown> | null) ?? {}), ...(subPayload.metadata as Record<string, unknown>), activation_corrected_from_scheduled: existingForOrder.status === "scheduled" && isUpgrade },
-    }).eq("id", existingForOrder.id).select("*").single()
-    : await params.supabase.from(cfg.subTable).insert(subPayload).select("*").single();
+  const write = await params.supabase.from(cfg.subTable).insert(subPayload).select("*").single();
   const { data: inserted, error: subError } = write;
   if (subError) {
+    const maybeDuplicate = String(subError.code ?? "") === "23505" || subError.message.toLowerCase().includes("duplicate");
+    if (maybeDuplicate) {
+      const { data: existingAfterDup } = await params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at").eq("order_id", params.orderId).order("created_at", { ascending: true }).limit(1).maybeSingle();
+      if (existingAfterDup) {
+        return { ok: true, idempotent: true, subscriptionId: existingAfterDup.id, activationStatus: existingAfterDup.status, actionTaken: "duplicate_key_recovered_existing_order_subscription" };
+      }
+    }
     console.error("[featured/activate] insert_failed", { orderType: params.orderType, orderId: params.orderId, error: subError.message, details: subError.details, hint: subError.hint, code: subError.code });
     return { ok: false, error: `${subError.message}${subError.details ? ` | details: ${subError.details}` : ""}${subError.hint ? ` | hint: ${subError.hint}` : ""}`, debugStage: "subscription_insert_failed" };
   }

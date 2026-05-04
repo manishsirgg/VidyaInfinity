@@ -89,7 +89,7 @@ export async function POST(request: Request) {
       });
     }
 
-    return NextResponse.json({ error: "Paid order is missing featured subscription. Contact support." }, { status: 409 });
+    return NextResponse.json({ error: "Payment received but activation is pending. Admin reconciliation required.", activation_status: "needs_reconciliation", payment_received: true, orderId: existingOrder.id }, { status: 202 });
   }
 
   if (!["pending", "failed", "paid"].includes(existingOrder.payment_status) || existingOrder.order_status === "cancelled") {
