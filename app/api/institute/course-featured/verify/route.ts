@@ -3,11 +3,11 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { resolveFeaturedPlan } from "@/lib/featured-plan-resolution";
 import { notifyInstituteAndAdmins } from "@/lib/featured-notifications";
-import { getInstituteIdForUser, getNextCourseFeaturedWindow } from "@/lib/course-featured";
-import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { getInstituteIdForUser } from "@/lib/course-featured";
 import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { activateFeaturedSubscriptionFromPaidOrder } from "@/lib/featured-reconciliation";
 
 type VerifyBody = {
   orderId?: string;
@@ -28,35 +28,6 @@ type ExistingOrder = {
   order_status: string;
 };
 
-function toNumber(value: unknown) {
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
-}
-
-function resolveWindowStatus(window: { startsAt: string; endsAt: string; queuedFromPrevious: boolean }, nowIso: string) {
-  const startsAtMs = new Date(window.startsAt).getTime();
-  const nowMs = new Date(nowIso).getTime();
-  const hasValidStartsAt = Number.isFinite(startsAtMs);
-  const shouldStartNow = !hasValidStartsAt || startsAtMs <= nowMs;
-
-  if (shouldStartNow) {
-    return {
-      startsAt: nowIso,
-      endsAt: window.endsAt,
-      queuedFromPrevious: false,
-      status: "active" as const,
-    };
-  }
-
-  return {
-    ...window,
-    status: "scheduled" as const,
-  };
-}
 
 export async function POST(request: Request) {
   const auth = await requireApiUser("institute");
@@ -239,115 +210,19 @@ export async function POST(request: Request) {
 
   const planCode = plan?.plan_code ?? plan?.code;
   if (!planCode) return NextResponse.json({ error: "Unable to resolve plan code" }, { status: 500 });
-
-  const { data: currentActiveSubscription } = await admin.data
-    .from("course_featured_subscriptions")
-    .select("id,plan_id,starts_at,ends_at,status")
-    .eq("course_id", existingOrder.course_id)
-    .eq("status", "active")
-    .lte("starts_at", nowIso)
-    .gt("ends_at", nowIso)
-    .order("ends_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ id: string; plan_id: string | null; starts_at: string; ends_at: string; status: string }>();
-
-  let window = await getNextCourseFeaturedWindow(admin.data, existingOrder.course_id, Number(existingOrder.duration_days));
-  if (!currentActiveSubscription?.id) {
-    window = {
-      startsAt: nowIso,
-      endsAt: new Date(new Date(nowIso).getTime() + Number(existingOrder.duration_days) * 24 * 60 * 60 * 1000).toISOString(),
-      queuedFromPrevious: false,
-    };
-  }
-  if (currentActiveSubscription?.id && currentActiveSubscription.plan_id) {
-    const { data: currentPlan } = await admin.data
-      .from("course_featured_plans")
-      .select("id,tier_rank")
-      .eq("id", currentActiveSubscription.plan_id)
-      .maybeSingle<{ id: string; tier_rank: number | null }>();
-
-    const nextTierRank = toNumber(plan?.tier_rank);
-    const activeTierRank = toNumber(currentPlan?.tier_rank);
-    const isUpgrade = nextTierRank > activeTierRank;
-    if (isUpgrade) {
-      await admin.data
-        .from("course_featured_subscriptions")
-        .update({ status: "expired", ends_at: nowIso, updated_at: nowIso })
-        .eq("id", currentActiveSubscription.id)
-        .eq("status", "active");
-      window = {
-        startsAt: nowIso,
-        endsAt: new Date(new Date(nowIso).getTime() + Number(existingOrder.duration_days) * 24 * 60 * 60 * 1000).toISOString(),
-        queuedFromPrevious: false,
-      };
-    }
-  }
-
-  const existingSubscription = await admin.data
-    .from("course_featured_subscriptions")
-    .select("status,starts_at,ends_at,queued_from_previous")
-    .eq("order_id", existingOrder.id)
-    .maybeSingle<{ status: string; starts_at: string; ends_at: string; queued_from_previous: boolean | null }>();
-
-  if (existingSubscription.data) {
-    return NextResponse.json({
-      ok: true,
-      idempotent: true,
-      status: existingSubscription.data.status,
-      startsAt: existingSubscription.data.starts_at,
-      endsAt: existingSubscription.data.ends_at,
-      queuedFromPrevious: existingSubscription.data.queued_from_previous,
-    });
-  }
-
-  const windowWithStatus = resolveWindowStatus(window, nowIso);
-
-  const { error: subscriptionInsertError } = await admin.data.from("course_featured_subscriptions").insert({
-    institute_id: instituteId,
-    course_id: existingOrder.course_id,
-    order_id: existingOrder.id,
-    plan_id: existingOrder.plan_id,
-    created_by: auth.user.id,
-    plan_code: planCode,
-    amount: existingOrder.amount,
-    currency: existingOrder.currency,
-    duration_days: existingOrder.duration_days,
-    starts_at: windowWithStatus.startsAt,
-    ends_at: windowWithStatus.endsAt,
-    queued_from_previous: windowWithStatus.queuedFromPrevious,
-    status: windowWithStatus.status,
-    activated_at: windowWithStatus.status === "active" ? nowIso : null,
-    updated_at: nowIso,
+  const activation = await activateFeaturedSubscriptionFromPaidOrder({
+    supabase: admin.data,
+    orderType: "course",
+    orderId: existingOrder.id,
+    razorpayOrderId: existingOrder.id === orderId ? undefined : orderId,
+    razorpayPaymentId: paymentId,
+    razorpaySignature: signature,
+    source: "verify",
+    actorUserId: auth.user.id,
   });
+  if (!activation.ok) {
+    return NextResponse.json({ payment_received: true, activation_status: "needs_reconciliation", message: "Payment received. Activation is being reconciled.", orderId: existingOrder.id }, { status: 202 });
+  }
+  return NextResponse.json({ ok: true, orderId: existingOrder.id, activation_status: activation.activationStatus ?? (activation.idempotent ? "active" : "active"), subscriptionId: activation.subscriptionId });
 
-  if (subscriptionInsertError) return NextResponse.json({ error: subscriptionInsertError.message }, { status: 500 });
-
-  await createAccountNotification({
-    userId: auth.user.id,
-    type: "approval",
-    title: windowWithStatus.status === "active" ? "Course featuring activated" : "Course featuring scheduled",
-    message:
-      windowWithStatus.status === "active"
-        ? `${course.title ?? "Course"} is now live in featured listings.`
-        : `${course.title ?? "Course"} featured extension is confirmed and scheduled.`,
-  }).catch(() => undefined);
-  await notifyInstituteAndAdmins({
-    admin: admin.data,
-    instituteUserId: auth.user.id,
-    title: windowWithStatus.status === "active" ? "Course featuring activated" : "Course featuring scheduled",
-    message:
-      windowWithStatus.status === "active"
-        ? `${course.title ?? "Course"} is now live in featured listings.`
-        : `${course.title ?? "Course"} featured extension is confirmed and scheduled.`,
-    metadata: { courseId: existingOrder.course_id, orderId: existingOrder.id, status: windowWithStatus.status },
-  });
-
-  return NextResponse.json({
-    ok: true,
-    idempotent: false,
-    status: windowWithStatus.status,
-    startsAt: windowWithStatus.startsAt,
-    endsAt: windowWithStatus.endsAt,
-    queuedFromPrevious: windowWithStatus.queuedFromPrevious,
-  });
 }

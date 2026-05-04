@@ -23,6 +23,19 @@ export function compareFeaturedPlans(current: Plan | null | undefined, selected:
   return sAmt - cAmt;
 }
 
+export type FeaturedPurchaseIntent = "upgrade" | "renewal" | "blocked" | "fresh_purchase";
+export type FeaturedActivationMode = "immediate" | "scheduled_after_current_expiry" | "none";
+
+export function resolveFeaturedPurchasePolicy(current: Plan | null | undefined, selected: Plan | null | undefined) {
+  if (!current || !selected) {
+    return { purchase_intent: "fresh_purchase" as FeaturedPurchaseIntent, activation_mode: "immediate" as FeaturedActivationMode, reason: null };
+  }
+  const cmp = compareFeaturedPlans(current, selected);
+  if (cmp > 0) return { purchase_intent: "upgrade" as FeaturedPurchaseIntent, activation_mode: "immediate" as FeaturedActivationMode, reason: null };
+  if (cmp === 0) return { purchase_intent: "renewal" as FeaturedPurchaseIntent, activation_mode: "scheduled_after_current_expiry" as FeaturedActivationMode, reason: null };
+  return { purchase_intent: "blocked" as FeaturedPurchaseIntent, activation_mode: "none" as FeaturedActivationMode, reason: "A higher or equal featured plan is already active." };
+}
+
 export async function getCurrentFeaturedState(params: { supabase: SupabaseClient; type: FeaturedType; instituteId: string; targetId?: string }) {
   const nowMs = Date.now();
   const table = params.type === "institute" ? "featured_listing_subscriptions" : params.type === "course" ? "course_featured_subscriptions" : "webinar_featured_subscriptions";

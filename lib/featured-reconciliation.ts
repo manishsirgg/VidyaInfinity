@@ -64,8 +64,7 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     return { ok: false, error: missingMessage, debugStage: "order_loaded" };
   }
 
-  const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status").eq("order_id", params.orderId).limit(1).maybeSingle();
-  if (existingForOrder) return { ok: true, idempotent: true, subscriptionId: existingForOrder.id };
+  const { data: existingForOrder } = await params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,metadata").eq("order_id", params.orderId).limit(1).maybeSingle();
 
   if (!order.institute_id) return { ok: false, error: "Missing required field: order.institute_id", debugStage: "plan_loaded" };
   const targetId = params.orderType === "course" ? (order.course_id ?? undefined) : params.orderType === "webinar" ? (order.webinar_id ?? undefined) : undefined;
@@ -108,19 +107,18 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
   const { error: orderUpdateError } = await params.supabase.from(cfg.orderTable).update(paidPatch).eq("id", params.orderId).neq("order_status", "cancelled");
   if (orderUpdateError) return { ok: false, error: orderUpdateError.message, debugStage: "activation_helper_called" };
 
-  let activeExistingQuery = params.supabase.from(cfg.subTable).select("id,status,metadata").eq("status", "active").lte("starts_at", nowIso).gt("ends_at", nowIso);
+  let activeExistingQuery = params.supabase.from(cfg.subTable).select("id,status,starts_at,ends_at,metadata").eq("status", "active").lte("starts_at", nowIso).gt("ends_at", nowIso);
   if (params.orderType === "institute") activeExistingQuery = activeExistingQuery.eq("institute_id", order.institute_id);
   if (params.orderType === "course" && targetId) activeExistingQuery = activeExistingQuery.eq("course_id", targetId);
   if (params.orderType === "webinar" && targetId) activeExistingQuery = activeExistingQuery.eq("webinar_id", targetId);
   const { data: activeExisting } = await activeExistingQuery.order("starts_at", { ascending: false }).limit(1).maybeSingle();
   const selectedPlanForCompare = state.planById.get(String(order.plan_id));
   const activePlan = state.currentPlanId ? state.planById.get(String(state.currentPlanId)) ?? null : null;
-  if (activeExisting && activePlan && selectedPlanForCompare) {
-    const cmp = compareFeaturedPlans(activePlan, selectedPlanForCompare);
-    if (cmp <= 0) {
-      console.warn("[featured/activate] skipped_same_or_lower", { orderType: params.orderType, orderId: params.orderId, instituteId: order.institute_id });
-      return { ok: true, skipped: true, message: "Same/lower plan payment verified; subscription unchanged" };
-    }
+  const purchaseIntent = String((order.metadata ?? {}).purchase_intent ?? "");
+  const isUpgrade = purchaseIntent === "upgrade" || (activeExisting && activePlan && selectedPlanForCompare ? compareFeaturedPlans(activePlan, selectedPlanForCompare) > 0 : false);
+  const isRenewal = purchaseIntent === "renewal" || (!isUpgrade && Boolean(activeExisting));
+
+  if (activeExisting && isUpgrade) {
     const metadata = (activeExisting.metadata ?? {}) as Record<string, unknown>;
     const cancelPatch: Record<string, unknown> = {
       status: "cancelled",
@@ -133,10 +131,16 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     if (cancelError) return { ok: false, error: cancelError.message, debugStage: "activation_helper_called" };
   }
 
-  const startsAt = nowIso;
+  if (existingForOrder?.status === "active") return { ok: true, idempotent: true, subscriptionId: existingForOrder.id, activationStatus: "active" };
+
+  if (existingForOrder?.status === "scheduled" && !isUpgrade) {
+    return { ok: true, idempotent: true, subscriptionId: existingForOrder.id, activationStatus: "scheduled" };
+  }
+
+  const startsAt = isRenewal && activeExisting ? activeExisting.ends_at : nowIso;
   const durationDays = Number(order.duration_days ?? normalizedDurationDays ?? 0);
   if (!durationDays || durationDays <= 0) return { ok: false, error: "Missing required field: duration_days", debugStage: "plan_loaded" };
-  const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
+  const endsAt = new Date(new Date(startsAt).getTime() + durationDays * 86400000).toISOString();
   const amountSource = params.orderType === "institute" ? "order.final_payable_amount_or_amount_or_plan_price" : "order.final_payable_amount_or_amount";
   const subPayload: Record<string, unknown> = {
     institute_id: order.institute_id,
@@ -148,9 +152,9 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     duration_days: durationDays,
     starts_at: startsAt,
     ends_at: endsAt,
-    status: "active",
-    activated_at: nowIso,
-    queued_from_previous: false,
+    status: isRenewal ? "scheduled" : "active",
+    activated_at: isRenewal ? null : nowIso,
+    queued_from_previous: isRenewal,
     created_by: order.created_by ?? params.actorUserId ?? null,
       metadata: {
       activation_source: params.source,
@@ -167,7 +171,13 @@ export async function activateFeaturedSubscriptionFromPaidOrder(params: { supaba
     amountSource,
     payloadKeys: Object.keys(subPayload),
   });
-  const { data: inserted, error: subError } = await params.supabase.from(cfg.subTable).insert(subPayload).select("*").single();
+  const write = existingForOrder
+    ? await params.supabase.from(cfg.subTable).update({
+      ...subPayload,
+      metadata: { ...((existingForOrder.metadata as Record<string, unknown> | null) ?? {}), ...(subPayload.metadata as Record<string, unknown>), activation_corrected_from_scheduled: existingForOrder.status === "scheduled" && isUpgrade },
+    }).eq("id", existingForOrder.id).select("*").single()
+    : await params.supabase.from(cfg.subTable).insert(subPayload).select("*").single();
+  const { data: inserted, error: subError } = write;
   if (subError) {
     console.error("[featured/activate] insert_failed", { orderType: params.orderType, orderId: params.orderId, error: subError.message, details: subError.details, hint: subError.hint, code: subError.code });
     return { ok: false, error: `${subError.message}${subError.details ? ` | details: ${subError.details}` : ""}${subError.hint ? ` | hint: ${subError.hint}` : ""}`, debugStage: "subscription_insert_failed" };

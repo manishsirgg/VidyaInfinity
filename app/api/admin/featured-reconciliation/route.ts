@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { compareFeaturedPlans } from "@/lib/featured-state";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function GET() {
@@ -7,59 +8,56 @@ export async function GET() {
   if ("error" in auth) return auth.error;
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
-  const [inst, course, webinar] = await Promise.all([
-    admin.data.from("featured_listing_orders").select("id,institute_id,plan_id,amount,currency,payment_status,order_status,razorpay_order_id,razorpay_payment_id,created_at,paid_at").order("created_at", { ascending: false }).limit(300),
-    admin.data.from("course_featured_orders").select("id,institute_id,course_id,plan_id,amount,currency,payment_status,order_status,razorpay_order_id,razorpay_payment_id,created_at,paid_at").order("created_at", { ascending: false }).limit(300),
-    admin.data.from("webinar_featured_orders").select("id,institute_id,webinar_id,plan_id,amount,currency,payment_status,order_status,razorpay_order_id,razorpay_payment_id,created_at,paid_at").order("created_at", { ascending: false }).limit(300),
+
+  const [courseOrdersQ, webinarOrdersQ, courseSubsQ, webinarSubsQ, coursePlansQ, webinarPlansQ] = await Promise.all([
+    admin.data.from("course_featured_orders").select("*").order("created_at", { ascending: false }).limit(500),
+    admin.data.from("webinar_featured_orders").select("*").order("created_at", { ascending: false }).limit(500),
+    admin.data.from("course_featured_subscriptions").select("id,order_id,course_id,status,plan_id,created_at,starts_at,ends_at"),
+    admin.data.from("webinar_featured_subscriptions").select("id,order_id,webinar_id,status,plan_id,created_at,starts_at,ends_at"),
+    admin.data.from("course_featured_plans").select("id,plan_code,code,duration_days,amount,price,tier_rank"),
+    admin.data.from("webinar_featured_plans").select("id,plan_code,code,duration_days,amount,price,tier_rank"),
   ]);
-  const instituteOrders = inst.data ?? [];
-  const instituteOrderIds = instituteOrders.map((row) => row.id);
-  const { data: instituteSubs } = instituteOrderIds.length
-    ? await admin.data.from("institute_featured_subscriptions").select("id,order_id,status").in("order_id", instituteOrderIds)
-    : { data: [] as Array<{ id: string; order_id: string | null; status: string | null }> };
-  const subByOrderId = new Map(
-    (instituteSubs ?? [])
-      .filter((row): row is { id: string; order_id: string; status: string | null } => Boolean(row.order_id))
-      .map((row) => [row.order_id, row]),
-  );
-  const toRow = (
-    orderType: "institute" | "course" | "webinar",
-    row: Record<string, unknown>,
-    missingSubscription = false,
-    subscription?: { id: string; status: string | null } | null,
-  ) => ({
-    ...row,
-    orderType,
-    orderId: row.id,
-    targetId: orderType === "institute" ? row.institute_id : orderType === "course" ? row.course_id : row.webinar_id,
-    instituteId: row.institute_id,
-    razorpayOrderId: row.razorpay_order_id,
-    razorpayPaymentId: row.razorpay_payment_id,
-    missing_subscription: missingSubscription,
-    subscription_id: subscription?.id ?? null,
-    subscription_status: subscription?.status ?? null,
-    issue_label: missingSubscription ? "Paid institute featured order missing subscription" : null,
-    recommended_action: missingSubscription ? "Create missing active subscription" : null,
-  });
+  const now = Date.now();
+  const courseOrders = courseOrdersQ.data ?? []; const webinarOrders = webinarOrdersQ.data ?? [];
+  const courseSubs = courseSubsQ.data ?? []; const webinarSubs = webinarSubsQ.data ?? [];
+  const coursePlanById = new Map((coursePlansQ.data ?? []).map((p)=>[String(p.id),p]));
+  const webinarPlanById = new Map((webinarPlansQ.data ?? []).map((p)=>[String(p.id),p]));
 
-  const markedInstituteOrders = instituteOrders.map((row) => {
-    const subscription = subByOrderId.get(row.id);
-    const missingSubscription = row.payment_status === "paid" && row.order_status === "confirmed" && !subscription;
-    const computedIssue = missingSubscription ? "paid_needs_reconciliation" : "not_missing_subscription";
-    console.info("[featured-reconciliation] institute_order_diagnostic", {
-      orderId: row.id,
-      payment_status: row.payment_status,
-      order_status: row.order_status,
-      subscription_id: subscription?.id ?? null,
-      subscription_status: subscription?.status ?? null,
-      computed_issue: computedIssue,
-    });
-    if (!missingSubscription) return null;
-    return toRow("institute", row, true, subscription ?? null);
-  }).filter((row): row is ReturnType<typeof toRow> => Boolean(row));
+  type PlanLike = { id: string; plan_code: string | null; code: string | null; duration_days: number; amount: number | null; price?: number | null; tier_rank?: number | null };
+  type OrderLike = Record<string, unknown> & { id: string; plan_id: string | null; payment_status: string | null; order_status: string | null; created_at: string; course_id?: string; webinar_id?: string };
+  type SubLike = { id: string; order_id: string | null; status: string; plan_id: string | null; starts_at: string; ends_at: string; course_id?: string; webinar_id?: string };
+  const build = (type: "course"|"webinar", orders: OrderLike[], subs: SubLike[], planById: Map<string, PlanLike>, key: "course_id"|"webinar_id") => {
+    const subByOrder = new Map(subs.filter(s=>s.order_id).map(s=>[s.order_id,s]));
+    const issues: Array<Record<string, unknown>> = [];
+    for (const o of orders) {
+      if (!(o.payment_status === "paid" && o.order_status === "confirmed")) continue;
+      const s = subByOrder.get(o.id);
+      if (!s) {
+        issues.push({ orderType:type, orderId:o.id, targetId:o[key], issue:"paid_featured_order_missing_subscription", recommended_action:"Create missing active subscription" });
+        continue;
+      }
+      const active = subs.find(x=>x[key]===o[key]&&x.status==="active"&&new Date(x.starts_at).getTime()<=now&&new Date(x.ends_at).getTime()>now);
+      if (s.status === "scheduled" && active) {
+        const activePlan = planById.get(String(active.plan_id));
+        const selectedPlan = planById.get(String(o.plan_id));
+        if (activePlan && selectedPlan && compareFeaturedPlans(activePlan, selectedPlan) > 0) {
+          issues.push({ orderType:type, orderId:o.id, targetId:o[key], issue:`${type}_upgrade_paid_but_scheduled`, recommended_action:"Activate upgraded plan and cancel old lower plan" });
+        }
+      }
+    }
+    const grouped = new Map<string, OrderLike[]>();
+    for (const o of orders) {
+      const s = subByOrder.get(o.id);
+      if (o.payment_status==="paid"&&o.order_status==="confirmed"&&s?.status==="scheduled") {
+        const k=String(o[key]); grouped.set(k,[...(grouped.get(k)??[]),o]);
+      }
+    }
+    for (const [target, arr] of grouped) if (arr.length>1) {
+      arr.sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
+      for (let i=1;i<arr.length;i++) issues.push({ orderType:type, orderId:arr[i].id, targetId:target, issue:"duplicate_paid_scheduled_upgrade", recommended_action:"Review: activate latest, extend duration, or refund duplicate manually" });
+    }
+    return issues;
+  };
 
-  const courseOrders = (course.data ?? []).map((row) => toRow("course", row));
-  const webinarOrders = (webinar.data ?? []).map((row) => toRow("webinar", row));
-
-  return NextResponse.json({ instituteOrders: markedInstituteOrders, courseOrders, webinarOrders });
+  return NextResponse.json({ issues: [...build("course", courseOrders, courseSubs, coursePlanById, "course_id"), ...build("webinar", webinarOrders, webinarSubs, webinarPlanById, "webinar_id")] });
 }

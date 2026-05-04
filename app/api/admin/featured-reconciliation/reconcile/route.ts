@@ -8,11 +8,15 @@ export async function POST(request: Request) {
   try {
     const auth = await requireApiUser("admin");
     if ("error" in auth) return auth.error;
-    const body = (await request.json()) as { orderType: FeaturedOrderType; orderId: string };
+    const body = (await request.json()) as { orderType: FeaturedOrderType; orderId: string; issue?: string };
     debugStage = "body_parsed";
     const actorUserId = auth.user.id;
     debugStage = "admin_verified";
-    const { orderType, orderId } = body;
+    const { orderType, orderId, issue } = body;
+    if (issue === "duplicate_paid_scheduled_upgrade") {
+      const orderTableX = orderType === "course" ? "course_featured_orders" : orderType === "webinar" ? "webinar_featured_orders" : null;
+      if (!orderTableX) return NextResponse.json({ success: false, message: "Manual decision required for duplicate scheduled upgrade." }, { status: 409 });
+    }
     console.log("[admin/featured-reconciliation/reconcile] received", { orderType, orderId, actorUserId });
 
     const admin = getSupabaseAdmin();
@@ -131,7 +135,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, message: "Activation failed", action_taken: "activation_failed", orderType, orderId, error: act.error, debug_stage: activationDebugStage }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, message: act.idempotent ? "Subscription already exists for this order." : "Reconciliation completed and subscription activated.", action_taken: act.idempotent ? "already_exists" : "activated_subscription", orderType, orderId, subscription_id: act.subscriptionId ?? undefined, debug_stage: act.debugStage ?? "subscription_insert_success" });
+    return NextResponse.json({ success: true, message: act.idempotent ? "Subscription already exists for this order." : "Featured upgrade reconciled. Bigger plan is now active.", action_taken: act.idempotent ? "already_exists" : "activated_subscription", orderType, orderId, subscription_id: act.subscriptionId ?? undefined, debug_stage: act.debugStage ?? "subscription_insert_success" });
   } catch (error) {
     const safeError = error instanceof Error ? error.message : String(error);
     console.error("[admin/featured-reconciliation/reconcile] failed", { debugStage, error: safeError });
