@@ -784,7 +784,8 @@ export async function reconcilePsychometricOrderPaid({
     id: string;
     user_id: string;
     test_id: string;
-    final_paid_amount: number;
+    final_amount?: number | null;
+    final_paid_amount?: number | null;
     currency: string;
     payment_status: string;
   };
@@ -891,6 +892,8 @@ export async function reconcilePsychometricOrderPaid({
     });
   }
 
+  const paidAmount = Number(order.final_amount ?? order.final_paid_amount ?? 0);
+
   const { error: txnError } = await supabase.from("razorpay_transactions").upsert(
     {
       order_type: "psychometric",
@@ -903,7 +906,7 @@ export async function reconcilePsychometricOrderPaid({
       razorpay_signature: razorpaySignature ?? null,
       event_type: source === "webhook" ? "payment.captured" : "payment.verify",
       payment_status: "paid",
-      amount: order.final_paid_amount,
+      amount: paidAmount,
       currency: order.currency,
       status: "captured",
       payload: { source },

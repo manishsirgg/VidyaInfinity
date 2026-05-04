@@ -36,14 +36,14 @@ export function PsychometricPurchaseCard({
       requestBody.couponCode = normalizedCouponCode;
     }
 
-    const createRes = await fetch("/api/payments/test/create-order", {
+    const createRes = await fetch("/api/psychometric/create-order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
     });
     const createBody = await createRes.json().catch(() => null);
 
-    if (!createRes.ok || !createBody?.order?.id) {
+    if (!createRes.ok || !createBody?.order?.id || !createBody?.localOrderId || !createBody?.key) {
       setLoading(false);
       setIsError(true);
       setMessage(createBody?.error ?? "Unable to start payment.");
@@ -60,26 +60,31 @@ export function PsychometricPurchaseCard({
     const order = createBody.order as { id: string; amount: number; currency: string };
 
     const razorpay = new window.Razorpay({
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+      key: createBody.key,
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
       name: "Vidya Infinity",
       description: `Psychometric Test: ${testTitle}`,
       handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
-        const verifyRes = await fetch("/api/payments/test/verify", {
+        const verifyRes = await fetch("/api/psychometric/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId: response.razorpay_order_id, paymentId: response.razorpay_payment_id, signature: response.razorpay_signature }),
+          body: JSON.stringify({
+            local_order_id: createBody.localOrderId,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          }),
         });
-        await verifyRes.json().catch(() => null);
+        const verifyBody = await verifyRes.json().catch(() => null);
 
         setLoading(false);
         if (!verifyRes.ok) {
           window.location.href = `/student/payments/pending?kind=psychometric&order_id=${encodeURIComponent(response.razorpay_order_id)}&payment_id=${encodeURIComponent(response.razorpay_payment_id)}&reason=${encodeURIComponent("verification_pending")}`;
           return;
         }
-        window.location.href = `/student/payments/success?kind=psychometric&order_id=${encodeURIComponent(response.razorpay_order_id)}&payment_id=${encodeURIComponent(response.razorpay_payment_id)}`;
+        window.location.href = typeof verifyBody?.redirectTo === "string" ? verifyBody.redirectTo : "/dashboard/psychometric";
       },
       modal: {
         ondismiss: () => {

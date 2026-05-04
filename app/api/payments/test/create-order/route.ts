@@ -62,10 +62,13 @@ export async function POST(request: Request) {
 
     const normalizedCouponCode = normalizeCouponCode(couponCode);
 
+    let couponId: string | null = null;
+    let discountPercent = 0;
+
     if (normalizedCouponCode) {
       const { data: coupon } = await admin.data
         .from("coupons")
-        .select("code,discount_percent,active,expiry_date,applies_to")
+        .select("id,code,discount_percent,active,expiry_date,applies_to")
         .eq("code", normalizedCouponCode)
         .eq("applies_to", "psychometric")
         .maybeSingle();
@@ -76,7 +79,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: getCouponErrorMessage(reason) }, { status: 400 });
       }
 
-      discountAmount = Number(((finalAmount * Number(coupon.discount_percent)) / 100).toFixed(2));
+      couponId = coupon.id;
+      discountPercent = Number(coupon.discount_percent);
+      discountAmount = Number(((finalAmount * discountPercent) / 100).toFixed(2));
       finalAmount = Math.max(0, Number((finalAmount - discountAmount).toFixed(2)));
     }
 
@@ -92,14 +97,18 @@ export async function POST(request: Request) {
       },
     });
 
+    const localOrderId = crypto.randomUUID();
     const { error: insertOrderError } = await admin.data.from("psychometric_orders").insert({
+      id: localOrderId,
       user_id: user.id,
       test_id: test.id,
+      coupon_id: couponId,
+      order_kind: "psychometric_test",
       payment_status: "created",
       base_amount: test.price,
+      discount_percent: discountPercent,
       discount_amount: discountAmount,
-      final_paid_amount: finalAmount,
-      coupon_code: normalizedCouponCode || null,
+      final_amount: finalAmount,
       currency: "INR",
       razorpay_order_id: order.id,
       metadata: { source: "test_create_order_api" },
@@ -107,7 +116,7 @@ export async function POST(request: Request) {
 
     if (insertOrderError) return NextResponse.json({ error: insertOrderError.message }, { status: 500 });
 
-    return NextResponse.json({ order, finalAmount });
+    return NextResponse.json({ order, finalAmount, localOrderId, key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? process.env.RAZORPAY_KEY_ID ?? null });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to create psychometric order" },
