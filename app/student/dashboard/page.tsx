@@ -386,6 +386,7 @@ export default async function StudentDashboardPage() {
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/courses">Browse Courses</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/webinars">Browse Webinars</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/psychometric-tests">Take Psychometric Test</Link>
+          <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/dashboard/psychometric">My Psychometric Reports</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/student/purchases">View Purchases</Link>
           <Link className="rounded-xl border bg-white p-3 text-sm hover:border-brand-300" href="/refund-cancellation-policy">Refund Policy</Link>
         </div>
