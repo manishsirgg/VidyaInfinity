@@ -1,12 +1,24 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
-import { derivePsychometricState, isPaidPsychometricOrder, resolveAttemptReportId, type AttemptLite } from "@/lib/psychometric/dashboard";
+import { derivePsychometricState, isPaidPsychometricOrder, resolveAttemptReportId, type AttemptLite, type ReportLite } from "@/lib/psychometric/dashboard";
 import { createClient } from "@/lib/supabase/server";
 
-type TestRef = { title: string | null; slug: string | null };
-type OrderRow = { id: string; payment_status: string | null; final_amount: number | null; final_paid_amount: number | null; paid_at: string | null; created_at: string; attempt_id: string | null; legacy_report_url: string | null; psychometric_tests: TestRef[] | TestRef | null };
-type ReportRow = { id: string; attempt_id: string | null };
+type TestRow = { id: string; title: string | null; slug: string | null };
+type OrderRow = {
+  id: string;
+  user_id: string;
+  test_id: string | null;
+  payment_status: string | null;
+  final_amount: number | null;
+  final_paid_amount: number | null;
+  paid_at: string | null;
+  created_at: string;
+  attempt_id: string | null;
+  legacy_report_url: string | null;
+};
+
+type ProfileRow = { id: string; role: string | null };
 
 const stateBadge: Record<string, string> = {
   payment_pending: "bg-amber-50 text-amber-700 border-amber-200",
@@ -20,19 +32,100 @@ const stateBadge: Record<string, string> = {
 };
 
 export default async function Page() {
-  const { profile } = await requireUser("student");
+  const { user, profile } = await requireUser("student");
   const supabase = await createClient();
-  const { data: orders } = await supabase.from("psychometric_orders").select("id,payment_status,final_amount,final_paid_amount,paid_at,created_at,attempt_id,legacy_report_url,psychometric_tests(title,slug)").eq("user_id", profile.id).order("created_at", { ascending: false }).returns<OrderRow[]>();
-  const attemptIds = (orders ?? []).map((o) => o.attempt_id).filter((v): v is string => Boolean(v));
-  const { data: attempts } = attemptIds.length ? await supabase.from("test_attempts").select("id,status,report_id").in("id", attemptIds).returns<AttemptLite[]>() : { data: [] as AttemptLite[] };
-  const { data: reports } = attemptIds.length ? await supabase.from("psychometric_reports").select("id,attempt_id").in("attempt_id", attemptIds).returns<ReportRow[]>() : { data: [] as ReportRow[] };
-  const byAttempt = new Map((attempts ?? []).map((a) => [a.id, a]));
-  const byReportAttempt = new Map((reports ?? []).filter((r) => r.attempt_id).map((r) => [r.attempt_id as string, r]));
+
+  const { data: profileByUserId, error: profileByUserIdError } = await supabase
+    .from("profiles")
+    .select("id,role")
+    .eq("user_id", user.id)
+    .maybeSingle<ProfileRow>();
+
+  const { data: profileById, error: profileByIdError } = profileByUserId
+    ? { data: null, error: null }
+    : await supabase.from("profiles").select("id,role").eq("id", user.id).maybeSingle<ProfileRow>();
+
+  const resolvedProfile = profileByUserId ?? profileById ?? { id: profile.id, role: profile.role };
+  const profileError = profileByUserIdError ?? profileByIdError;
+
+  const { data: orders, error: ordersError } = await supabase
+    .from("psychometric_orders")
+    .select("id,user_id,test_id,payment_status,final_amount,final_paid_amount,paid_at,created_at,attempt_id,legacy_report_url")
+    .eq("user_id", resolvedProfile.id)
+    .order("created_at", { ascending: false })
+    .returns<OrderRow[]>();
+
+  console.log("[psychometric-dashboard]", {
+    authUserId: user.id,
+    profileId: resolvedProfile.id,
+    profileRole: resolvedProfile.role,
+    ordersCount: orders?.length ?? 0,
+    ordersError: ordersError?.message ?? null,
+    firstOrderId: orders?.[0]?.id ?? null,
+  });
+
+  if (profileError) {
+    console.error("[psychometric-dashboard] profile resolution failed", {
+      authUserId: user.id,
+      byUserIdError: profileByUserIdError?.message ?? null,
+      byIdError: profileByIdError?.message ?? null,
+    });
+  }
+
+  if (ordersError) {
+    console.error("[psychometric-dashboard] order query failed", {
+      authUserId: user.id,
+      profileId: resolvedProfile.id,
+      error: ordersError.message,
+    });
+  }
+
+  const testIds = Array.from(new Set((orders ?? []).map((order) => order.test_id).filter((value): value is string => Boolean(value))));
+  const orderIds = (orders ?? []).map((order) => order.id);
+  const attemptIdsFromOrder = Array.from(new Set((orders ?? []).map((order) => order.attempt_id).filter((value): value is string => Boolean(value))));
+
+  const { data: tests, error: testsError } = testIds.length
+    ? await supabase.from("psychometric_tests").select("id,title,slug").in("id", testIds).returns<TestRow[]>()
+    : { data: [] as TestRow[], error: null };
+
+  if (testsError) console.error("[psychometric-dashboard] test query failed", { profileId: resolvedProfile.id, error: testsError.message });
+
+  const { data: attemptsByOrder, error: attemptsByOrderError } = orderIds.length
+    ? await supabase.from("test_attempts").select("id,status,report_id,order_id").in("order_id", orderIds)
+    : { data: [], error: null };
+
+  const { data: attemptsByAttemptId, error: attemptsByAttemptIdError } = attemptIdsFromOrder.length
+    ? await supabase.from("test_attempts").select("id,status,report_id,order_id").in("id", attemptIdsFromOrder)
+    : { data: [], error: null };
+
+  if (attemptsByOrderError || attemptsByAttemptIdError) {
+    console.error("[psychometric-dashboard] attempt query failed", {
+      byOrderError: attemptsByOrderError?.message ?? null,
+      byAttemptIdError: attemptsByAttemptIdError?.message ?? null,
+    });
+  }
+
+  const attempts = [...(attemptsByOrder ?? []), ...(attemptsByAttemptId ?? [])] as (AttemptLite & { order_id?: string | null })[];
+  const uniqueAttempts = Array.from(new Map(attempts.map((attempt) => [attempt.id, attempt])).values());
+  const resolvedAttemptIds = uniqueAttempts.map((attempt) => attempt.id);
+
+  const { data: reports, error: reportsError } = resolvedAttemptIds.length
+    ? await supabase.from("psychometric_reports").select("id,attempt_id").in("attempt_id", resolvedAttemptIds).returns<ReportLite[]>()
+    : { data: [] as ReportLite[], error: null };
+
+  if (reportsError) console.error("[psychometric-dashboard] report query failed", { error: reportsError.message });
+
+  const byAttempt = new Map(uniqueAttempts.map((attempt) => [attempt.id, attempt]));
+  const byAttemptFromOrderId = new Map(uniqueAttempts.filter((attempt) => attempt.order_id).map((attempt) => [attempt.order_id as string, attempt]));
+  const byReportAttempt = new Map((reports ?? []).filter((report) => report.attempt_id).map((report) => [report.attempt_id as string, report]));
+  const testsById = new Map((tests ?? []).map((test) => [test.id, test]));
 
   if (!(orders ?? []).length) {
     return <div className="mx-auto max-w-4xl px-4 py-10"><div className="rounded-2xl border border-dashed bg-white p-8 text-center"><h1 className="text-2xl font-semibold">Psychometric Dashboard</h1><p className="mt-2 text-slate-600">No psychometric orders yet. Start with an assessment to unlock your personalized report.</p><Link className="mt-5 inline-flex rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white" href="/psychometric-tests">Explore tests</Link></div></div>;
   }
 
+  return <div className="mx-auto max-w-6xl px-4 py-8"><h1 className="mb-5 text-2xl font-semibold">Psychometric Dashboard</h1><div className="grid gap-4">{(orders ?? []).map((o) => { const a = (o.attempt_id ? byAttempt.get(o.attempt_id) : null) ?? byAttemptFromOrderId.get(o.id) ?? null; const paid = isPaidPsychometricOrder(o.payment_status, o.paid_at); const testRef = o.test_id ? testsById.get(o.test_id) ?? null : null; const slug = testRef?.slug ?? null; const reportId = resolveAttemptReportId(a, byReportAttempt); const state = derivePsychometricState({ paid, attempt: a, resolvedReportId: reportId, hasLegacyReportUrl: Boolean(o.legacy_report_url) });
+  return <div key={o.id} className="rounded-xl border bg-white p-4 sm:p-5"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="font-semibold">{testRef?.title ?? "Psychometric Test"}</h2><p className="text-sm text-slate-600">Order: {o.id.slice(0, 8)}…</p></div><div className="flex items-center gap-2"><span className={`rounded-full border px-2 py-1 text-xs ${stateBadge[state]}`}>{state.replaceAll("_", " ")}</span><p className="text-sm font-medium">₹{o.final_paid_amount ?? o.final_amount ?? 0}</p></div></div><div className="mt-3 flex flex-wrap gap-2">{state === "payment_pending" && slug ? <Link href={`/psychometric-tests/${slug}`} className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Retry payment</Link> : null}{state === "in_progress" && a ? <Link href={`/dashboard/psychometric/attempts/${a.id}`} className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Continue test</Link> : null}{(state === "ready_to_start" || state === "paid_attempt_missing") ? (a ? <Link href={`/dashboard/psychometric/attempts/${a.id}`} className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Start Test</Link> : slug ? <Link href={`/psychometric-tests/${slug}`} className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Start Test</Link> : null) : null}{reportId ? <Link href={`/dashboard/psychometric/reports/${reportId}`} className="rounded border px-3 py-2 text-sm">View report</Link> : null}{reportId ? <a href={`/api/psychometric/reports/${reportId}/download`} className="rounded border px-3 py-2 text-sm">Download report</a> : null}{!reportId && o.legacy_report_url ? <a href={o.legacy_report_url} className="rounded border px-3 py-2 text-sm">Open legacy report</a> : null}</div></div>; })}</div></div>;
   return <div className="mx-auto max-w-6xl px-4 py-8"><h1 className="mb-5 text-2xl font-semibold">Psychometric Dashboard</h1><div className="grid gap-4">{(orders ?? []).map((o) => { const a = o.attempt_id ? byAttempt.get(o.attempt_id) ?? null : null; const paid = isPaidPsychometricOrder(o.payment_status, o.paid_at); const testRef = Array.isArray(o.psychometric_tests) ? o.psychometric_tests[0] : o.psychometric_tests; const slug = testRef?.slug ?? null; const reportId = resolveAttemptReportId(a, byReportAttempt); const state = derivePsychometricState({ paid, attempt: a, resolvedReportId: reportId, hasLegacyReportUrl: Boolean(o.legacy_report_url) });
   return <div key={o.id} className="rounded-xl border bg-white p-4 sm:p-5"><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="font-semibold">{testRef?.title ?? "Psychometric Test"}</h2><p className="text-sm text-slate-600">Order: {o.id.slice(0, 8)}…</p></div><div className="flex items-center gap-2"><span className={`rounded-full border px-2 py-1 text-xs ${stateBadge[state]}`}>{state.replaceAll("_", " ")}</span><p className="text-sm font-medium">₹{o.final_paid_amount ?? o.final_amount ?? 0}</p></div></div><div className="mt-3 flex flex-wrap gap-2">{state === "payment_pending" && slug ? <Link href={`/psychometric-tests/${slug}`} className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Retry payment</Link> : null}{state === "in_progress" && a ? <Link href={`/dashboard/psychometric/attempts/${a.id}`} className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Continue test</Link> : null}{(state === "ready_to_start" || state === "paid_attempt_missing") ? (a ? <Link href={`/dashboard/psychometric/attempts/${a.id}`} className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Start test</Link> : slug ? <Link href={`/psychometric-tests/${slug}`} className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Start test</Link> : null) : null}{reportId ? <Link href={`/dashboard/psychometric/reports/${reportId}`} className="rounded border px-3 py-2 text-sm">View report</Link> : null}{reportId ? <a href={`/api/psychometric/reports/${reportId}/download`} className="rounded border px-3 py-2 text-sm">Download report</a> : null}{!reportId && o.legacy_report_url ? <a href={o.legacy_report_url} className="rounded border px-3 py-2 text-sm">Open legacy report</a> : null}{(state === "report_ready" || state === "completed_report_pending" || state === "legacy_report_only") && slug ? <Link href={`/psychometric-tests/${slug}`} className="rounded border px-3 py-2 text-sm">Retake test</Link> : null}</div></div>; })}</div></div>;
 }

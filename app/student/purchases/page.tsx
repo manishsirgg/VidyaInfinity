@@ -224,7 +224,7 @@ export default async function Page({
 }: {
   searchParams?: Promise<{ kind?: string | string[] }>;
 }) {
-  const { user } = await requireUser("student");
+  const { user, profile } = await requireUser("student");
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
@@ -253,7 +253,7 @@ export default async function Page({
     dataClient
       .from("psychometric_orders")
       .select("id,final_paid_amount,payment_status,paid_at,test_id,razorpay_order_id,razorpay_payment_id,created_at")
-      .eq("user_id", user.id)
+      .eq("user_id", profile.id)
       .order("created_at", { ascending: false }),
     dataClient
       .from("webinar_orders")
@@ -283,6 +283,15 @@ export default async function Page({
 
   let courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
+
+  if (testResult.error) {
+    console.error("[student/purchases] psychometric orders query failed", {
+      event: "psychometric_orders_query_failed",
+      auth_user_id: user.id,
+      profile_id: profile.id,
+      error: testResult.error.message,
+    });
+  }
   let webinarOrders = (webinarResult.data ?? []) as WebinarPurchase[];
 
   if (admin.ok) {
@@ -697,9 +706,10 @@ export default async function Page({
           <h2 className="mt-7 text-base font-semibold">Psychometric Orders</h2>
           {sectionErrors.psychometric ? <p className="mt-2 rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Unable to load psychometric orders right now.</p> : null}
           <div className="mt-2 space-y-2">
-            {testOrders.length === 0 ? (
+            {!sectionErrors.psychometric && testOrders.length === 0 ? (
               <p className="rounded border bg-slate-50 p-3 text-sm text-slate-600">No psychometric orders found for this view.</p>
-            ) : (
+            ) : null}
+            {!sectionErrors.psychometric ? (
               testOrders.map((order) => {
                 const refund = psychometricRefundByOrderId.get(order.id);
                 const unlocked = isConfirmedPayment(order.payment_status, order.paid_at) || Boolean(order.razorpay_payment_id);
@@ -721,7 +731,7 @@ export default async function Page({
                   </article>
                 );
               })
-            )}
+            ) : null}
           </div>
         </section>
       ) : null}
