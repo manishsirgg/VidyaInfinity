@@ -554,11 +554,18 @@ export async function POST(request: Request) {
       }
     }
 
-    const { data: psychometricOrder, error: psychometricOrderError } = await admin.data
+    let psychometricLookup = admin.data
       .from("psychometric_orders")
-      .select("id,user_id,test_id,final_paid_amount,currency,payment_status")
-      .eq("razorpay_order_id", razorpayOrderId)
-      .maybeSingle();
+      .select("id,user_id,test_id,final_paid_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id")
+      .limit(1);
+
+    if (razorpayPaymentId) {
+      psychometricLookup = psychometricLookup.or(`razorpay_order_id.eq.${razorpayOrderId},razorpay_payment_id.eq.${razorpayPaymentId}`);
+    } else {
+      psychometricLookup = psychometricLookup.eq("razorpay_order_id", razorpayOrderId);
+    }
+
+    const { data: psychometricOrder, error: psychometricOrderError } = await psychometricLookup.maybeSingle();
 
     if (psychometricOrderError) {
       console.warn("[razorpay/webhook] psychometric order lookup skipped after db error", {

@@ -929,77 +929,74 @@ export async function reconcilePsychometricOrderPaid({
     return { error: txnError.message };
   }
 
-  const { data: existingUnlockedAttempt } = await supabase
+  const { data: linkedAttempt } = await supabase
     .from("test_attempts")
     .select("id,status")
-    .eq("user_id", order.user_id)
-    .eq("test_id", order.test_id)
+    .eq("order_id", canonicalPaidOrderId)
     .limit(1)
     .maybeSingle<{ id: string; status: string | null }>();
 
-  if (existingUnlockedAttempt) {
-    console.info("[payments/reconcile] entitlement_row_found", {
-      event: "entitlement_row_found",
-      orderId: canonicalPaidOrderId,
-      entitlementId: existingUnlockedAttempt.id,
-      userId: order.user_id,
-      testId: order.test_id,
-      source,
-    });
+  let resolvedAttemptId = linkedAttempt?.id ?? null;
+
+  if (!resolvedAttemptId) {
+    const { data: orphanAttempt } = await supabase
+      .from("test_attempts")
+      .select("id,status,order_id")
+      .eq("user_id", order.user_id)
+      .eq("test_id", order.test_id)
+      .is("order_id", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle<{ id: string; status: string | null; order_id: string | null }>();
+
+    if (orphanAttempt?.id) {
+      const { error: attachOrphanError } = await supabase
+        .from("test_attempts")
+        .update({ order_id: canonicalPaidOrderId, status: orphanAttempt.status === "unlocked" ? "unlocked" : "not_started" })
+        .eq("id", orphanAttempt.id)
+        .is("order_id", null);
+      if (attachOrphanError) {
+        return { error: attachOrphanError.message };
+      }
+      resolvedAttemptId = orphanAttempt.id;
+    }
   }
 
-  const { error: attemptError } = await supabase.from("test_attempts").upsert(
-    {
-      user_id: order.user_id,
-      test_id: order.test_id,
-      status: "unlocked",
-      started_at: null,
-    },
-    { onConflict: "user_id,test_id" }
-  );
+  if (!resolvedAttemptId) {
+    const { data: createdAttempt, error: createAttemptError } = await supabase
+      .from("test_attempts")
+      .insert({ user_id: order.user_id, test_id: order.test_id, order_id: canonicalPaidOrderId, status: "not_started", started_at: null })
+      .select("id")
+      .single<{ id: string }>();
 
-  if (attemptError) {
-    console.error("[payments/reconcile] reconciliation_failed", {
-      event: "reconciliation_failed",
-      orderId: canonicalPaidOrderId,
-      razorpayOrderId,
-      razorpayPaymentId,
-      source,
-      error: attemptError.message,
-    });
-    return { error: attemptError.message };
+    if (createAttemptError && !isUniqueViolation(createAttemptError)) {
+      return { error: createAttemptError.message };
+    }
+
+    resolvedAttemptId = createdAttempt?.id ?? null;
   }
 
-  console.info("[payments/reconcile] entitlement_row_updated", {
-    event: existingUnlockedAttempt ? "entitlement_row_updated" : "entitlement_row_created",
-    orderId: canonicalPaidOrderId,
-    userId: order.user_id,
-    testId: order.test_id,
-    source,
-  });
-
-  const { data: convergedAttempt, error: convergedAttemptError } = await supabase
-    .from("test_attempts")
-    .select("id,status")
-    .eq("user_id", order.user_id)
-    .eq("test_id", order.test_id)
-    .eq("status", "unlocked")
-    .limit(1)
-    .maybeSingle<{ id: string; status: string | null }>();
-
-  if (convergedAttemptError || !convergedAttempt) {
-    const errorMessage = convergedAttemptError?.message ?? "Psychometric entitlement convergence failed: unlocked test_attempt row missing.";
-    console.error("[payments/reconcile] reconciliation_failed", {
-      event: "reconciliation_failed",
-      orderId: canonicalPaidOrderId,
-      razorpayOrderId,
-      razorpayPaymentId,
-      source,
-      error: errorMessage,
-    });
-    return { error: errorMessage };
+  if (!resolvedAttemptId) {
+    const { data: convergedByOrder } = await supabase
+      .from("test_attempts")
+      .select("id")
+      .eq("order_id", canonicalPaidOrderId)
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+    resolvedAttemptId = convergedByOrder?.id ?? null;
   }
 
+  if (!resolvedAttemptId) return { error: "Psychometric attempt convergence failed for paid order." };
+
+  const { error: attachAttemptToOrderError } = await supabase
+    .from("psychometric_orders")
+    .update({ attempt_id: resolvedAttemptId })
+    .eq("id", canonicalPaidOrderId)
+    .or(`attempt_id.is.null,attempt_id.neq.${resolvedAttemptId}`);
+
+  if (attachAttemptToOrderError) {
+    return { error: attachAttemptToOrderError.message };
+  }
 
   await createAccountNotification({
     userId: order.user_id,
@@ -1034,7 +1031,7 @@ export async function reconcilePsychometricOrderPaid({
     metadata: { razorpayOrderId, razorpayPaymentId, source },
   });
 
-  return { error: null };
+  return { error: null, attemptId: resolvedAttemptId };
 }
 
 export async function reconcileWebinarOrderPaid({

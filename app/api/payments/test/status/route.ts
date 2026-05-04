@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { validate as isUuid } from "uuid";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
@@ -30,12 +31,24 @@ export async function GET(request: Request) {
 
   let query = admin.data
     .from("psychometric_orders")
-    .select("id,user_id,test_id,payment_status,final_paid_amount,currency,paid_at,razorpay_order_id,razorpay_payment_id")
+    .select("id,user_id,test_id,payment_status,final_paid_amount,currency,paid_at,razorpay_order_id,razorpay_payment_id,attempt_id")
     .eq("user_id", auth.user.id)
     .limit(1);
 
-  if (orderId) query = query.eq("razorpay_order_id", orderId);
-  else if (paymentId) query = query.eq("razorpay_payment_id", paymentId);
+  const orderIdLooksRazorpay = Boolean(orderId?.startsWith("order_"));
+  const orderIdLooksUuid = Boolean(orderId && isUuid(orderId));
+
+  if (paymentId) {
+    if (orderId && orderIdLooksRazorpay) query = query.or(`razorpay_payment_id.eq.${paymentId},razorpay_order_id.eq.${orderId}`);
+    else if (orderId && orderIdLooksUuid) query = query.or(`razorpay_payment_id.eq.${paymentId},id.eq.${orderId}`);
+    else query = query.eq("razorpay_payment_id", paymentId);
+  } else if (orderId && orderIdLooksRazorpay) {
+    query = query.eq("razorpay_order_id", orderId);
+  } else if (orderId && orderIdLooksUuid) {
+    query = query.eq("id", orderId);
+  } else if (orderId) {
+    query = query.eq("razorpay_order_id", orderId);
+  }
 
   const { data: order } = await query.maybeSingle<{
     id: string;
@@ -47,6 +60,7 @@ export async function GET(request: Request) {
     paid_at: string | null;
     razorpay_order_id: string | null;
     razorpay_payment_id: string | null;
+    attempt_id: string | null;
   }>();
 
   if (!order) return NextResponse.json({ ok: false, error: "Psychometric order not found" }, { status: 404 });
@@ -71,14 +85,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const { data: entitlementRow } = await admin.data
-    .from("test_attempts")
-    .select("id")
-    .eq("user_id", auth.user.id)
-    .eq("test_id", order.test_id)
-    .eq("status", "unlocked")
-    .limit(1)
-    .maybeSingle<{ id: string }>();
+  let entitlementRow = order.attempt_id ? { id: order.attempt_id } : null;
 
   if (!entitlementRow && effectivePaymentId && (normalize(order.payment_status) === "paid" || Boolean(order.paid_at))) {
     await reconcilePsychometricOrderPaid({
@@ -90,22 +97,21 @@ export async function GET(request: Request) {
     });
   }
 
-  const { data: finalEntitlementRow } = await admin.data
-    .from("test_attempts")
-    .select("id")
-    .eq("user_id", auth.user.id)
-    .eq("test_id", order.test_id)
-    .eq("status", "unlocked")
-    .limit(1)
-    .maybeSingle<{ id: string }>();
+  const { data: refreshedOrder } = await admin.data.from("psychometric_orders").select("attempt_id").eq("id", order.id).maybeSingle<{ attempt_id: string | null }>();
+  const finalEntitlementRow = refreshedOrder?.attempt_id ? { id: refreshedOrder.attempt_id } : null;
 
   const isPaid = normalize(order.payment_status) === "paid" || Boolean(order.paid_at);
-  if (isPaid || finalEntitlementRow) {
+  if (isPaid && finalEntitlementRow?.id) {
     return NextResponse.json({
       ok: true,
       state: "paid",
-      redirectTo: `/student/payments/success?kind=psychometric&order_id=${encodeURIComponent(order.razorpay_order_id ?? order.id)}&payment_id=${encodeURIComponent(effectivePaymentId ?? "")}`,
+      attemptId: finalEntitlementRow.id,
+      redirectTo: `/dashboard/psychometric/attempts/${finalEntitlementRow.id}`,
     });
+  }
+
+  if (isPaid && !finalEntitlementRow?.id) {
+    return NextResponse.json({ ok: true, state: "repairable", error: "Payment is captured but attempt is not linked yet. Please retry shortly." }, { status: 202 });
   }
 
   if (normalize(order.payment_status) === "failed") {
