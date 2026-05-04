@@ -17,6 +17,7 @@ const adminModules = [
   { href: "/admin/coupons", label: "Coupons" },
   { href: "/admin/crm", label: "CRM Leads" },
   { href: "/admin/psychometric-tests", label: "Psychometric Tests" },
+  { href: "/admin/psychometric-diagnostics", label: "Psychometric Diagnostics" },
   { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/webinars", label: "Webinars" },
   { href: "/admin/featured-listings", label: "Featured Listings" },

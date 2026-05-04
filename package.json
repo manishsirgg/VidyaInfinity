@@ -11,7 +11,8 @@
     "check:conflicts": "bash -lc 'if rg -n \"^(<<<<<<<|=======|>>>>>>>)\"; then exit 1; else echo no-conflict-markers; fi'",
     "check:no-legacy-user-verification-table": "bash -lc 'if rg -n \"user_verification_documents\" app components lib types; then echo \"Found legacy table references in runtime code\"; exit 1; else echo \"no-legacy-user-verification-table-references\"; fi'",
     "test:e2e": "npx playwright test",
-    "test:e2e:headed": "npx playwright test --headed"
+    "test:e2e:headed": "npx playwright test --headed",
+    "seed:psychometric:dev": "echo 'Run manually: psql < supabase/seed_psychometric_dev.sql (DEV ONLY)'"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
