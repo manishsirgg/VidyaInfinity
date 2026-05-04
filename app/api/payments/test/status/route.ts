@@ -10,6 +10,12 @@ function normalize(value: string | null | undefined) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function isUuid(value: string | null | undefined) {
+  return Boolean(
+    value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
 export async function GET(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "psychometric"]);
   if (schemaErrorResponse) return schemaErrorResponse;
@@ -34,8 +40,13 @@ export async function GET(request: Request) {
     .eq("user_id", auth.user.id)
     .limit(1);
 
-  if (orderId) query = query.eq("razorpay_order_id", orderId);
-  else if (paymentId) query = query.eq("razorpay_payment_id", paymentId);
+  if (orderId) {
+    if (isUuid(orderId)) query = query.eq("id", orderId);
+    else if (orderId.startsWith("order_")) query = query.eq("razorpay_order_id", orderId);
+    else query = query.eq("razorpay_order_id", orderId);
+  } else if (paymentId) {
+    query = query.eq("razorpay_payment_id", paymentId);
+  }
 
   const { data: order } = await query.maybeSingle<{
     id: string;
