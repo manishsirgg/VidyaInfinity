@@ -14,10 +14,14 @@ export async function POST(request: Request) {
     const auth = await requireApiUser("student");
     if ("error" in auth) return auth.error;
     const { user } = auth;
-    const { orderId, paymentId, signature } = await request.json();
+    const body = await request.json();
+    const localOrderId = typeof body?.local_order_id === "string" ? body.local_order_id : undefined;
+    const orderId = typeof body?.razorpay_order_id === "string" ? body.razorpay_order_id : body?.orderId;
+    const paymentId = typeof body?.razorpay_payment_id === "string" ? body.razorpay_payment_id : body?.paymentId;
+    const signature = typeof body?.razorpay_signature === "string" ? body.razorpay_signature : body?.signature;
 
-    if (!orderId || !paymentId || !signature) {
-      return NextResponse.json({ error: "orderId, paymentId, signature are required" }, { status: 400 });
+    if (!localOrderId || !orderId || !paymentId || !signature) {
+      return NextResponse.json({ error: "local_order_id, razorpay_order_id, razorpay_payment_id, razorpay_signature are required" }, { status: 400 });
     }
 
     const admin = getSupabaseAdmin();
@@ -35,7 +39,8 @@ export async function POST(request: Request) {
 
     const { data: order, error: orderFetchError } = await admin.data
       .from("psychometric_orders")
-      .select("id,user_id,test_id,payment_status,final_paid_amount,currency")
+      .select("id,user_id,test_id,payment_status,final_amount,currency,attempt_id")
+      .eq("id", localOrderId)
       .eq("razorpay_order_id", orderId)
       .eq("user_id", user.id)
       .single();
@@ -70,7 +75,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to validate payment" }, { status: 502 });
     }
 
-    const expectedAmountInPaise = Math.round(Number(order.final_paid_amount) * 100);
+    const expectedAmountInPaise = Math.round(Number(order.final_amount) * 100);
     if (
       payment.id !== paymentId ||
       payment.order_id !== orderId ||
@@ -95,7 +100,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: reconciled.error }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, idempotent: order.payment_status === "paid" });
+    const { data: resolvedOrder } = await admin.data
+      .from("psychometric_orders")
+      .select("attempt_id")
+      .eq("id", localOrderId)
+      .maybeSingle<{ attempt_id: string | null }>();
+    const attemptId = resolvedOrder?.attempt_id ?? order.attempt_id ?? null;
+    const redirectTo = attemptId ? `/dashboard/psychometric/attempts/${attemptId}` : "/dashboard/psychometric";
+
+    return NextResponse.json({ ok: true, idempotent: order.payment_status === "paid", attemptId, redirectTo });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to verify psychometric payment" },

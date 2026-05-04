@@ -40,6 +40,15 @@ export async function getPaymentSchemaErrorResponse(domains?: PaymentSchemaDomai
     return null;
   }
 
+  console.error("[payments/schema-guard] blocking schema mismatch detected", {
+    domains: domains ?? ["common", "course", "webinar", "psychometric", "webhook", "payout"],
+    missingTables: result.missing,
+    missingColumns: result.missingColumns,
+    incompatibleStatusValues: result.incompatibleStatusValues,
+    missingRpcs: result.missingRpcs,
+    incompatibleRpcSignatures: result.incompatibleRpcSignatures,
+  });
+
   return NextResponse.json(
     {
       error: "Payment schema is missing required tables/columns or has incompatible status/RPC expectations.",
