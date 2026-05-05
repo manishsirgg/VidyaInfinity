@@ -20,8 +20,6 @@ type OrderRow = {
   legacy_report_url: string | null;
 };
 
-type ProfileRow = { id: string; role: string | null };
-
 type DashboardOrder = OrderRow & {
   test?: TestRow | null;
   attempt?: (AttemptLite & { order_id?: string | null }) | null;
@@ -43,20 +41,8 @@ const stateBadge: Record<string, string> = {
 export default async function Page() {
   const { user, profile } = await requireUser("student");
   const supabase = await createClient();
-
-  const { data: profileByUserId, error: profileByUserIdError } = await supabase
-    .from("profiles")
-    .select("id,role")
-    .eq("user_id", user.id)
-    .maybeSingle<ProfileRow>();
-
-  const { data: profileById, error: profileByIdError } = profileByUserId
-    ? { data: null, error: null }
-    : await supabase.from("profiles").select("id,role").eq("id", user.id).maybeSingle<ProfileRow>();
-
-  const resolvedProfile = profileByUserId ?? profileById ?? { id: profile.id, role: profile.role };
+  const resolvedProfile = { id: profile.id, role: profile.role };
   console.log("[psychometric-profile]", { authUserId: user.id, profileId: resolvedProfile.id, role: resolvedProfile.role ?? null });
-  const profileError = profileByUserIdError ?? profileByIdError;
 
   const { data: orders, error: ordersError } = await supabase
     .from("psychometric_orders")
@@ -70,14 +56,6 @@ export default async function Page() {
     ordersCount: orders?.length ?? 0,
     ordersError: ordersError?.message ?? null,
   });
-
-  if (profileError) {
-    console.error("[psychometric-dashboard] profile resolution failed", {
-      authUserId: user.id,
-      byUserIdError: profileByUserIdError?.message ?? null,
-      byIdError: profileByIdError?.message ?? null,
-    });
-  }
 
   if (ordersError) {
     console.error("[psychometric-dashboard] order query failed", {

@@ -760,17 +760,25 @@ export default async function Page({
                         const attemptStatus = String(attempt?.status ?? "").toLowerCase();
                         const reportId = attempt?.report_id ?? (attempt?.id ? reportByAttemptId.get(attempt.id)?.id ?? null : null);
 
+                        const href = resolvedAttemptId ? `/dashboard/psychometric/attempts/${resolvedAttemptId}` : "/dashboard/psychometric";
+                        console.log("[psychometric-purchase-action]", {
+                          orderId: order.id,
+                          orderAttemptId: order.attempt_id ?? null,
+                          resolvedAttemptId,
+                          href,
+                        });
+
                         if (paid && resolvedAttemptId) {
                           if (["not_started", "unlocked", "created", ""].includes(attemptStatus)) {
-                            return <Link href={`/dashboard/psychometric/attempts/${resolvedAttemptId}`} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Start Test</Link>;
+                            return <Link href={href} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Start Test</Link>;
                           }
                           if (attemptStatus === "in_progress") {
-                            return <Link href={`/dashboard/psychometric/attempts/${resolvedAttemptId}`} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Continue Test</Link>;
+                            return <Link href={href} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Continue Test</Link>;
                           }
                           if (attemptStatus === "completed" && reportId) {
                             return <><Link href={`/dashboard/psychometric/reports/${reportId}`} className="rounded border px-3 py-2 text-xs font-medium">View Report</Link><a href={`/api/psychometric/reports/${reportId}/download`} className="rounded border px-3 py-2 text-xs font-medium">Download Report</a></>;
                           }
-                          return <Link href={`/dashboard/psychometric/attempts/${resolvedAttemptId}`} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Start Test</Link>;
+                          return <Link href={href} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Start Test</Link>;
                         }
 
                         if (paid && !resolvedAttemptId) {
