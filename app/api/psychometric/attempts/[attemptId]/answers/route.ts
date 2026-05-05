@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request, { params }: { params: Promise<{ attemptId: string }> }) {
@@ -16,22 +15,63 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
     .from("test_attempts")
     .select("id,user_id,test_id,status,order_id")
     .eq("id", attemptId)
-    .eq("user_id", auth.profile.id)
     .single();
   if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
+  if (attempt.user_id !== auth.profile.id) return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   if (!["not_started", "in_progress", "unlocked"].includes(String(attempt.status))) return NextResponse.json({ error: "Attempt is locked" }, { status: 400 });
 
-  let order: { user_id: string; payment_status: string | null; final_paid_amount: number | null } | null = null;
+  const paidStatuses = new Set(["paid", "captured", "success", "confirmed"]);
+  let order: { id: string; user_id: string; payment_status: string | null } | null = null;
   if (attempt.order_id) {
-    const { data } = await admin.data.from("psychometric_orders").select("user_id,payment_status,final_paid_amount").eq("id", attempt.order_id).maybeSingle();
+    const { data } = await admin.data.from("psychometric_orders").select("id,user_id,payment_status").eq("id", attempt.order_id).maybeSingle();
     order = data;
   }
   if (!order) {
-    const { data } = await admin.data.from("psychometric_orders").select("user_id,payment_status,final_paid_amount").eq("attempt_id", attempt.id).maybeSingle();
+    const { data } = await admin.data.from("psychometric_orders").select("id,user_id,payment_status").eq("attempt_id", attempt.id).maybeSingle();
     order = data;
   }
-  const isFree = Number(order?.final_paid_amount ?? 0) === 0;
-  if (!order || order.user_id !== auth.profile.id || (!isFree && !isSuccessfulPaymentStatus(order?.payment_status))) return NextResponse.json({ error: "Payment pending" }, { status: 403 });
+  const paymentStatus = String(order?.payment_status ?? "").toLowerCase();
+  const acceptedPaid = paidStatuses.has(paymentStatus);
+  console.log("[psychometric-answer-payment-check]", {
+    attemptId,
+    profileId: auth.profile.id,
+    attemptOrderId: attempt?.order_id ?? null,
+    orderFound: Boolean(order),
+    orderId: order?.id ?? null,
+    orderUserId: order?.user_id ?? null,
+    orderPaymentStatus: order?.payment_status ?? null,
+    acceptedPaid,
+  });
+  if (!order || order.user_id !== auth.profile.id) {
+    return NextResponse.json({
+      error: "Paid psychometric order not found for this attempt.",
+      debug: {
+        attemptId,
+        profileId: auth.profile.id,
+        attemptOrderId: attempt?.order_id ?? null,
+        orderFound: Boolean(order),
+        orderId: order?.id ?? null,
+        orderUserId: order?.user_id ?? null,
+        orderPaymentStatus: order?.payment_status ?? null,
+        reason: !order ? "order_missing" : "order_owner_mismatch",
+      },
+    }, { status: 403 });
+  }
+  if (!acceptedPaid) {
+    return NextResponse.json({
+      error: "Payment is not confirmed yet.",
+      debug: {
+        attemptId,
+        profileId: auth.profile.id,
+        attemptOrderId: attempt?.order_id ?? null,
+        orderFound: true,
+        orderId: order.id,
+        orderUserId: order.user_id,
+        orderPaymentStatus: order.payment_status,
+        reason: "payment_status_not_paid_like",
+      },
+    }, { status: 403 });
+  }
 
   const questionId = body?.questionId ?? body?.question_id;
   const optionId = body?.optionId ?? body?.option_id ?? null;
