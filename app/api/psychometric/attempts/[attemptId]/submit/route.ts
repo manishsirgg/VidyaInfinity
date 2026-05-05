@@ -74,16 +74,17 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   const { data: questions } = await admin.data.from("psychometric_questions").select("id,question_text,question_type,is_required,weight,min_scale_value,max_scale_value,metadata,scoring_config").eq("test_id", test.id).eq("is_active", true).order("sort_order");
   const qIds = (questions ?? []).map((q) => q.id);
   const { data: options } = await admin.data.from("psychometric_question_options").select("id,question_id,score_value,metadata").in("question_id", qIds).eq("is_active", true).order("sort_order");
-  const { data: answers } = await admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text").eq("attempt_id", attempt.id).eq("user_id", profileId);
+  const { data: answers } = await admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score").eq("attempt_id", attempt.id).eq("user_id", profileId);
   if (!answers || answers.length === 0) return NextResponse.json({ error: "No answers saved yet. Please answer the required questions before submitting." }, { status: 400 });
 
   type OptionRow = { id: string; question_id: string; score_value: number | null; metadata: Record<string, unknown> | null };
-  type AnswerRow = { id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null };
-  type QuestionRow = { id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null };
+  type AnswerRow = { id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null };
+  type QuestionRow = { id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null };
   const optsByQ = new Map<string, OptionRow[]>(); (options as OptionRow[] ?? []).forEach((o) => optsByQ.set(o.question_id, [...(optsByQ.get(o.question_id) ?? []), o]));
   const ansByQ = new Map((answers as AnswerRow[] ?? []).map((a) => [a.question_id, a]));
 
-  let total = 0; let max = 0; const dimension: Record<string, { score: number; maxScore: number; percentage: number }> = {}; const snapshot: Array<Record<string, unknown>> = [];
+  let max = 0; const dimension: Record<string, { score: number; maxScore: number; percentage: number }> = {}; const snapshot: Array<Record<string, unknown>> = [];
+  const questionScoreBreakdown: Array<Record<string, unknown>> = [];
   let requiredQuestionsCount = 0;
   let missingRequiredCount = 0;
   for (const q of (questions as QuestionRow[] ?? [])) {
@@ -94,21 +95,25 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
       return NextResponse.json({ error: `Required question unanswered: ${q.question_text}` }, { status: 400 });
     }
     let awarded = 0; let qMax = 0;
+    const questionScoringConfig = (q.scoring_config as Record<string, unknown> | null) ?? {};
     if (q.question_type === "single_choice") { qMax = Math.max(0, ...qOpts.map((o) => Number(o.score_value ?? 0))) * weight; if (q.is_required && !a?.option_id) return NextResponse.json({ error: "Single choice answer required" }, { status: 400 }); if (a?.option_id) { const op = qOpts.find((o) => o.id === a.option_id); if (!op && q.is_required) return NextResponse.json({ error: "Invalid single choice answer" }, { status: 400 }); awarded = Number(op?.score_value ?? 0) * weight; } }
     if (q.question_type === "multiple_choice") { qMax = qOpts.reduce((s, o) => s + Math.max(0, Number(o.score_value ?? 0)), 0) * weight; const vals = Array.isArray(a?.selected_values) ? a.selected_values : []; if (q.is_required && vals.length === 0) return NextResponse.json({ error: "At least one option must be selected" }, { status: 400 }); const selected = qOpts.filter((o) => vals.includes(o.id)); if (q.is_required && selected.length !== vals.length) return NextResponse.json({ error: "Invalid multi choice answer" }, { status: 400 }); awarded = selected.reduce((s, o) => s + Number(o.score_value ?? 0), 0) * weight; }
-    if (q.question_type === "scale") { qMax = Number(q.max_scale_value ?? 0) * weight; const n = Number(a?.numeric_value); if (q.is_required && !Number.isFinite(n)) return NextResponse.json({ error: "Missing scale value" }, { status: 400 }); if (Number.isFinite(n)) { if (n < Number(q.min_scale_value ?? 0) || n > Number(q.max_scale_value ?? 0)) return NextResponse.json({ error: "Scale value out of range" }, { status: 400 }); awarded = n * weight; } }
-    if (q.question_type === "numeric") { if (q.is_required && !Number.isFinite(Number(a?.numeric_value))) return NextResponse.json({ error: "Numeric answer required" }, { status: 400 }); }
+    if (q.question_type === "scale") { const testScoringConfig = (test.scoring_config as Record<string, unknown> | null) ?? {}; const configuredScaleMax = Number(questionScoringConfig.max_scale_value ?? questionScoringConfig.max ?? testScoringConfig.scale_max ?? q.max_scale_value ?? 0); qMax = Math.max(0, configuredScaleMax) * weight; const n = Number(a?.numeric_value); if (q.is_required && !Number.isFinite(n)) return NextResponse.json({ error: "Missing scale value" }, { status: 400 }); if (Number.isFinite(n)) { if (n < Number(q.min_scale_value ?? 0) || n > Number(q.max_scale_value ?? 0)) return NextResponse.json({ error: "Scale value out of range" }, { status: 400 }); awarded = n * weight; } }
+    if (q.question_type === "numeric") { if (q.is_required && !Number.isFinite(Number(a?.numeric_value))) return NextResponse.json({ error: "Numeric answer required" }, { status: 400 }); const numericMax = Number(questionScoringConfig.max_score ?? questionScoringConfig.max ?? 0); qMax = Number.isFinite(numericMax) && numericMax > 0 ? numericMax * weight : 0; }
     if (q.question_type === "text") { if (q.is_required && !String(a?.answer_text ?? "").trim()) return NextResponse.json({ error: "Text answer required" }, { status: 400 }); }
-    total += awarded; max += qMax;
+    max += qMax;
     if (a?.id) await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", a.id);
     const dim = String((q.metadata as Record<string, unknown> | null)?.dimension ?? "General");
     if (!dimension[dim]) dimension[dim] = { score: 0, maxScore: 0, percentage: 0 };
     dimension[dim].score += awarded; dimension[dim].maxScore += qMax;
+    questionScoreBreakdown.push({ questionId: q.id, questionType: q.question_type, weight, awarded, qMax });
     snapshot.push({ questionId: q.id, question: q.question_text, type: q.question_type, awardedScore: awarded });
   }
   console.log("[psychometric-submit-debug]", { attemptId, authUserId, profileId, attemptFound: Boolean(attempt), attemptUserId: attempt?.user_id ?? null, orderFound: Boolean(order), orderStatus: order?.payment_status ?? null, answersCount: answers.length, requiredQuestionsCount, missingRequiredCount });
   Object.values(dimension).forEach((d) => { d.percentage = d.maxScore > 0 ? Number(((d.score / d.maxScore) * 100).toFixed(2)) : 0; });
-  const percentage = max > 0 ? Number(((total / max) * 100).toFixed(2)) : 0;
+  const total = (answers as AnswerRow[]).reduce((sum, answer) => sum + Number(answer.awarded_score ?? 0), 0);
+  const percentageUnclamped = max > 0 ? (total / max) * 100 : 0;
+  const percentage = Number(Math.min(100, Math.max(0, percentageUnclamped)).toFixed(2));
   const scoringConfig = test.scoring_config as { bands?: { min: number; max: number; label: string }[] } | null;
   const bands = Array.isArray(scoringConfig?.bands) ? scoringConfig?.bands : undefined;
   const resultBand = pickResultBand(percentage, bands);
@@ -123,6 +128,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   };
   const { data: report, error: reportError } = await admin.data.from("psychometric_reports").upsert(reportUpsert, { onConflict: "attempt_id" }).select("id").single();
   if (reportError) return NextResponse.json({ error: reportError.message }, { status: 500 });
+  console.log("[psychometric-report-score-debug]", { attemptId, reportId: report.id, answersCount: answers.length, answerScores: (answers as AnswerRow[]).map((a) => Number(a.awarded_score ?? 0)), totalScore: total, maxScore: max, percentageScore: percentage, resultBand, questionScoreBreakdown });
 
   const attemptUpdate: Record<string, unknown> = { status: "completed", submitted_at: new Date().toISOString(), completed_at: new Date().toISOString(), total_score: total, max_score: max, percentage_score: percentage, result_band: resultBand, report_id: report.id };
   if (Object.prototype.hasOwnProperty.call(attempt, "score")) attemptUpdate.score = total;
