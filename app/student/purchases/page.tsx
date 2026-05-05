@@ -8,6 +8,8 @@ import { reconcileCourseOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payme
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveWebinarAccessState } from "@/lib/webinars/access-state";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type CoursePurchase = {
   id: string;
@@ -32,7 +34,7 @@ type EnrollmentRow = {
 
 type PsychometricPurchase = {
   id: string;
-  final_paid_amount: number | null;
+  final_amount: number | null;
   payment_status: string | null;
   paid_at: string | null;
   test_id: string;
@@ -252,7 +254,7 @@ export default async function Page({
       .order("created_at", { ascending: false }),
     dataClient
       .from("psychometric_orders")
-      .select("id,final_paid_amount,payment_status,paid_at,test_id,razorpay_order_id,razorpay_payment_id,created_at")
+      .select("id,test_id,final_amount,payment_status,razorpay_order_id,razorpay_payment_id,attempt_id,paid_at,created_at")
       .eq("user_id", profile.id)
       .order("created_at", { ascending: false }),
     dataClient
@@ -283,6 +285,8 @@ export default async function Page({
 
   let courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
+  console.log("[psychometric-profile]", { authUserId: user.id, profileId: profile.id, role: profile.role });
+  console.log("[student-purchases-psychometric]", { profileId: profile.id, ordersCount: testOrders.length, ordersError: testResult.error?.message ?? null });
 
   if (testResult.error) {
     console.error("[student/purchases] psychometric orders query failed", {
@@ -721,7 +725,7 @@ export default async function Page({
                       {refund ? <RefundStatusBadge status={refund.refund_status} /> : null}
                     </div>
                     <p className="mt-1 text-slate-700">
-                      {formatRupees(order.final_paid_amount)} · Payment: {toTitleCase(order.payment_status, "Created")}
+                      {formatRupees(order.final_amount)} · Payment: {toTitleCase(order.payment_status, "Created")}
                       {order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ""}
                     </p>
                     <p className="mt-1 text-slate-700">Access: {unlocked ? "Unlocked" : "Locked / Pending"}</p>
