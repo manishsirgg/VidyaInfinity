@@ -29,11 +29,21 @@ export async function getCurrentUserProfile() {
 
   if (error || !user) return null;
 
-  const { data: profile } = await supabase
+  const { data: profileByUserId } = await supabase
     .from("profiles")
     .select("id,full_name,email,role,approval_status,rejection_reason,city,state,country")
-    .eq("id", user.id)
+    .eq("user_id", user.id)
     .maybeSingle<ProfileRow>();
+
+  const { data: profileById } = profileByUserId
+    ? { data: null }
+    : await supabase
+        .from("profiles")
+        .select("id,full_name,email,role,approval_status,rejection_reason,city,state,country")
+        .eq("id", user.id)
+        .maybeSingle<ProfileRow>();
+
+  const profile = profileByUserId ?? profileById;
 
   if (!profile) return null;
 

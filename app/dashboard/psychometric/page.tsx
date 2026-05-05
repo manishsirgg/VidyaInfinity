@@ -3,6 +3,8 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/get-session";
 import { derivePsychometricState, isPaidPsychometricOrder, resolveAttemptReportId, type AttemptLite, type ReportLite } from "@/lib/psychometric/dashboard";
 import { createClient } from "@/lib/supabase/server";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type TestRow = { id: string; title: string | null; slug: string | null };
 type OrderRow = {
@@ -53,6 +55,7 @@ export default async function Page() {
     : await supabase.from("profiles").select("id,role").eq("id", user.id).maybeSingle<ProfileRow>();
 
   const resolvedProfile = profileByUserId ?? profileById ?? { id: profile.id, role: profile.role };
+  console.log("[psychometric-profile]", { authUserId: user.id, profileId: resolvedProfile.id, role: resolvedProfile.role ?? null });
   const profileError = profileByUserIdError ?? profileByIdError;
 
   const { data: orders, error: ordersError } = await supabase
@@ -62,13 +65,10 @@ export default async function Page() {
     .order("created_at", { ascending: false })
     .returns<OrderRow[]>();
 
-  console.log("[psychometric-dashboard]", {
-    authUserId: user.id,
+  console.log("[psychometric-dashboard-orders]", {
     profileId: resolvedProfile.id,
-    profileRole: resolvedProfile.role,
     ordersCount: orders?.length ?? 0,
     ordersError: ordersError?.message ?? null,
-    firstOrderId: orders?.[0]?.id ?? null,
   });
 
   if (profileError) {

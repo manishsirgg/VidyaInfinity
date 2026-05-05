@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 type IdentityDocument = {
   id: string;
@@ -155,6 +156,7 @@ function isActiveCourseEnrollmentStatus(status: string | null | undefined) {
 export default async function StudentDashboardPage() {
   const { user, profile } = await requireUser("student", { requireApproved: false });
   const supabase = await createClient();
+  console.log("[psychometric-profile]", { authUserId: user.id, profileId: profile.id, role: profile.role });
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
 
