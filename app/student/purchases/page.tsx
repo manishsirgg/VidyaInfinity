@@ -38,10 +38,14 @@ type PsychometricPurchase = {
   payment_status: string | null;
   paid_at: string | null;
   test_id: string;
+  attempt_id?: string | null;
   razorpay_order_id?: string | null;
   razorpay_payment_id?: string | null;
   created_at?: string | null;
 };
+
+type PsychometricAttemptRow = { id: string; order_id: string | null; status: string | null; report_id: string | null };
+type PsychometricReportRow = { id: string; attempt_id: string | null };
 
 type WebinarPurchase = {
   id: string;
@@ -466,6 +470,23 @@ export default async function Page({
     }
   }
 
+  const psychometricOrderIds = testOrders.map((order) => order.id);
+  const attemptIdsFromOrders = Array.from(new Set(testOrders.map((order) => order.attempt_id).filter((value): value is string => Boolean(value))));
+  const { data: attemptsByOrder } = psychometricOrderIds.length
+    ? await dataClient.from("test_attempts").select("id,order_id,status,report_id").in("order_id", psychometricOrderIds).returns<PsychometricAttemptRow[]>()
+    : { data: [] as PsychometricAttemptRow[] };
+  const { data: attemptsById } = attemptIdsFromOrders.length
+    ? await dataClient.from("test_attempts").select("id,order_id,status,report_id").in("id", attemptIdsFromOrders).returns<PsychometricAttemptRow[]>()
+    : { data: [] as PsychometricAttemptRow[] };
+  const mergedAttempts = Array.from(new Map([...(attemptsByOrder ?? []), ...(attemptsById ?? [])].map((attempt) => [attempt.id, attempt])).values());
+  const attemptsByIdMap = new Map(mergedAttempts.map((attempt) => [attempt.id, attempt]));
+  const attemptsByOrderIdMap = new Map(mergedAttempts.filter((attempt) => attempt.order_id).map((attempt) => [attempt.order_id as string, attempt]));
+  const mergedAttemptIds = mergedAttempts.map((attempt) => attempt.id);
+  const { data: psychometricReports } = mergedAttemptIds.length
+    ? await dataClient.from("psychometric_reports").select("id,attempt_id").in("attempt_id", mergedAttemptIds).returns<PsychometricReportRow[]>()
+    : { data: [] as PsychometricReportRow[] };
+  const reportByAttemptId = new Map((psychometricReports ?? []).filter((report) => report.attempt_id).map((report) => [report.attempt_id as string, report]));
+
   const refunds = refundsData ?? [];
   const courseRefundByOrderId = new Map(refunds.filter((refund) => refund.course_order_id).map((refund) => [refund.course_order_id as string, refund]));
   const psychometricRefundByOrderId = new Map(
@@ -731,7 +752,35 @@ export default async function Page({
                     <p className="mt-1 text-slate-700">Access: {unlocked ? "Unlocked" : "Locked / Pending"}</p>
                     <div className="mt-1 text-xs text-slate-500">Order ID: {order.razorpay_order_id ?? order.id}</div>
                     {order.razorpay_payment_id ? <div className="text-xs text-slate-500">Razorpay Payment ID: {order.razorpay_payment_id}</div> : null}
-                    <div className="mt-2">{refund ? null : unlocked ? <RefundRequestButton orderType="psychometric" orderId={order.id} /> : null}</div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {(() => {
+                        const paid = SUCCESS_PAYMENT_STATUSES_SET.has(String(order.payment_status ?? "").toLowerCase());
+                        const attempt = (order.attempt_id ? attemptsByIdMap.get(order.attempt_id) : null) ?? attemptsByOrderIdMap.get(order.id) ?? null;
+                        const resolvedAttemptId = attempt?.id ?? order.attempt_id ?? null;
+                        const attemptStatus = String(attempt?.status ?? "").toLowerCase();
+                        const reportId = attempt?.report_id ?? (attempt?.id ? reportByAttemptId.get(attempt.id)?.id ?? null : null);
+
+                        if (paid && resolvedAttemptId) {
+                          if (["not_started", "unlocked", "created", ""].includes(attemptStatus)) {
+                            return <Link href={`/dashboard/psychometric/attempts/${resolvedAttemptId}`} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Start Test</Link>;
+                          }
+                          if (attemptStatus === "in_progress") {
+                            return <Link href={`/dashboard/psychometric/attempts/${resolvedAttemptId}`} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Continue Test</Link>;
+                          }
+                          if (attemptStatus === "completed" && reportId) {
+                            return <><Link href={`/dashboard/psychometric/reports/${reportId}`} className="rounded border px-3 py-2 text-xs font-medium">View Report</Link><a href={`/api/psychometric/reports/${reportId}/download`} className="rounded border px-3 py-2 text-xs font-medium">Download Report</a></>;
+                          }
+                          return <Link href={`/dashboard/psychometric/attempts/${resolvedAttemptId}`} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Start Test</Link>;
+                        }
+
+                        if (paid && !resolvedAttemptId) {
+                          return <span className="text-xs text-amber-700">Access is being prepared. <Link href="/dashboard/psychometric" className="underline">Open Dashboard</Link></span>;
+                        }
+
+                        return null;
+                      })()}
+                      {refund ? null : unlocked ? <RefundRequestButton orderType="psychometric" orderId={order.id} /> : null}
+                    </div>
                   </article>
                 );
               })
