@@ -116,6 +116,16 @@ export default async function Page() {
   const uniqueAttempts = Array.from(new Map(attempts.map((attempt) => [attempt.id, attempt])).values());
   const resolvedAttemptIds = uniqueAttempts.map((attempt) => attempt.id);
 
+  console.log("[dashboard-psychometric-final]", {
+    profileId: resolvedProfile.id,
+    ordersCount: orders?.length ?? 0,
+    attemptIds: attemptIdsFromOrder,
+    attemptsCount: uniqueAttempts.length,
+    firstOrderId: orders?.[0]?.id ?? null,
+    firstAttemptId: uniqueAttempts[0]?.id ?? null,
+    error: ordersError?.message
+  });
+
   const { data: reports, error: reportsError } = resolvedAttemptIds.length
     ? await supabase.from("psychometric_reports").select("id,attempt_id").in("attempt_id", resolvedAttemptIds).returns<ReportLite[]>()
     : { data: [] as ReportLite[], error: null };

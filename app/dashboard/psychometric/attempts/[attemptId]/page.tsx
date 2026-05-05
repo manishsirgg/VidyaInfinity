@@ -13,18 +13,21 @@ const isPaid = (s: string | null, p: string | null) => ["paid", "success", "capt
 
 export default async function Page({ params }: { params: Promise<{ attemptId: string }> }) {
   const { attemptId } = await params; const { profile, user } = await requireUser("student"); const supabase = await createClient();
+  const { data: profileByUserId } = await supabase.from("profiles").select("id,role").eq("user_id", user.id).maybeSingle<{ id: string; role: string | null }>();
+  const { data: profileById } = profileByUserId ? { data: null } : await supabase.from("profiles").select("id,role").eq("id", user.id).maybeSingle<{ id: string; role: string | null }>();
+  const resolvedProfile = profileByUserId ?? profileById ?? { id: profile.id, role: profile.role };
   const { data: attempt } = await supabase.from("test_attempts").select("id,user_id,test_id,status,order_id").eq("id", attemptId).maybeSingle<AttemptRow>();
   if (!attempt) {
-    console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: profile.id, attemptId, attemptUserId: null, attemptStatus: null, orderId: null, redirectReason: "attempt_not_found" });
+    console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: resolvedProfile.id, attemptId, attemptUserId: null, attemptStatus: null, orderId: null, redirectReason: "attempt_not_found" });
     redirect("/dashboard/psychometric");
   }
-  if (attempt.user_id !== profile.id) {
-    console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: profile.id, attemptId, attemptUserId: attempt.user_id, attemptStatus: attempt.status, orderId: attempt.order_id, redirectReason: "ownership_mismatch" });
+  if (attempt.user_id !== resolvedProfile.id) {
+    console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: resolvedProfile.id, attemptId, attemptUserId: attempt.user_id, attemptStatus: attempt.status, orderId: attempt.order_id, redirectReason: "ownership_mismatch" });
     redirect("/dashboard/psychometric");
   }
-  const { data: order } = await supabase.from("psychometric_orders").select("id,payment_status,paid_at").or(`id.eq.${attempt.order_id},attempt_id.eq.${attempt.id}`).order("created_at", { ascending: false }).limit(1).maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null }>();
+  const { data: order } = await supabase.from("psychometric_orders") .select("id,payment_status,paid_at,user_id").eq("user_id", resolvedProfile.id).or(`id.eq.${attempt.order_id},attempt_id.eq.${attempt.id}`).order("created_at", { ascending: false }).limit(1).maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null }>();
   if (!isPaid(order?.payment_status ?? null, order?.paid_at ?? null)) {
-    console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: profile.id, attemptId, attemptUserId: attempt.user_id, attemptStatus: attempt.status, orderId: attempt.order_id, redirectReason: "order_not_paid" });
+    console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: resolvedProfile.id, attemptId, attemptUserId: attempt.user_id, attemptStatus: attempt.status, orderId: attempt.order_id, redirectReason: "order_not_paid" });
     redirect("/dashboard/psychometric");
   }
   const { data: report } = await supabase.from("psychometric_reports").select("id").eq("attempt_id", attempt.id).maybeSingle<{ id: string }>();
