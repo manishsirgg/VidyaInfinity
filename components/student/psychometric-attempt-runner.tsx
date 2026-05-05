@@ -79,8 +79,9 @@ export function PsychometricAttemptRunner({ attemptId, attemptStatus, testTitle,
         setAutosaveError("");
         setMsg("All changes saved");
       } else {
-        setAutosaveError("Answer could not be saved. Please try again.");
-        setMsg(b.error ?? "Save failed");
+        const backendError = typeof b?.error === "string" && b.error.trim() ? b.error.trim() : "Answer could not be saved. Please try again.";
+        setAutosaveError(backendError);
+        setMsg(backendError);
       }
     } catch {
       setSaving(false);
