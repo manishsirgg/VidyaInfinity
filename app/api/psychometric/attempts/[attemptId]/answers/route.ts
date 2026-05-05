@@ -14,16 +14,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
 
   const { data: attempt } = await admin.data
     .from("test_attempts")
-    .select("id,user_id,test_id,status,order_id,psychometric_orders(payment_status,final_paid_amount)")
+    .select("id,user_id,test_id,status,order_id")
     .eq("id", attemptId)
     .eq("user_id", auth.profile.id)
     .single();
   if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   if (!["not_started", "in_progress", "unlocked"].includes(String(attempt.status))) return NextResponse.json({ error: "Attempt is locked" }, { status: 400 });
 
-  const order = Array.isArray(attempt.psychometric_orders) ? attempt.psychometric_orders[0] : attempt.psychometric_orders;
+  let order: { user_id: string; payment_status: string | null; final_paid_amount: number | null } | null = null;
+  if (attempt.order_id) {
+    const { data } = await admin.data.from("psychometric_orders").select("user_id,payment_status,final_paid_amount").eq("id", attempt.order_id).maybeSingle();
+    order = data;
+  }
+  if (!order) {
+    const { data } = await admin.data.from("psychometric_orders").select("user_id,payment_status,final_paid_amount").eq("attempt_id", attempt.id).maybeSingle();
+    order = data;
+  }
   const isFree = Number(order?.final_paid_amount ?? 0) === 0;
-  if (!isFree && !isSuccessfulPaymentStatus(order?.payment_status)) return NextResponse.json({ error: "Payment pending" }, { status: 403 });
+  if (!order || order.user_id !== auth.profile.id || (!isFree && !isSuccessfulPaymentStatus(order?.payment_status))) return NextResponse.json({ error: "Payment pending" }, { status: 403 });
 
   const { questionId, optionId, selectedValues, answerText, numericValue } = body ?? {};
   if (!questionId) return NextResponse.json({ error: "questionId is required" }, { status: 400 });
