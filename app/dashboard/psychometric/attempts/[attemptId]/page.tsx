@@ -9,6 +9,8 @@ export const revalidate = 0;
 type AttemptRow = { id: string; user_id: string; test_id: string; status: string; order_id: string | null };
 
 type AnswerRow = { question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null };
+type QuestionRow = { id: string; question_text: string; question_type: string; is_required: boolean; min_scale_value: number | null; max_scale_value: number | null };
+type OptionRow = { id: string; question_id: string; option_label: string; sort_order: number | null; is_active: boolean };
 const isPaid = (s: string | null, p: string | null) => ["paid", "success", "captured", "confirmed"].includes(String(s ?? "").toLowerCase()) || Boolean(p);
 
 export default async function Page({ params }: { params: Promise<{ attemptId: string }> }) {
@@ -67,14 +69,73 @@ export default async function Page({ params }: { params: Promise<{ attemptId: st
     console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: resolvedProfile.id, attemptId, redirectReason: "test_missing" });
     return <div className="mx-auto max-w-4xl px-4 py-8 text-rose-600">Unable to load test details for this attempt.</div>;
   }
-  const { data: questions } = await supabase.from("psychometric_questions").select("id,question_text,question_type,is_required,min_scale_value,max_scale_value,psychometric_question_options(id,option_label,is_active,sort_order)").eq("test_id", attempt.test_id).eq("is_active", true).order("sort_order");
+  const { data: questions, error: questionError } = await supabase
+    .from("psychometric_questions")
+    .select("id,question_text,question_type,is_required,min_scale_value,max_scale_value")
+    .eq("test_id", attempt.test_id)
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .returns<QuestionRow[]>();
+  const questionIds = (questions ?? []).map((question) => question.id);
+  const { data: options, error: optionError } = questionIds.length
+    ? await supabase
+        .from("psychometric_question_options")
+        .select("id,question_id,option_label,sort_order,is_active")
+        .in("question_id", questionIds)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .returns<OptionRow[]>()
+    : { data: [] as OptionRow[], error: null };
+
+  console.log("[psychometric-attempt-question-load]", {
+    attemptId,
+    testId: attempt.test_id,
+    questionsCount: questions?.length ?? 0,
+    optionsCount: options?.length ?? 0,
+    questionError: questionError?.message,
+    optionError: optionError?.message,
+    firstQuestionId: questions?.[0]?.id ?? null
+  });
+
+  if (questionError) {
+    console.error("[psychometric-attempt-page] question query failed", {
+      attemptId,
+      testId: attempt.test_id,
+      error: questionError.message,
+    });
+  }
+
   if (!questions?.length) {
-    console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: resolvedProfile.id, attemptId, redirectReason: "questions_missing" });
+    console.log("[psychometric-attempt-page]", { authUserId: user.id, profileId: resolvedProfile.id, attemptId, redirectReason: "questions_missing", questionError: questionError?.message ?? null });
     return <div className="mx-auto max-w-4xl px-4 py-8 text-rose-600">No active questions are available for this test right now.</div>;
   }
+
+  const optionsByQuestionId = (options ?? []).reduce<Record<string, { id: string; option_label: string }[]>>((acc, option) => {
+    if (!acc[option.question_id]) acc[option.question_id] = [];
+    acc[option.question_id].push({ id: option.id, option_label: option.option_label });
+    return acc;
+  }, {});
+
+  const optionRequiredTypes = new Set(["single_choice", "multiple_choice"]);
+  const questionsWithOptions = (questions ?? []).map((question) => ({
+    ...question,
+    options: optionsByQuestionId[question.id] ?? [],
+  }));
+
+  const optionValidationFailures = questionsWithOptions.filter(
+    (question) => optionRequiredTypes.has(question.question_type) && question.options.length === 0,
+  );
+
+  if (optionValidationFailures.length) {
+    console.warn("[psychometric-attempt-page] option-required questions missing options", {
+      attemptId,
+      testId: attempt.test_id,
+      questionIds: optionValidationFailures.map((question) => question.id),
+    });
+  }
+
   const { data: answers } = await supabase.from("psychometric_answers").select("question_id,option_id,selected_values,numeric_value,answer_text").eq("attempt_id", attempt.id).returns<AnswerRow[]>();
   const initial: Record<string, unknown> = {};
   (answers ?? []).forEach((a) => { initial[a.question_id] = a.option_id ?? a.selected_values ?? a.numeric_value ?? a.answer_text ?? ""; });
-  const normalizedQuestions = (questions ?? []).map((q) => ({ ...q, psychometric_question_options: (q.psychometric_question_options ?? []).filter((o: { is_active: boolean }) => o.is_active).sort((a: { sort_order?: number | null }, b: { sort_order?: number | null }) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)) }));
-  return <div className="mx-auto max-w-4xl px-4 py-8"><h1 className="mb-4 text-2xl font-semibold">Psychometric Attempt</h1><PsychometricAttemptRunner attemptId={attempt.id} questions={normalizedQuestions} initial={initial} /></div>;
+  return <div className="mx-auto max-w-4xl px-4 py-8"><h1 className="mb-4 text-2xl font-semibold">Psychometric Attempt</h1><PsychometricAttemptRunner attemptId={attempt.id} questions={questionsWithOptions} initial={initial} /></div>;
 }
