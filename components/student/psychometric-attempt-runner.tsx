@@ -23,6 +23,7 @@ export function PsychometricAttemptRunner({ attemptId, attemptStatus, testTitle,
   const [dirty, setDirty] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [missing, setMissing] = useState<string[]>([]);
+  const [autosaveError, setAutosaveError] = useState("");
   const router = useRouter();
 
   const isAnswered = (q: Q) => {
@@ -58,19 +59,33 @@ export function PsychometricAttemptRunner({ attemptId, attemptStatus, testTitle,
     if (q.question_type === "multiple_choice") body.selectedValues = v;
     if (q.question_type === "scale" || q.question_type === "numeric") body.numericValue = Number(v);
     if (q.question_type === "text") body.answerText = String(v ?? "");
-
-    const r = await fetch(`/api/psychometric/attempts/${attemptId}/answers`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+    console.log("[psychometric-autosave-request]", {
+      attemptId,
+      questionId: q.id,
+      questionType: q.question_type,
+      payload: body,
     });
-    const b = await r.json();
-    setSaving(false);
-    if (r.ok) {
-      setDirty(false);
-      setMsg("All changes saved");
-    } else {
-      setMsg(b.error ?? "Save failed");
+
+    try {
+      const r = await fetch(`/api/psychometric/attempts/${attemptId}/answers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const b = await r.json();
+      setSaving(false);
+      if (r.ok) {
+        setDirty(false);
+        setAutosaveError("");
+        setMsg("All changes saved");
+      } else {
+        setAutosaveError("Answer could not be saved. Please try again.");
+        setMsg(b.error ?? "Save failed");
+      }
+    } catch {
+      setSaving(false);
+      setAutosaveError("Answer could not be saved. Please try again.");
+      setMsg("Save failed");
     }
   };
 
@@ -199,6 +214,7 @@ export function PsychometricAttemptRunner({ attemptId, attemptStatus, testTitle,
         <button disabled={submitting} onClick={submit} className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{submitting ? "Submitting…" : "Submit Test"}</button>
       </div>
       {msg ? <p className="mt-3 text-sm text-slate-600">{msg}</p> : null}
+      {autosaveError ? <p className="mt-2 text-sm font-medium text-rose-600">{autosaveError}</p> : null}
     </div>
   );
 }

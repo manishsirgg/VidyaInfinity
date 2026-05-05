@@ -33,7 +33,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
   const isFree = Number(order?.final_paid_amount ?? 0) === 0;
   if (!order || order.user_id !== auth.profile.id || (!isFree && !isSuccessfulPaymentStatus(order?.payment_status))) return NextResponse.json({ error: "Payment pending" }, { status: 403 });
 
-  const { questionId, optionId, selectedValues, answerText, numericValue } = body ?? {};
+  const questionId = body?.questionId ?? body?.question_id;
+  const optionId = body?.optionId ?? body?.option_id ?? null;
+  const selectedValues = body?.selectedValues ?? body?.selected_values ?? null;
+  const answerText = body?.answerText ?? body?.answer_text ?? null;
+  const numericValue = body?.numericValue ?? body?.numeric_value ?? null;
   if (!questionId) return NextResponse.json({ error: "questionId is required" }, { status: 400 });
 
   const { data: question } = await admin.data
@@ -69,15 +73,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
     }
   } else {
     if (!answerText && question.is_required) return NextResponse.json({ error: "answerText required" }, { status: 400 });
-    safeAnswerText = answerText ?? null;
+    safeAnswerText = typeof answerText === "string" ? answerText : answerText === null ? null : String(answerText ?? "");
   }
 
-  const payload = { attempt_id: attempt.id, test_id: attempt.test_id, user_id: auth.profile.id, question_id: question.id, option_id: safeOptionId, selected_values: safeSelectedValues, answer_text: safeAnswerText, numeric_value: safeNumericValue, awarded_score: awardedScore };
+  const payload = {
+    attempt_id: attempt.id,
+    test_id: attempt.test_id,
+    user_id: auth.profile.id,
+    question_id: question.id,
+    option_id: safeOptionId,
+    selected_values: safeSelectedValues,
+    answer_text: safeAnswerText,
+    numeric_value: safeNumericValue,
+    awarded_score: awardedScore,
+    updated_at: new Date().toISOString(),
+  };
   const { data: saved, error } = await admin.data.from("psychometric_answers").upsert(payload, { onConflict: "attempt_id,question_id" }).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   if (attempt.status === "not_started" || attempt.status === "unlocked") {
-    await admin.data.from("test_attempts").update({ status: "in_progress", started_at: new Date().toISOString() }).eq("id", attempt.id);
+    const { error: attemptStatusUpdateError } = await admin.data.from("test_attempts").update({ status: "in_progress", started_at: new Date().toISOString() }).eq("id", attempt.id);
+    if (attemptStatusUpdateError) {
+      console.error("[psychometric-autosave-status-update-failed]", { attemptId: attempt.id, error: attemptStatusUpdateError.message });
+    }
   }
 
   return NextResponse.json({ success: true, answer: saved });
