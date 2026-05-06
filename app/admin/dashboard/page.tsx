@@ -16,8 +16,8 @@ const adminModules = [
   { href: "/admin/blogs", label: "Blogs" },
   { href: "/admin/coupons", label: "Coupons" },
   { href: "/admin/crm", label: "CRM Leads" },
-  { href: "/admin/psychometric-tests", label: "Psychometric Tests" },
-  { href: "/admin/psychometric-diagnostics", label: "Psychometric Diagnostics" },
+  { href: "/admin/psychometric", label: "Psychometric Tests" },
+  { href: "/admin/psychometric/diagnostics", label: "Psychometric Diagnostics" },
   { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/webinars", label: "Webinars" },
   { href: "/admin/featured-listings", label: "Featured Listings" },
@@ -192,7 +192,7 @@ export default async function AdminDashboardPage() {
         <Link href="/admin/crm" className="vi-card p-4">
           CRM leads: {leads ?? 0}
         </Link>
-        <Link href="/admin/psychometric-tests" className="vi-card p-4">
+        <Link href="/admin/psychometric" className="vi-card p-4">
           Active tests: {tests ?? 0}
         </Link>
         <Link href="/admin/notifications" className="vi-card p-4">
