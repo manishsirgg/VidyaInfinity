@@ -20,6 +20,27 @@ export function PsychometricAdminHeader({ title, description, breadcrumbs = [], 
   );
 }
 
+const navItems = [
+  { label: "Overview", href: "/admin/psychometric" },
+  { label: "Tests", href: "/admin/psychometric/tests" },
+  { label: "Attempts", href: "/admin/psychometric/attempts" },
+  { label: "Reports", href: "/admin/psychometric/reports" },
+  { label: "Diagnostics", href: "/admin/psychometric/diagnostics" },
+];
+
+export function PsychometricAdminSubnav({ currentPath }: { currentPath: string }) {
+  return (
+    <div className="overflow-x-auto">
+      <div className="inline-flex min-w-full gap-2 rounded-lg border bg-white p-1">
+        {navItems.map((item) => {
+          const active = currentPath === item.href;
+          return <Link key={item.href} href={item.href} className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm ${active ? "bg-brand-600 text-white" : "text-slate-700 hover:bg-slate-100"}`}>{item.label}</Link>;
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function PsychometricAdminCard({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <section className={`rounded-xl border bg-white p-4 ${className}`}>{children}</section>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { PsychometricAdminCard, PsychometricAdminHeader, PsychometricStatusBadge } from "@/app/admin/psychometric/_components/AdminPsychometricUI";
+import { PsychometricAdminCard, PsychometricAdminHeader, PsychometricAdminSubnav, PsychometricStatusBadge } from "@/app/admin/psychometric/_components/AdminPsychometricUI";
 import { useCallback, useEffect, useState } from "react";
 
 type RecentOrder = { id: string; payment_status: string | null; attempt_id: string | null };
@@ -64,7 +64,7 @@ export default function PsychometricDiagnosticsPage() {
   };
 
   return <div className="space-y-6 p-3 md:p-6">
-    <PsychometricAdminHeader title="Psychometric Diagnostics" description="Run health checks and reconcile broken psychometric data." breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Psychometric", href: "/admin/psychometric" }, { label: "Diagnostics" }]} />
+    <PsychometricAdminHeader title="Psychometric Diagnostics" description="Run health checks and reconcile broken psychometric data." breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Psychometric", href: "/admin/psychometric" }, { label: "Diagnostics" }]} /><PsychometricAdminSubnav currentPath="/admin/psychometric/diagnostics" />
     <div className="flex flex-wrap gap-3">
       <button disabled={loading} className="rounded bg-brand-600 px-3 py-2 text-sm text-white disabled:opacity-60" onClick={() => void runAction("/api/admin/psychometric/reconcile")}>Run Reconcile</button>
       <button disabled={loading} className="rounded border px-3 py-2 text-sm disabled:opacity-60" onClick={() => void runAction("/api/admin/psychometric/reports/regenerate-broken")}>Regenerate Broken Reports</button>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { PsychometricAdminCard, PsychometricAdminHeader } from "./_components/AdminPsychometricUI";
+import { PsychometricAdminCard, PsychometricAdminHeader, PsychometricAdminSubnav } from "./_components/AdminPsychometricUI";
 
 export default async function AdminPsychometricDashboard() {
   const supabase = await createClient();
@@ -21,7 +21,7 @@ export default async function AdminPsychometricDashboard() {
 
   const cards = [["Total Tests", tests.count ?? 0], ["Active Tests", activeTests.count ?? 0], ["Paid Orders", orders.count ?? 0], ["Attempts Started", attemptsStarted.count ?? 0], ["Completed Attempts", completedAttempts.count ?? 0], ["Reports Generated", reports.count ?? 0], ["Broken/Stale Reports", 0]];
 
-  return <div className="space-y-6 p-3 md:p-6"><PsychometricAdminHeader title="Psychometric Management" description="Manage assessments, scoring, attempts, reports, and diagnostics from one place." breadcrumbs={[{label:"Admin",href:"/admin/dashboard"},{label:"Psychometric"}]}/>
+  return <div className="space-y-6 p-3 md:p-6"><PsychometricAdminHeader title="Psychometric Management" description="Manage assessments, scoring, attempts, reports, and diagnostics from one place." breadcrumbs={[{label:"Admin",href:"/admin/dashboard"},{label:"Psychometric"}]}/><PsychometricAdminSubnav currentPath="/admin/psychometric"/>
   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value]) => <PsychometricAdminCard key={String(label)}><p className="text-xs text-slate-500">{label}</p><p className="text-2xl font-semibold">{value}</p></PsychometricAdminCard>)}</div>
   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[["Create Psychometric Test","/admin/psychometric/tests/new"],["Manage Tests","/admin/psychometric/tests"],["Manage Questions","/admin/psychometric/tests"],["Review Attempts","/admin/psychometric/attempts"],["Reports & Scoring","/admin/psychometric/reports"],["Diagnostics & Repairs","/admin/psychometric/diagnostics"]].map(([l,href])=><Link key={String(l)} href={String(href)} className="rounded-xl border bg-white p-4 text-sm font-medium hover:border-brand-300">{l}</Link>)}</div></div>;
 }
