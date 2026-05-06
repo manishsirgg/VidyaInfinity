@@ -74,16 +74,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
     user_id: answer.user_id,
   }));
 
-  console.log("[psychometric-report-regenerate]", {
-    reportId: report.id,
-    attemptId: report.attempt_id,
-    answersCount: answers.length,
-    totalScore,
-    maxScore,
-    percentageScore,
-    resultBand,
-  });
-
   const now = new Date().toISOString();
   const { error: updateReportError } = await admin.data.from("psychometric_reports").update({
     test_id: attempt.test_id,

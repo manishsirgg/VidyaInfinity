@@ -160,7 +160,6 @@ export default async function StudentDashboardPage() {
   const { data: profileByUserId } = await supabase.from("profiles").select("id,role").eq("user_id", user.id).maybeSingle<{ id: string; role: string | null }>();
   const { data: profileById } = profileByUserId ? { data: null } : await supabase.from("profiles").select("id,role").eq("id", user.id).maybeSingle<{ id: string; role: string | null }>();
   const resolvedProfile = profileByUserId ?? profileById ?? { id: profile.id, role: profile.role };
-  console.log("[psychometric-profile]", { authUserId: user.id, profileId: resolvedProfile.id, role: resolvedProfile.role });
   const admin = getSupabaseAdmin();
   const dataClient = admin.ok ? admin.data : supabase;
 

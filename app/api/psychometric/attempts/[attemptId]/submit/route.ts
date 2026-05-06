@@ -13,7 +13,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   const auth = await requireApiUser("student");
   if ("error" in auth) return auth.error;
   const { attemptId } = await params;
-  const authUserId = auth.user.id;
   const profileId = auth.profile.id;
 
   const admin = getSupabaseAdmin();
@@ -25,17 +24,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     .eq("id", attemptId)
     .maybeSingle();
   if (attemptError || !attempt || attempt.user_id !== profileId) {
-    return NextResponse.json({
-      error: "Attempt not found",
-      debug: {
-        attemptId,
-        authUserId,
-        profileId,
-        foundAttemptId: attempt?.id ?? null,
-        foundAttemptUserId: attempt?.user_id ?? null,
-        reason: attemptError ? `attempt_lookup_error:${attemptError.message}` : !attempt ? "attempt_missing" : "ownership_mismatch",
-      },
-    }, { status: 404 });
+    return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   }
 
   const { data: existingReport } = await admin.data
@@ -95,8 +84,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
   }
 
-  console.log("[psychometric-submit-debug]", { attemptId, authUserId, profileId, attemptFound: Boolean(attempt), attemptUserId: attempt?.user_id ?? null, orderFound: Boolean(order), orderStatus: order?.payment_status ?? null, answersCount: answers.length });
-
   const reportUpsert = {
     attempt_id: attempt.id, test_id: attempt.test_id, user_id: profileId, order_id: attempt.order_id,
     total_score: scoring.total, max_score: scoring.max, percentage_score: scoring.percentage, result_band: scoring.resultBand,
@@ -106,8 +93,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   };
   const { data: report, error: reportError } = await admin.data.from("psychometric_reports").upsert(reportUpsert, { onConflict: "attempt_id" }).select("id").single();
   if (reportError) return NextResponse.json({ error: reportError.message }, { status: 500 });
-  console.log("[psychometric-report-score-debug]", { attemptId, reportId: report.id, answersCount: answers.length, totalScore: scoring.total, maxScore: scoring.max, percentageScore: scoring.percentage, resultBand: scoring.resultBand });
-
   const attemptUpdate: Record<string, unknown> = { status: "completed", submitted_at: new Date().toISOString(), completed_at: new Date().toISOString(), total_score: scoring.total, max_score: scoring.max, percentage_score: scoring.percentage, result_band: scoring.resultBand, report_id: report.id };
   if (Object.prototype.hasOwnProperty.call(attempt, "score")) attemptUpdate.score = scoring.total;
   const { error: updateError } = await admin.data.from("test_attempts").update(attemptUpdate).eq("id", attempt.id);

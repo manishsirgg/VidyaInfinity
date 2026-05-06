@@ -32,45 +32,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
   }
   const paymentStatus = String(order?.payment_status ?? "").toLowerCase();
   const acceptedPaid = paidStatuses.has(paymentStatus);
-  console.log("[psychometric-answer-payment-check]", {
-    attemptId,
-    profileId: auth.profile.id,
-    attemptOrderId: attempt?.order_id ?? null,
-    orderFound: Boolean(order),
-    orderId: order?.id ?? null,
-    orderUserId: order?.user_id ?? null,
-    orderPaymentStatus: order?.payment_status ?? null,
-    acceptedPaid,
-  });
   if (!order || order.user_id !== auth.profile.id) {
-    return NextResponse.json({
-      error: "Paid psychometric order not found for this attempt.",
-      debug: {
-        attemptId,
-        profileId: auth.profile.id,
-        attemptOrderId: attempt?.order_id ?? null,
-        orderFound: Boolean(order),
-        orderId: order?.id ?? null,
-        orderUserId: order?.user_id ?? null,
-        orderPaymentStatus: order?.payment_status ?? null,
-        reason: !order ? "order_missing" : "order_owner_mismatch",
-      },
-    }, { status: 403 });
+    return NextResponse.json({ error: "Paid psychometric order not found for this attempt." }, { status: 403 });
   }
   if (!acceptedPaid) {
-    return NextResponse.json({
-      error: "Payment is not confirmed yet.",
-      debug: {
-        attemptId,
-        profileId: auth.profile.id,
-        attemptOrderId: attempt?.order_id ?? null,
-        orderFound: true,
-        orderId: order.id,
-        orderUserId: order.user_id,
-        orderPaymentStatus: order.payment_status,
-        reason: "payment_status_not_paid_like",
-      },
-    }, { status: 403 });
+    return NextResponse.json({ error: "Payment is not confirmed yet." }, { status: 403 });
   }
 
   const questionId = body?.questionId ?? body?.question_id;
