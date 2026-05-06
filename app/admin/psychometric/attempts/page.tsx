@@ -1,0 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+
+export default async function AttemptsPage(){const supabase=await createClient(); const {data:{user}}=await supabase.auth.getUser(); if(!user) redirect('/login'); const {data:profile}=await supabase.from('profiles').select('role').eq('id',user.id).maybeSingle(); if(profile?.role!=='admin') redirect('/dashboard'); const {data}=await supabase.from('test_attempts').select('id,status,total_score,percentage_score,report_id,user_id,test_id,order_id,created_at').order('created_at',{ascending:false}).limit(100); return <div><h1 className='text-2xl font-semibold mb-4'>Attempts</h1><table className='w-full text-sm bg-white border'><thead><tr><th>ID</th><th>Status</th><th>Score</th><th>%</th><th>Actions</th></tr></thead><tbody>{(data||[]).map((a:any)=><tr key={a.id} className='border-t'><td>{a.id}</td><td>{a.status}</td><td>{a.total_score}</td><td>{a.percentage_score}</td><td><Link href={`/admin/psychometric/attempts/${a.id}`} className='underline'>View Details</Link>{a.report_id&&<Link className='underline ml-2' href={`/admin/psychometric/reports/${a.report_id}`}>View Report</Link>}</td></tr>)}</tbody></table></div>}
