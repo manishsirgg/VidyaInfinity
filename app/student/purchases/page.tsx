@@ -289,8 +289,6 @@ export default async function Page({
 
   let courseOrders = (courseResult.data ?? []) as CoursePurchase[];
   const testOrders = (testResult.data ?? []) as PsychometricPurchase[];
-  console.log("[psychometric-profile]", { authUserId: user.id, profileId: profile.id, role: profile.role });
-  console.log("[student-purchases-psychometric]", { profileId: profile.id, ordersCount: testOrders.length, ordersError: testResult.error?.message ?? null });
 
   if (testResult.error) {
     console.error("[student/purchases] psychometric orders query failed", {
@@ -761,13 +759,6 @@ export default async function Page({
                         const reportId = attempt?.report_id ?? (attempt?.id ? reportByAttemptId.get(attempt.id)?.id ?? null : null);
 
                         const href = resolvedAttemptId ? `/dashboard/psychometric/attempts/${resolvedAttemptId}` : "/dashboard/psychometric";
-                        console.log("[psychometric-purchase-action]", {
-                          orderId: order.id,
-                          orderAttemptId: order.attempt_id ?? null,
-                          resolvedAttemptId,
-                          href,
-                        });
-
                         if (paid && resolvedAttemptId) {
                           if (["not_started", "unlocked", "created", ""].includes(attemptStatus)) {
                             return <Link href={href} className="rounded bg-brand-600 px-3 py-2 text-xs font-medium text-white">Start Test</Link>;
