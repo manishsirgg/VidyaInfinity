@@ -1,0 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+
+export default async function ReportsPage(){const supabase=await createClient(); const {data:{user}}=await supabase.auth.getUser(); if(!user) redirect('/login'); const {data:profile}=await supabase.from('profiles').select('role').eq('id',user.id).maybeSingle(); if(profile?.role!=='admin') redirect('/dashboard'); const {data}=await supabase.from('psychometric_reports').select('*').order('created_at',{ascending:false}).limit(100); return <div><h1 className='text-2xl font-semibold mb-4'>Reports</h1>{(data||[]).map((r:any)=><div key={r.id} className='border rounded p-3 mb-2'><div>{r.id} | score {r.total_score}/{r.max_score}</div><div className='space-x-2'><Link href={`/admin/psychometric/reports/${r.id}`} className='underline'>View</Link><a href={`/api/psychometric/reports/${r.id}/download`} className='underline'>Download PDF</a><form className='inline' action={`/api/admin/psychometric/reports/${r.id}/regenerate`} method='post'><button className='underline'>Regenerate</button></form></div></div>)}</div>}

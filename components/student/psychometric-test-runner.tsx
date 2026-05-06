@@ -5,7 +5,7 @@ import { useState } from "react";
 type Question = {
   id: string;
   question_text: string;
-  psychometric_question_options: Array<{ id: string; option_label: string }>;
+  psychometric_question_options: Array<{ id: string; option_text: string }>;
 };
 
 export function PsychometricTestRunner({ testId, questions }: { testId: string; questions: Question[] }) {
@@ -75,7 +75,7 @@ export function PsychometricTestRunner({ testId, questions }: { testId: string; 
                     className="mr-2"
                     onChange={() => setAnswers((prev) => ({ ...prev, [question.id]: option.id }))}
                   />
-                  {option.option_label}
+                  {option.option_text}
                 </label>
               ))}
             </div>
