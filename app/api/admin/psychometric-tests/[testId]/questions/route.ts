@@ -35,7 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tes
 
   const mappedOptions = options.map((option: { label: string; score: number; isCorrect?: boolean }, index: number) => ({
     question_id: question.id,
-    option_label: option.label,
+    option_text: option.label,
     score: Number(option.score ?? 0),
     is_correct: Boolean(option.isCorrect),
     sort_order: index,
