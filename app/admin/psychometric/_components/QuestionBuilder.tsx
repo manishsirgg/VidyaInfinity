@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type QuestionType = "single_choice" | "multiple_choice" | "scale" | "numeric" | "text";
 type Option = { id?: string; option_text: string; option_value?: string | null; score_value: number; sort_order: number; is_active: boolean };
@@ -45,7 +45,7 @@ export default function QuestionBuilderPage({ testTitle = "Psychometric Test" }:
     ],
   });
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const r = await fetch(`/api/admin/psychometric/tests/${testId}/questions`);
@@ -53,17 +53,17 @@ export default function QuestionBuilderPage({ testTitle = "Psychometric Test" }:
       if (!r.ok) throw new Error(j.error ?? "Failed to load questions");
       const sorted = (j.data || []).sort((a: Question, b: Question) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
       setQuestions(sorted);
-      if (!selectedQuestionId && sorted[0]?.id) setSelectedQuestionId(sorted[0].id);
+      setSelectedQuestionId((current) => current ?? sorted[0]?.id ?? null);
     } catch (e) {
       setBanner({ kind: "error", message: e instanceof Error ? e.message : "Load failed" });
     } finally {
       setLoading(false);
     }
-  };
+  }, [testId]);
 
   useEffect(() => {
     void load();
-  }, [testId]);
+  }, [load]);
 
   const selectedQuestion = useMemo(
     () => questions.find((q) => q.id === selectedQuestionId) ?? null,
