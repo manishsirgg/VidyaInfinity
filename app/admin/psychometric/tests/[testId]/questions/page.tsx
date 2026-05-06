@@ -10,5 +10,5 @@ export default async function QuestionsPage({ params }: { params: Promise<{ test
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
   if (profile?.role !== "admin") redirect("/dashboard");
   const { data: test } = await supabase.from("psychometric_tests").select("title").eq("id", testId).maybeSingle();
-  return <QuestionBuilder testTitle={test?.title ?? "Psychometric Test"} />;
+  return <div className="p-2 md:p-4"><QuestionBuilder testTitle={test?.title ?? "Psychometric Test"} /></div>;
 }
