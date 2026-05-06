@@ -32,7 +32,15 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT COALESCE(public.current_profile_role() = 'admin', false);
+  SELECT COALESCE(
+    (
+      SELECT role = 'admin'
+      FROM public.profiles
+      WHERE id = auth.uid()
+      LIMIT 1
+    ),
+    false
+  );
 $$;
 
 REVOKE ALL ON FUNCTION public.current_profile_id() FROM PUBLIC;
