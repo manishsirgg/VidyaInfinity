@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { PsychometricAdminCard, PsychometricAdminHeader } from "./_components/AdminPsychometricUI";
 
 export default async function AdminPsychometricDashboard() {
   const supabase = await createClient();
@@ -18,14 +19,9 @@ export default async function AdminPsychometricDashboard() {
     supabase.from("psychometric_reports").select("id", { count: "exact", head: true }),
   ]);
 
-  const cards = [
-    ["Total tests", tests.count ?? 0], ["Active tests", activeTests.count ?? 0], ["Paid orders", orders.count ?? 0],
-    ["Attempts started", attemptsStarted.count ?? 0], ["Completed attempts", completedAttempts.count ?? 0], ["Reports generated", reports.count ?? 0],
-  ];
+  const cards = [["Total Tests", tests.count ?? 0], ["Active Tests", activeTests.count ?? 0], ["Paid Orders", orders.count ?? 0], ["Attempts Started", attemptsStarted.count ?? 0], ["Completed Attempts", completedAttempts.count ?? 0], ["Reports Generated", reports.count ?? 0], ["Broken/Stale Reports", 0]];
 
-  return <div className="space-y-6"><div><h1 className="text-3xl font-semibold">Psychometric Management</h1><p className="text-sm text-slate-600">Enterprise admin console.</p></div>
-  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{cards.map(([label, value]) => <div key={String(label)} className="rounded-xl border bg-white p-4"><p className="text-xs text-slate-500">{label}</p><p className="text-2xl font-semibold">{value}</p></div>)}</div>
-  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[
-    ["Create New Test","/admin/psychometric/tests/new"],["Manage Tests","/admin/psychometric/tests"],["View Attempts","/admin/psychometric/attempts"],["View Reports","/admin/psychometric/reports"],["Diagnostics","/admin/psychometric/diagnostics"]
-  ].map(([l,href])=><Link key={String(l)} href={String(href)} className="rounded-lg border bg-white p-3 text-sm font-medium hover:border-brand-300">{l}</Link>)}<form action="/api/admin/psychometric/reconcile" method="post"><button className="w-full rounded-lg bg-brand-600 p-3 text-sm font-medium text-white">Run Reconcile</button></form></div></div>;
+  return <div className="space-y-6 p-3 md:p-6"><PsychometricAdminHeader title="Psychometric Management" description="Manage assessments, scoring, attempts, reports, and diagnostics from one place." breadcrumbs={[{label:"Admin",href:"/admin/dashboard"},{label:"Psychometric"}]}/>
+  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value]) => <PsychometricAdminCard key={String(label)}><p className="text-xs text-slate-500">{label}</p><p className="text-2xl font-semibold">{value}</p></PsychometricAdminCard>)}</div>
+  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[["Create Psychometric Test","/admin/psychometric/tests/new"],["Manage Tests","/admin/psychometric/tests"],["Manage Questions","/admin/psychometric/tests"],["Review Attempts","/admin/psychometric/attempts"],["Reports & Scoring","/admin/psychometric/reports"],["Diagnostics & Repairs","/admin/psychometric/diagnostics"]].map(([l,href])=><Link key={String(l)} href={String(href)} className="rounded-xl border bg-white p-4 text-sm font-medium hover:border-brand-300">{l}</Link>)}</div></div>;
 }
