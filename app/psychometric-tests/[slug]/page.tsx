@@ -49,7 +49,7 @@ export default async function TestDetailsPage({ params }: { params: Promise<{ sl
   const { data: questions } = hasAccess
     ? await supabase
         .from("psychometric_questions")
-        .select("id,question_text,psychometric_question_options(id,option_label)")
+        .select("id,question_text,psychometric_question_options(id,option_text)")
         .eq("test_id", test.id)
         .order("created_at", { ascending: true })
     : { data: [] };
