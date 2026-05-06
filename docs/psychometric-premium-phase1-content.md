@@ -7,9 +7,9 @@ These assessments are educational and career guidance tools for students. They a
 > This report is for educational and guidance purposes only. It is not a medical, psychiatric, or clinical diagnosis.
 
 ## Tests Seeded (Inactive by Default)
-1. Career Clarity & Direction Test (`career-clarity-direction-test`) – ₹499
-2. Learning Style & Study Strategy Test (`learning-style-study-strategy-test`) – ₹299
-3. Personality Strengths & Growth Profile (`personality-strengths-growth-profile`) – ₹399
+1. Career Clarity & Direction Test (`career-clarity-direction-test-v2`) – ₹499
+2. Learning Style & Study Strategy Test (`learning-style-study-strategy-test-v2`) – ₹299
+3. Personality Strengths & Growth Profile (`personality-strengths-growth-profile-v2`) – ₹399
 
 Each test includes:
 - 24 questions
@@ -89,7 +89,7 @@ Templates use placeholders such as:
 Seed file: `supabase/seed_psychometric_premium_phase1.sql`
 
 Behavior:
-- Upsert test shell by slug.
+- Insert-by-slug and only update a slug when it has no orders/attempts/reports.
 - Update core fields if test exists.
 - Upsert questions by `psychometric_questions.metadata.seed_key`.
 - Upsert options by `psychometric_question_options.metadata.seed_key`.
@@ -107,3 +107,8 @@ Behavior:
    - scoring bands and report templates
 4. Activate manually after review (`is_active=true` in admin).
 
+
+
+## Existing Live Slug Protection
+- If a slug already has linked `psychometric_orders`, `test_attempts`, or `psychometric_reports`, this seed does not update that test row or force `is_active=false`.
+- Phase-1 premium content is versioned with `-v2` slugs to prevent overwriting live catalog entries.
