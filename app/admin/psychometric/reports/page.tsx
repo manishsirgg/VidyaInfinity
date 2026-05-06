@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   PsychometricAdminCard,
   PsychometricAdminHeader,
+  PsychometricAdminSubnav,
   PsychometricEmptyState,
   PsychometricStatusBadge,
 } from "@/app/admin/psychometric/_components/AdminPsychometricUI";
@@ -69,7 +70,7 @@ export default async function ReportsPage({ searchParams }: { searchParams?: Pro
   const resultBands = [...new Set((reports ?? []).map((r: any) => r.result_band).filter(Boolean))];
 
   return <div className="space-y-4 p-3 md:p-6">
-    <PsychometricAdminHeader title="Report Monitoring" description="Review psychometric reports, stale signals, and delivery status." breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Psychometric", href: "/admin/psychometric" }, { label: "Reports" }]} />
+    <PsychometricAdminHeader title="Report Monitoring" description="Review psychometric reports, stale signals, and delivery status." breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Psychometric", href: "/admin/psychometric" }, { label: "Reports" }]} /><PsychometricAdminSubnav currentPath="/admin/psychometric/reports" />
     {params.success && <p className="rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{params.success}</p>}
     {params.error && <p className="rounded border border-rose-200 bg-rose-50 p-2 text-sm text-rose-700">{params.error}</p>}
 

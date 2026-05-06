@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   PsychometricAdminCard,
   PsychometricAdminHeader,
+  PsychometricAdminSubnav,
   PsychometricEmptyState,
   PsychometricStatusBadge,
 } from "@/app/admin/psychometric/_components/AdminPsychometricUI";
@@ -75,6 +76,7 @@ export default async function AttemptsPage({ searchParams }: { searchParams?: Pr
       description="Track student attempts, payment outcomes, and report readiness."
       breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Psychometric", href: "/admin/psychometric" }, { label: "Attempts" }]}
     />
+    <PsychometricAdminSubnav currentPath="/admin/psychometric/attempts" />
 
     <PsychometricAdminCard><form className="grid gap-2 md:grid-cols-4"><input name="q" defaultValue={params.q ?? ""} placeholder="Search by student, test, order, or attempt ID" className="rounded border p-2 text-sm" />
       <select name="status" defaultValue={selectedStatus} className="rounded border p-2 text-sm">{statusOptions.map((s) => <option key={s} value={s}>{s === "all" ? "All statuses" : s.replace("_", " ")}</option>)}</select>

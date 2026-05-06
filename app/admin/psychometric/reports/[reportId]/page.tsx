@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { PsychometricAdminHeader, PsychometricAdminSubnav } from "@/app/admin/psychometric/_components/AdminPsychometricUI";
 
 type ReportRow = {
   id: string;
@@ -111,10 +112,11 @@ export default async function ReportDetail({ params }: { params: Promise<{ repor
 
   return (
     <div className="space-y-4 p-3 md:p-6">
-      <div className="text-sm text-slate-600"><Link href="/admin/psychometric" className="underline">Psychometric</Link> / <Link href="/admin/psychometric/reports" className="underline">Reports</Link> / <span>{report.id}</span></div>
+      <PsychometricAdminHeader title="Report Detail" description="Inspect generated report quality, freshness, and delivery." breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Psychometric", href: "/admin/psychometric" }, { label: "Reports", href: "/admin/psychometric/reports" }, { label: report.id }]}
+        action={<Link href="/admin/psychometric/reports" className="rounded border px-3 py-1.5 text-sm">Reports & Scoring</Link>} />
+      <PsychometricAdminSubnav currentPath="/admin/psychometric/reports" />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold md:text-2xl">Admin Psychometric Report Detail</h1>
         <div className="flex flex-wrap gap-2 text-sm">
           <form action={`/api/admin/psychometric/reports/${reportId}/regenerate`} method="post"><button className="rounded bg-brand-600 px-3 py-1.5 text-white" type="submit">Regenerate Report</button></form>
           <a className="rounded border px-3 py-1.5" href={`/api/psychometric/reports/${reportId}/download`}>Download PDF</a>

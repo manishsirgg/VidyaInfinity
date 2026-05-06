@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { PsychometricAdminHeader, PsychometricAdminSubnav } from "@/app/admin/psychometric/_components/AdminPsychometricUI";
 
 type AttemptRow = {
   id: string;
@@ -107,9 +108,10 @@ export default async function AttemptDetail({ params }: { params: Promise<{ atte
   const computedMax = Object.values(maxPerQuestion).reduce((sum, value) => sum + Number(value || 0), 0);
   return (
     <div className="space-y-4 p-3 md:p-6">
-      <div className="text-sm text-slate-600"><Link href="/admin/psychometric" className="underline">Psychometric</Link> / <Link href="/admin/psychometric/attempts" className="underline">Attempts</Link> / <span>{attempt.id}</span></div>
+      <PsychometricAdminHeader title="Attempt Detail" description="Review scoring inputs, answers, and report linkage for one attempt." breadcrumbs={[{ label: "Admin", href: "/admin/dashboard" }, { label: "Psychometric", href: "/admin/psychometric" }, { label: "Attempts", href: "/admin/psychometric/attempts" }, { label: attempt.id }]}
+        action={<Link href="/admin/psychometric/attempts" className="rounded border px-3 py-1.5 text-sm">Review Attempts</Link>} />
+      <PsychometricAdminSubnav currentPath="/admin/psychometric/attempts" />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold md:text-2xl">Admin Attempt Detail</h1>
         <div className="flex flex-wrap gap-2 text-sm">
           <Link href="/admin/psychometric/attempts" className="rounded border px-3 py-1.5">Back to Attempts</Link>
           {attempt.report_id && <Link href={`/admin/psychometric/reports/${attempt.report_id}`} className="rounded border px-3 py-1.5">View Report</Link>}

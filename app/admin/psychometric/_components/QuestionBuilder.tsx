@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PsychometricAdminCard, PsychometricAdminHeader, PsychometricEmptyState, PsychometricStatusBadge } from "@/app/admin/psychometric/_components/AdminPsychometricUI";
+import { PsychometricAdminCard, PsychometricAdminHeader, PsychometricAdminSubnav, PsychometricEmptyState, PsychometricStatusBadge } from "@/app/admin/psychometric/_components/AdminPsychometricUI";
 
 type QuestionType = "single_choice" | "multiple_choice" | "scale" | "numeric" | "text";
 type Option = { id?: string; option_text: string; option_value?: string | null; score_value: number; sort_order: number; is_active: boolean };
@@ -66,7 +66,7 @@ export default function QuestionBuilderPage({ testTitle = "Psychometric Test" }:
   const updateSelected = (next: Partial<Question>) => setQuestions((arr) => arr.map((q) => (q.id === selectedQuestionId ? { ...q, ...next } : q)));
 
   return <div className="space-y-4 p-2 md:p-4">
-    <PsychometricAdminHeader title="Question Builder" description="Create and manage psychometric questions." breadcrumbs={[{ label: "Tests", href: "/admin/psychometric/tests" }, { label: testTitle }, { label: "Questions" }]} action={<Link href="/admin/psychometric/tests" className="rounded-lg border px-3 py-2 text-sm">Back to Tests</Link>} />
+    <PsychometricAdminHeader title="Question Builder" description="Create and manage psychometric questions." breadcrumbs={[{ label: "Tests", href: "/admin/psychometric/tests" }, { label: testTitle }, { label: "Questions" }]} action={<Link href="/admin/psychometric/tests" className="rounded-lg border px-3 py-2 text-sm">Back to Tests</Link>} /><PsychometricAdminSubnav currentPath="/admin/psychometric/tests" />
     {banner && <div className={`rounded-xl border p-3 text-sm ${banner.kind === "success" ? "border-emerald-300 bg-emerald-50" : "border-rose-300 bg-rose-50"}`}>{banner.message}</div>}
     {!loading && questions.filter((q) => q.is_active).length === 0 && <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">Warning: this test has no active questions.</div>}
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
