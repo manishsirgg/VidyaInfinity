@@ -33,7 +33,7 @@ export default async function Page({ params }: { params: Promise<{ reportId: str
         <div className="border-b border-slate-200 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white sm:p-8">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex items-start gap-4">
-              <img src="/brand/vidya-infinity-logo.png" alt="Vidya Infinity logo" className="h-16 w-16 rounded-xl border border-white/15 bg-white/5 object-contain p-1" />
+              <img src="/brand/vidya-infinity-logo.png" alt="Vidya Infinity logo" className="h-16 w-16 rounded-xl border border-white/15 bg-white/5 object-contain p-1" onError={(event) => { event.currentTarget.style.display = "none"; }} />
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">Vidya Infinity Psychometric Report</p>
                 <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">{testTitle}</h1>
