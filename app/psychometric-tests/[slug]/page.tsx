@@ -23,27 +23,38 @@ export default async function TestDetailsPage({ params }: { params: Promise<{ sl
 
   let hasAccess = false;
   let purchaseLocked = false;
+  let entitlement: { attemptId: string | null; reportId: string | null; redirectTo: string } | null = null;
 
   if (profile?.role === "student") {
     const [{ data: paidOrder }, { data: unlockedAttempt }] = await Promise.all([
       supabase
         .from("psychometric_orders")
-        .select("id")
+        .select("id,attempt_id,payment_status")
         .eq("user_id", profile.id)
         .eq("test_id", test.id)
-        .eq("payment_status", "paid")
+        .in("payment_status", ["paid", "success", "captured", "confirmed"])
+        .order("created_at", { ascending: false })
         .maybeSingle(),
       supabase
         .from("test_attempts")
-        .select("id,status")
+        .select("id,status,report_id")
         .eq("user_id", profile.id)
         .eq("test_id", test.id)
-        .eq("status", "unlocked")
+        .in("status", ["not_started", "unlocked", "in_progress", "submitted", "completed"])
+        .order("created_at", { ascending: false })
         .maybeSingle(),
     ]);
 
     hasAccess = Boolean(paidOrder || unlockedAttempt);
     purchaseLocked = hasAccess;
+    const attemptId = unlockedAttempt?.id ?? paidOrder?.attempt_id ?? null;
+    const reportId = unlockedAttempt?.report_id ?? null;
+    const redirectTo = reportId
+      ? `/dashboard/psychometric/reports/${reportId}`
+      : attemptId
+        ? `/dashboard/psychometric/attempts/${attemptId}`
+        : "/student/purchases?kind=psychometric";
+    entitlement = hasAccess ? { attemptId, reportId, redirectTo } : null;
   }
 
   const { data: questions } = hasAccess
@@ -65,7 +76,14 @@ export default async function TestDetailsPage({ params }: { params: Promise<{ sl
             <p className="mt-4 text-sm text-amber-700">
               Purchase this test to unlock questions and the report pipeline. Access is gated by paid psychometric_orders.
             </p>
-            <PsychometricPurchaseCard testId={test.id} testTitle={test.title} price={Number(test.price ?? 0)} purchaseLocked={purchaseLocked} role={profile?.role ?? null} />
+            <PsychometricPurchaseCard
+              testId={test.id}
+              testTitle={test.title}
+              price={Number(test.price ?? 0)}
+              purchaseLocked={purchaseLocked}
+              role={profile?.role ?? null}
+              entitlement={entitlement}
+            />
           </>
         )}
         {profile && profile.role !== "student" ? (
