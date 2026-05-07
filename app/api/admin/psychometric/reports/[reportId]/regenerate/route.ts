@@ -70,15 +70,31 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
   }
 
-  const totalScore = (answers ?? []).reduce((sum, answer) => sum + Number(scoring.awardedScoresByAnswerId[answer.id] ?? answer.awarded_score ?? 0), 0);
+  const totalScore = scoring.total;
   const maxScore = scoring.max;
-  const percentageUnclamped = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
-  const percentageScore = Number(Math.min(100, Math.max(0, percentageUnclamped)).toFixed(2));
+  const percentageScore = scoring.percentage;
   const scoringConfig = test.scoring_config as { bands?: { min: number; max: number; label: string }[] } | null;
   const bands = Array.isArray(scoringConfig?.bands) ? scoringConfig?.bands : undefined;
   const resultBand = pickResultBand(percentageScore, bands);
   const content = scoring.content;
   const answersSnapshot = scoring.snapshot;
+  if (totalScore > 0 && maxScore <= 0) {
+    return NextResponse.json({ error: "Report max score could not be calculated." }, { status: 500 });
+  }
+  if (answers.length > 0 && answersSnapshot.length === 0) {
+    return NextResponse.json({ error: "Report answer snapshot could not be generated." }, { status: 500 });
+  }
+
+  console.log("[psychometric-report-regenerate-final]", {
+    reportId,
+    attemptId: attempt.id,
+    testId: attempt.test_id,
+    totalScore,
+    maxScore,
+    percentageScore,
+    answersCount: answers.length,
+    snapshotLength: answersSnapshot.length,
+  });
   console.info("[psychometric-regenerate] scoring summary", { testId: attempt.test_id, attemptId: attempt.id, totalScore, finalMaxScore: maxScore, percentageScore, snapshotLength: answersSnapshot.length });
 
   const now = new Date().toISOString();
@@ -113,6 +129,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
     totalScore,
     maxScore,
     percentageScore,
+    snapshotLength: answersSnapshot.length,
     redirectTo: `/dashboard/psychometric/reports/${report.id}`,
   });
 }
