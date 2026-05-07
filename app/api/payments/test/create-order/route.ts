@@ -6,6 +6,10 @@ import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-sch
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+function toPaise(amount: number) {
+  return Math.max(0, Math.round((amount + Number.EPSILON) * 100));
+}
+
 export async function POST(request: Request) {
   try {
     const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "psychometric"]);
@@ -14,7 +18,7 @@ export async function POST(request: Request) {
     const auth = await requireApiUser("student");
     if ("error" in auth) return auth.error;
     const { profile } = auth;
-    const { testId, couponCode } = await request.json();
+    const { testId, couponCode, validateOnly } = await request.json();
 
     if (!testId) {
       return NextResponse.json({ error: "testId is required" }, { status: 400 });
@@ -41,20 +45,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "You already have an active attempt for this assessment." }, { status: 409 });
     }
 
-    let finalAmount = Number(test.price);
+    const baseAmount = Number(test.price);
+    let finalAmount = Number(baseAmount.toFixed(2));
     let discountAmount = 0;
 
     const normalizedCouponCode = normalizeCouponCode(couponCode);
 
     let couponId: string | null = null;
     let discountPercent = 0;
+    let couponMeta: { code: string; applies_to: string | null } | null = null;
 
     if (normalizedCouponCode) {
       const { data: coupon } = await admin.data
         .from("coupons")
-        .select("id,code,discount_percent,active,expiry_date,applies_to")
-        .eq("code", normalizedCouponCode)
-        .eq("applies_to", "psychometric")
+        .select("id,code,discount_percent,active,expiry_date,applies_to,is_deleted,deleted_at,max_uses,used_count")
+        .eq("is_deleted", false)
+        .is("deleted_at", null)
+        .or(`applies_to.eq.psychometric,applies_to.eq.all`)
+        .gte("expiry_date", new Date().toISOString().slice(0, 10))
+        .filter("code", "ilike", normalizedCouponCode)
         .maybeSingle();
 
       const couponCheck = validateCouponForScope(coupon, "psychometric");
@@ -65,15 +74,31 @@ export async function POST(request: Request) {
 
       couponId = coupon.id;
       discountPercent = Number(coupon.discount_percent);
-      discountAmount = Number(((finalAmount * discountPercent) / 100).toFixed(2));
-      finalAmount = Math.max(0, Number((finalAmount - discountAmount).toFixed(2)));
+      discountAmount = Number(((baseAmount * discountPercent) / 100).toFixed(2));
+      finalAmount = Math.max(0, Number((baseAmount - discountAmount).toFixed(2)));
+      couponMeta = { code: coupon.code, applies_to: coupon.applies_to };
+    }
+
+    if (finalAmount <= 0) {
+      return NextResponse.json(
+        { error: "This coupon cannot be used for online payment because payable amount is zero. Please contact support." },
+        { status: 400 }
+      );
+    }
+
+    if (validateOnly) {
+      return NextResponse.json({
+        ok: true,
+        pricing: { baseAmount, discountPercent, discountAmount, finalAmount, finalAmountPaise: toPaise(finalAmount) },
+        coupon: couponMeta,
+      });
     }
 
     const razorpay = getRazorpayClient();
     if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
 
     const order = await razorpay.data.orders.create({
-      amount: Math.round(finalAmount * 100),
+      amount: toPaise(finalAmount),
       currency: "INR",
       notes: {
         userId: profile.id,
@@ -101,7 +126,7 @@ export async function POST(request: Request) {
       coupon_id: couponId,
       order_kind: "psychometric_test",
       payment_status: "created",
-      base_amount: test.price,
+      base_amount: baseAmount,
       discount_percent: discountPercent,
       discount_amount: discountAmount,
       final_amount: finalAmount,
@@ -109,7 +134,7 @@ export async function POST(request: Request) {
       razorpay_order_id: order.id,
       razorpay_payment_id: null,
       razorpay_signature: null,
-      metadata: { source: "test_create_order_api" },
+      metadata: { source: "test_create_order_api", coupon: couponMeta },
     };
     const orderMutation = reusableOrder
       ? await admin.data.from("psychometric_orders").update(payload).eq("id", reusableOrder.id)
@@ -117,7 +142,12 @@ export async function POST(request: Request) {
 
     if (orderMutation.error) return NextResponse.json({ error: orderMutation.error.message }, { status: 500 });
 
-    return NextResponse.json({ order, finalAmount, localOrderId, key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? process.env.RAZORPAY_KEY_ID ?? null });
+    return NextResponse.json({
+      order,
+      localOrderId,
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? process.env.RAZORPAY_KEY_ID ?? null,
+      pricing: { baseAmount, discountPercent, discountAmount, finalAmount, finalAmountPaise: toPaise(finalAmount) },
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to create psychometric order" },
