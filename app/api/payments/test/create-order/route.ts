@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { getCouponErrorMessage, normalizeCouponCode, validateCouponForScope } from "@/lib/coupons";
+import { getCouponErrorMessage, isCouponExpired, normalizeCouponCode } from "@/lib/coupons";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -61,15 +61,30 @@ export async function POST(request: Request) {
         .select("id,code,discount_percent,active,expiry_date,applies_to,is_deleted,deleted_at,max_uses,used_count")
         .eq("is_deleted", false)
         .is("deleted_at", null)
-        .or(`applies_to.eq.psychometric,applies_to.eq.all`)
         .gte("expiry_date", new Date().toISOString().slice(0, 10))
         .filter("code", "ilike", normalizedCouponCode)
         .maybeSingle();
 
-      const couponCheck = validateCouponForScope(coupon, "psychometric");
-      if (!couponCheck.ok || !coupon) {
-        const reason = couponCheck.ok ? "Coupon not found" : couponCheck.reason;
-        return NextResponse.json({ error: getCouponErrorMessage(reason) }, { status: 400 });
+      if (!coupon) {
+        return NextResponse.json({ error: getCouponErrorMessage("Coupon not found") }, { status: 400 });
+      }
+      if (coupon.applies_to !== "psychometric") {
+        return NextResponse.json({ error: getCouponErrorMessage("Coupon is not valid for psychometric") }, { status: 400 });
+      }
+      if (!coupon.active) {
+        return NextResponse.json({ error: getCouponErrorMessage("Coupon is inactive") }, { status: 400 });
+      }
+      if (coupon.is_deleted || coupon.deleted_at) {
+        return NextResponse.json({ error: getCouponErrorMessage("Coupon is deleted") }, { status: 400 });
+      }
+      if (isCouponExpired(coupon.expiry_date)) {
+        return NextResponse.json({ error: getCouponErrorMessage("Coupon has expired") }, { status: 400 });
+      }
+      if (coupon.max_uses !== null && coupon.max_uses !== undefined && (coupon.used_count ?? 0) >= coupon.max_uses) {
+        return NextResponse.json({ error: getCouponErrorMessage("Coupon usage limit reached") }, { status: 400 });
+      }
+      if (!coupon.discount_percent || coupon.discount_percent <= 0) {
+        return NextResponse.json({ error: getCouponErrorMessage("Coupon discount is invalid") }, { status: 400 });
       }
 
       couponId = coupon.id;
