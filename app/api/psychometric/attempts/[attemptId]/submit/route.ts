@@ -60,9 +60,6 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   const { data: test } = await admin.data.from("psychometric_tests").select("id,title,is_active,scoring_config,category,description").eq("id", attempt.test_id).single();
   if (!test?.is_active) return NextResponse.json({ error: "Test unavailable" }, { status: 409 });
 
-  const { data: questions } = await admin.data.from("psychometric_questions").select("id,question_text,question_type,is_required,weight,min_scale_value,max_scale_value,metadata,scoring_config").eq("test_id", test.id).eq("is_active", true).order("sort_order");
-  const qIds = (questions ?? []).map((q) => q.id);
-  const { data: options } = await admin.data.from("psychometric_question_options").select("id,question_id,option_text,score_value,metadata").in("question_id", qIds).eq("is_active", true).order("sort_order");
   const { data: answers } = await admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score").eq("attempt_id", attempt.id).eq("user_id", attempt.user_id).eq("test_id", attempt.test_id);
   if (!answers || answers.length === 0) {
     const { count: anyAnswersCount } = await admin.data.from("psychometric_answers").select("id", { count: "exact", head: true }).eq("attempt_id", attempt.id);
@@ -75,10 +72,8 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
 
   let scoring;
   try {
-    scoring = computePsychometricReportData({
+    scoring = await computePsychometricReportData({
     test: test as { id?: string | null; title: string | null; scoring_config: Record<string, unknown> | null },
-    questions: (questions ?? []) as Array<{ id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null }>,
-    options: (options ?? []) as Array<{ id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null }>,
     answers: (answers ?? []) as Array<{ id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null }>,
     enforceRequired: true,
     });

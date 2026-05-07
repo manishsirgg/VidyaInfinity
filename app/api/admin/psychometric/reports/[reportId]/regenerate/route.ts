@@ -27,19 +27,16 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
     .maybeSingle();
   if (!attempt) return NextResponse.json({ error: "Linked attempt not found" }, { status: 404 });
 
-  const [{ data: test }, { data: order }, { data: user }, { data: questions }] = await Promise.all([
+  const [{ data: test }, { data: order }, { data: user }] = await Promise.all([
     admin.data.from("psychometric_tests").select("id,title,scoring_config").eq("id", attempt.test_id).maybeSingle(),
     admin.data.from("psychometric_orders").select("id,user_id,payment_status,paid_at,final_amount").eq("id", report.order_id ?? attempt.order_id ?? "").maybeSingle(),
     admin.data.from("profiles").select("id").eq("id", attempt.user_id).maybeSingle(),
-    admin.data.from("psychometric_questions").select("id,question_text,question_type,is_required,weight,min_scale_value,max_scale_value,metadata,scoring_config").eq("test_id", attempt.test_id).eq("is_active", true).order("sort_order"),
   ]);
 
   if (!test) return NextResponse.json({ error: "Linked test not found" }, { status: 404 });
   if (!user) return NextResponse.json({ error: "Linked user not found" }, { status: 404 });
 
-  const qIds = (questions ?? []).map((q) => q.id);
-  const [{ data: options }, { data: answers }] = await Promise.all([
-    admin.data.from("psychometric_question_options").select("id,question_id,option_text,score_value,metadata").in("question_id", qIds).eq("is_active", true).order("sort_order"),
+  const [{ data: answers }] = await Promise.all([
     admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score,test_id,user_id,attempt_id").eq("attempt_id", attempt.id).eq("user_id", attempt.user_id).eq("test_id", attempt.test_id),
   ]);
 
@@ -54,10 +51,8 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
 
   let scoring;
   try {
-    scoring = computePsychometricReportData({
+    scoring = await computePsychometricReportData({
       test: test as { id?: string | null; title: string | null; scoring_config: Record<string, unknown> | null },
-      questions: (questions ?? []) as Array<{ id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null }>,
-      options: (options ?? []) as Array<{ id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null }>,
       answers: (answers ?? []) as Array<{ id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null }>,
       enforceRequired: true,
     });
