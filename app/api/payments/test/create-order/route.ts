@@ -112,15 +112,6 @@ export async function POST(request: Request) {
     const razorpay = getRazorpayClient();
     if (!razorpay.ok) return NextResponse.json({ error: razorpay.error }, { status: 500 });
 
-    const order = await razorpay.data.orders.create({
-      amount: toPaise(finalAmount),
-      currency: "INR",
-      notes: {
-        userId: profile.id,
-        testId,
-      },
-    });
-
     const { data: reusableOrder } = await admin.data
       .from("psychometric_orders")
       .select("id")
@@ -146,16 +137,80 @@ export async function POST(request: Request) {
       discount_amount: discountAmount,
       final_amount: finalAmount,
       currency: "INR",
-      razorpay_order_id: order.id,
+      razorpay_order_id: null,
       razorpay_payment_id: null,
       razorpay_signature: null,
-      metadata: { source: "test_create_order_api", coupon: couponMeta },
+      metadata: { source: "test_create_order_api", coupon: couponMeta, testId: test.id, userId: profile.id },
     };
     const orderMutation = reusableOrder
       ? await admin.data.from("psychometric_orders").update(payload).eq("id", reusableOrder.id)
       : await admin.data.from("psychometric_orders").insert(payload);
 
-    if (orderMutation.error) return NextResponse.json({ error: orderMutation.error.message }, { status: 500 });
+    if (orderMutation.error) {
+      console.error("[payments/test/create-order] local_order_upsert_failed", {
+        event: "local_order_upsert_failed",
+        localOrderId,
+        testId: test.id,
+        userId: profile.id,
+        error: orderMutation.error.message,
+      });
+      return NextResponse.json({ error: "Unable to create local psychometric order" }, { status: 500 });
+    }
+
+    let order;
+    try {
+      order = await razorpay.data.orders.create({
+        amount: toPaise(finalAmount),
+        currency: "INR",
+        notes: {
+          source: "psychometric_test",
+          localPsychometricOrderId: localOrderId,
+          profileId: profile.id,
+          testId: test.id,
+          couponCode: couponMeta?.code ?? "",
+          finalAmount: String(finalAmount),
+        },
+      });
+    } catch (error) {
+      console.error("[payments/test/create-order] razorpay_order_create_failed", {
+        event: "razorpay_order_create_failed",
+        localOrderId,
+        testId: test.id,
+        userId: profile.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return NextResponse.json({ error: "Unable to create Razorpay order" }, { status: 502 });
+    }
+
+    const { error: orderLinkError } = await admin.data
+      .from("psychometric_orders")
+      .update({
+        razorpay_order_id: order.id,
+        payment_status: "created",
+        metadata: {
+          source: "test_create_order_api",
+          coupon: couponMeta,
+          testId: test.id,
+          userId: profile.id,
+          razorpay: { orderId: order.id, amount: toPaise(finalAmount), currency: "INR" },
+        },
+      })
+      .eq("id", localOrderId);
+
+    if (orderLinkError) {
+      console.error("[payments/test/create-order] local_order_link_failed", {
+        event: "local_order_link_failed",
+        localOrderId,
+        razorpayOrderId: order.id,
+        testId: test.id,
+        userId: profile.id,
+        error: orderLinkError.message,
+      });
+      return NextResponse.json(
+        { error: "Razorpay order was created but local order link failed. Please contact support with order id." },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       order,
