@@ -1,3 +1,7 @@
+import fs from "fs";
+import path from "path";
+import { deflateSync } from "zlib";
+import sharp from "sharp";
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -9,6 +13,8 @@ const BRAND = {
   email: "infovidyainfinity@gmail.com",
   phone: "+91-7828199500",
 };
+
+type LogoImage = { width: number; height: number; compressedRgb: Buffer };
 
 function esc(s: string) {
   return s.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
@@ -31,7 +37,7 @@ function wrapText(text: string, maxChars = 88): string[] {
 
 type Block = { type: "title" | "text" | "bullet"; text: string };
 
-function mkPdf(blocks: Block[]) {
+function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
   const pageWidth = 595;
   const pageHeight = 842;
   const bottomMargin = 58;
@@ -50,9 +56,24 @@ function mkPdf(blocks: Block[]) {
     add(`1 1 1 rg BT /F2 15 Tf ${left} ${pageHeight - 55} Td (${esc(BRAND.name)}) Tj ET`);
     add(`0.81 0.91 1 rg BT /F1 10 Tf ${left} ${pageHeight - 72} Td (${esc(BRAND.tagline)}) Tj ET`);
     add(`1 1 1 rg BT /F2 12 Tf ${left} ${pageHeight - 92} Td (Psychometric Report) Tj ET`);
-    add(`0.95 0.98 1 rg 460 ${pageHeight - 102} 90 70 re S`);
-    add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 70} Td (Vidya Infinity) Tj ET`);
-    add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 82} Td (Global Education Architects) Tj ET`);
+
+    const boxX = 455;
+    const boxY = pageHeight - 108;
+    const boxW = 96;
+    const boxH = 72;
+    add(`0.95 0.98 1 rg ${boxX} ${boxY} ${boxW} ${boxH} re S`);
+
+    if (logoImage) {
+      const ratio = Math.min(boxW / logoImage.width, boxH / logoImage.height);
+      const drawW = Math.max(1, logoImage.width * ratio);
+      const drawH = Math.max(1, logoImage.height * ratio);
+      const drawX = boxX + (boxW - drawW) / 2;
+      const drawY = boxY + (boxH - drawH) / 2;
+      add(`q ${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${drawX.toFixed(2)} ${drawY.toFixed(2)} cm /Im1 Do Q`);
+    } else {
+      add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 70} Td (${esc(BRAND.name)}) Tj ET`);
+      add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 82} Td (${esc(BRAND.tagline)}) Tj ET`);
+    }
   };
 
   const newPage = () => {
@@ -78,7 +99,7 @@ function mkPdf(blocks: Block[]) {
       continue;
     }
 
-    const prefix = block.type === "bullet" ? "• " : "";
+    const prefix = block.type === "bullet" ? "- " : "";
     const wrapped = wrapText(prefix + block.text);
     for (const line of wrapped) {
       ensureSpace(14);
@@ -96,6 +117,7 @@ function mkPdf(blocks: Block[]) {
   const contentObjectIds: number[] = [];
   const fontRegularId = 3 + pages.length * 2;
   const fontBoldId = fontRegularId + 1;
+  const imageId = logoImage ? fontBoldId + 1 : null;
 
   for (let i = 0; i < pages.length; i += 1) {
     pageObjectIds.push(3 + i * 2);
@@ -112,7 +134,8 @@ function mkPdf(blocks: Block[]) {
       `0.35 0.37 0.42 rg BT /F1 8 Tf 520 10 Td (${esc(`Page ${i + 1} of ${pages.length}`)}) Tj ET`,
     ];
     const stream = [...pages[i], ...footer].join("\n");
-    objects.push(`${pageObjectIds[i]} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents ${contentObjectIds[i]} 0 R /Resources << /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> >> >>\nendobj\n`);
+    const xobj = logoImage && imageId ? ` /XObject << /Im1 ${imageId} 0 R >>` : "";
+    objects.push(`${pageObjectIds[i]} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents ${contentObjectIds[i]} 0 R /Resources << /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >>${xobj} >> >>\nendobj\n`);
     objects.push(`${contentObjectIds[i]} 0 obj\n<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream\nendobj\n`);
   }
 
@@ -125,17 +148,41 @@ function mkPdf(blocks: Block[]) {
     offsets.push(Buffer.byteLength(pdf, "utf8"));
     pdf += object;
   }
-  const xrefStart = Buffer.byteLength(pdf, "utf8");
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i <= objects.length; i += 1) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-  return Buffer.from(pdf, "utf8");
+
+  let imageSection = Buffer.alloc(0);
+  if (logoImage && imageId) {
+    const imageObjPrefix = `${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${logoImage.width} /Height ${logoImage.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${logoImage.compressedRgb.length} >>\nstream\n`;
+    const imageObjSuffix = "\nendstream\nendobj\n";
+    const prefixBuffer = Buffer.from(imageObjPrefix, "utf8");
+    const suffixBuffer = Buffer.from(imageObjSuffix, "utf8");
+    offsets.push(Buffer.byteLength(pdf, "utf8") + imageSection.length);
+    imageSection = Buffer.concat([imageSection, prefixBuffer, logoImage.compressedRgb, suffixBuffer]);
+  }
+
+  const beforeXref = Buffer.concat([Buffer.from(pdf, "utf8"), imageSection]);
+  const xrefStart = beforeXref.length;
+  let xref = `xref\n0 ${objects.length + 1 + (logoImage ? 1 : 0)}\n0000000000 65535 f \n`;
+  for (let i = 1; i <= objects.length + (logoImage ? 1 : 0); i += 1) xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  xref += `trailer\n<< /Size ${objects.length + 1 + (logoImage ? 1 : 0)} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+  return Buffer.concat([beforeXref, Buffer.from(xref, "utf8")]);
+}
+
+async function loadLogoImage(): Promise<LogoImage | null> {
+  const logoPath = path.join(process.cwd(), "public", "brand", "vidyainfinitylogo.png");
+  if (!fs.existsSync(logoPath)) return null;
+  try {
+    const { data, info } = await sharp(logoPath).ensureAlpha().removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    return { width: info.width, height: info.height, compressedRgb: deflateSync(data) };
+  } catch {
+    return null;
+  }
 }
 
 export async function GET(_: Request, { params }: { params: Promise<{ reportId: string }> }) {
   const auth = await requireApiUser();
   if ("error" in auth) return auth.error;
   const { reportId } = await params;
+  const logoImage = await loadLogoImage();
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
@@ -173,7 +220,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ reportId: 
     { type: "text", text: report.disclaimer ?? "This report is for educational and guidance purposes only. It is not a medical, psychiatric, or clinical diagnosis." },
   ];
 
-  const pdf = mkPdf(blocks);
+  const pdf = mkPdf(blocks, logoImage);
   return new NextResponse(pdf, {
     headers: {
       "Content-Type": "application/pdf",
