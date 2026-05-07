@@ -76,7 +76,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   let scoring;
   try {
     scoring = computePsychometricReportData({
-    test: test as { title: string | null; scoring_config: Record<string, unknown> | null },
+    test: test as { id?: string | null; title: string | null; scoring_config: Record<string, unknown> | null },
     questions: (questions ?? []) as Array<{ id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null }>,
     options: (options ?? []) as Array<{ id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null }>,
     answers: (answers ?? []) as Array<{ id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null }>,
@@ -87,7 +87,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     throw error;
   }
 
-  console.info("[psychometric-submit] scoring summary", { attemptId: attempt.id, answersLoaded: answers.length, totalScore: scoring.total, maxScore: scoring.max, percentage: scoring.percentage, snapshotLength: scoring.snapshot.length });
+  console.info("[psychometric-submit] scoring summary", { testId: attempt.test_id, attemptId: attempt.id, totalScore: scoring.total, finalMaxScore: scoring.max, percentageScore: scoring.percentage, snapshotLength: scoring.snapshot.length });
 
   for (const [answerId, awarded] of Object.entries(scoring.awardedScoresByAnswerId)) {
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
