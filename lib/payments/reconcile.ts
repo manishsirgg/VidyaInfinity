@@ -407,6 +407,7 @@ export async function reconcileCourseOrderPaid({
         razorpay_payment_id: razorpayPaymentId,
         razorpay_signature: razorpaySignature ?? null,
         paid_at: now,
+        updated_at: now,
       })
       .eq("id", order.id)
       .neq("payment_status", "paid");
@@ -819,6 +820,7 @@ export async function reconcilePsychometricOrderPaid({
         razorpay_payment_id: razorpayPaymentId,
         razorpay_signature: razorpaySignature ?? null,
         paid_at: now,
+        updated_at: now,
       })
       .eq("id", order.id)
       .in("payment_status", ["created", "failed"]);
@@ -904,7 +906,7 @@ export async function reconcilePsychometricOrderPaid({
     }
   }
 
-  const { data: existingUnlockedAttempt } = await supabase
+  const { data: existingAttempt } = await supabase
     .from("test_attempts")
     .select("id,status")
     .eq("order_id", canonicalPaidOrderId)
@@ -912,42 +914,53 @@ export async function reconcilePsychometricOrderPaid({
     .limit(1)
     .maybeSingle<{ id: string; status: string | null }>();
 
-  if (existingUnlockedAttempt) {
+  if (existingAttempt) {
     console.info("[payments/reconcile] entitlement_row_found", {
       event: "entitlement_row_found",
       orderId: canonicalPaidOrderId,
-      entitlementId: existingUnlockedAttempt.id,
+      entitlementId: existingAttempt.id,
       userId: order.user_id,
       testId: order.test_id,
       source,
     });
   }
 
-  const { error: attemptError } = await supabase.from("test_attempts").upsert(
-    {
-      user_id: order.user_id,
-      test_id: order.test_id,
-      order_id: canonicalPaidOrderId,
-      status: "unlocked",
-      started_at: null,
-    },
-    { onConflict: "order_id" }
-  );
-
-  if (attemptError) {
-    console.error("[payments/reconcile] reconciliation_failed", {
-      event: "reconciliation_failed",
-      orderId: canonicalPaidOrderId,
-      razorpayOrderId,
-      razorpayPaymentId,
-      source,
-      error: attemptError.message,
-    });
-    return { error: attemptError.message };
+  let attemptId = existingAttempt?.id ?? null;
+  if (!attemptId) {
+    const { data: insertedAttempt, error: attemptInsertError } = await supabase
+      .from("test_attempts")
+      .insert({
+        user_id: order.user_id,
+        test_id: order.test_id,
+        order_id: canonicalPaidOrderId,
+        status: "not_started",
+        started_at: null,
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (attemptInsertError || !insertedAttempt) {
+      console.error("[payments/reconcile] reconciliation_failed", {
+        event: "reconciliation_failed",
+        orderId: canonicalPaidOrderId,
+        razorpayOrderId,
+        razorpayPaymentId,
+        source,
+        error: attemptInsertError?.message ?? "Failed to create attempt",
+      });
+      return { error: attemptInsertError?.message ?? "Failed to create attempt" };
+    }
+    attemptId = insertedAttempt.id;
   }
 
+  const { error: attemptLinkError } = await supabase
+    .from("psychometric_orders")
+    .update({ attempt_id: attemptId, updated_at: now })
+    .eq("id", canonicalPaidOrderId)
+    .is("attempt_id", null);
+  if (attemptLinkError) return { error: attemptLinkError.message };
+
   console.info("[payments/reconcile] entitlement_row_updated", {
-    event: existingUnlockedAttempt ? "entitlement_row_updated" : "entitlement_row_created",
+    event: existingAttempt ? "entitlement_row_updated" : "entitlement_row_created",
     orderId: canonicalPaidOrderId,
     userId: order.user_id,
     testId: order.test_id,

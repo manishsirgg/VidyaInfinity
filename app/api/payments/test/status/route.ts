@@ -60,7 +60,40 @@ export async function GET(request: Request) {
     razorpay_payment_id: string | null;
   }>();
 
-  if (!order) return NextResponse.json({ ok: false, error: "Psychometric order not found" }, { status: 404 });
+  if (!order) {
+    if (paymentId) {
+      const razorpay = getRazorpayClient();
+      if (razorpay.ok) {
+        try {
+          const payment = (await razorpay.data.payments.fetch(paymentId)) as {
+            id?: string;
+            order_id?: string;
+            status?: string;
+            notes?: Record<string, string>;
+          };
+          const isCaptured = normalize(payment.status) === "captured";
+          if (isCaptured) {
+            console.warn("[payments/test/status] captured_payment_local_order_missing", {
+              razorpayOrderId: orderId ?? payment.order_id ?? null,
+              razorpayPaymentId: paymentId,
+              source: "status_api",
+            });
+            return NextResponse.json(
+              {
+                ok: false,
+                state: "missing",
+                error: `Payment captured but local order could not be found. Please contact support with Payment ID: ${paymentId}`,
+              },
+              { status: 404 }
+            );
+          }
+        } catch {
+          // no-op fallback to generic not found
+        }
+      }
+    }
+    return NextResponse.json({ ok: false, error: "Psychometric order not found" }, { status: 404 });
+  }
 
   let effectivePaymentId = paymentId ?? order.razorpay_payment_id ?? null;
 
@@ -87,7 +120,6 @@ export async function GET(request: Request) {
     .select("id")
     .eq("user_id", auth.profile.id)
     .eq("test_id", order.test_id)
-    .eq("status", "unlocked")
     .limit(1)
     .maybeSingle<{ id: string }>();
 
@@ -104,9 +136,7 @@ export async function GET(request: Request) {
   const { data: finalEntitlementRow } = await admin.data
     .from("test_attempts")
     .select("id")
-    .eq("user_id", auth.profile.id)
-    .eq("test_id", order.test_id)
-    .eq("status", "unlocked")
+    .eq("order_id", order.id)
     .limit(1)
     .maybeSingle<{ id: string }>();
 
@@ -115,7 +145,9 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       state: "paid",
-      redirectTo: `/student/payments/success?kind=psychometric&order_id=${encodeURIComponent(order.razorpay_order_id ?? order.id)}&payment_id=${encodeURIComponent(effectivePaymentId ?? "")}`,
+      redirectTo: finalEntitlementRow?.id
+        ? `/dashboard/psychometric/attempts/${finalEntitlementRow.id}`
+        : `/student/payments/success?kind=psychometric&order_id=${encodeURIComponent(order.razorpay_order_id ?? order.id)}&payment_id=${encodeURIComponent(effectivePaymentId ?? "")}`,
     });
   }
 

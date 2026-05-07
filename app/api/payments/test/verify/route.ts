@@ -20,8 +20,8 @@ export async function POST(request: Request) {
     const paymentId = typeof body?.razorpay_payment_id === "string" ? body.razorpay_payment_id : body?.paymentId;
     const signature = typeof body?.razorpay_signature === "string" ? body.razorpay_signature : body?.signature;
 
-    if (!localOrderId || !orderId || !paymentId || !signature) {
-      return NextResponse.json({ error: "local_order_id, razorpay_order_id, razorpay_payment_id, razorpay_signature are required" }, { status: 400 });
+    if (!orderId || !paymentId) {
+      return NextResponse.json({ error: "razorpay_order_id and razorpay_payment_id are required" }, { status: 400 });
     }
 
     const admin = getSupabaseAdmin();
@@ -37,24 +37,43 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, idempotent: true, duplicate: true });
     }
 
-    const { data: order, error: orderFetchError } = await admin.data
+    let orderQuery = admin.data
       .from("psychometric_orders")
       .select("id,user_id,test_id,payment_status,final_amount,currency,attempt_id,coupon_id")
-      .eq("id", localOrderId)
       .eq("razorpay_order_id", orderId)
-      .eq("user_id", profile.id)
-      .single();
+      .eq("user_id", profile.id);
+    if (localOrderId) orderQuery = orderQuery.eq("id", localOrderId);
+    const { data: orderByRazorpayOrder, error: orderFetchError } = await orderQuery.limit(1).maybeSingle();
+    let order = orderByRazorpayOrder;
 
-    if (orderFetchError || !order) {
+    if ((!order || orderFetchError) && paymentId) {
+      const { data: orderByPaymentId } = await admin.data
+        .from("psychometric_orders")
+        .select("id,user_id,test_id,payment_status,final_amount,currency,attempt_id,coupon_id,razorpay_order_id")
+        .eq("user_id", profile.id)
+        .eq("razorpay_payment_id", paymentId)
+        .limit(1)
+        .maybeSingle();
+      if (orderByPaymentId) order = orderByPaymentId;
+    }
+
+    if (!order) {
+      console.warn("[payments/test/verify] local_order_missing", {
+        event: "local_order_missing",
+        razorpayOrderId: orderId,
+        razorpayPaymentId: paymentId,
+        userId: profile.id,
+      });
       return NextResponse.json({ error: "Order not found for this user" }, { status: 404 });
     }
 
-    const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
-    if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
-
-    if (!signatureResult.valid) {
-      await admin.data.from("psychometric_orders").update({ payment_status: "failed" }).eq("id", order.id);
-      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+    if (signature) {
+      const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
+      if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
+      if (!signatureResult.valid) {
+        await admin.data.from("psychometric_orders").update({ payment_status: "failed" }).eq("id", order.id);
+        return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+      }
     }
 
     const razorpay = getRazorpayClient();
@@ -103,7 +122,7 @@ export async function POST(request: Request) {
     const { data: resolvedOrder } = await admin.data
       .from("psychometric_orders")
       .select("attempt_id")
-      .eq("id", localOrderId)
+      .eq("id", order.id)
       .maybeSingle<{ attempt_id: string | null }>();
     const attemptId = resolvedOrder?.attempt_id ?? order.attempt_id ?? null;
     const redirectTo = attemptId ? `/dashboard/psychometric/attempts/${attemptId}` : "/dashboard/psychometric";
