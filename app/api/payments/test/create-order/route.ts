@@ -10,6 +10,8 @@ function toPaise(amount: number) {
   return Math.max(0, Math.round((amount + Number.EPSILON) * 100));
 }
 
+const PAID_LIKE_PAYMENT_STATUSES = ["paid", "success", "captured", "confirmed"] as const;
+
 export async function POST(request: Request) {
   try {
     const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "psychometric"]);
@@ -30,6 +32,70 @@ export async function POST(request: Request) {
     const { data: test } = await admin.data.from("psychometric_tests").select("id,price,is_active").eq("id", testId).single();
 
     if (!test || !test.is_active) return NextResponse.json({ error: "Invalid test" }, { status: 400 });
+
+    const { data: existingPaidOrder } = await admin.data
+      .from("psychometric_orders")
+      .select("id,attempt_id")
+      .eq("user_id", profile.id)
+      .eq("test_id", test.id)
+      .in("payment_status", [...PAID_LIKE_PAYMENT_STATUSES])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string; attempt_id: string | null }>();
+
+    if (existingPaidOrder) {
+      let resolvedAttemptId = existingPaidOrder.attempt_id;
+      if (!resolvedAttemptId) {
+        const { data: attemptByOrder } = await admin.data
+          .from("test_attempts")
+          .select("id")
+          .eq("order_id", existingPaidOrder.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<{ id: string }>();
+
+        resolvedAttemptId = attemptByOrder?.id ?? null;
+      }
+
+      if (!resolvedAttemptId) {
+        const attemptId = crypto.randomUUID();
+        const { data: createdAttempt } = await admin.data
+          .from("test_attempts")
+          .insert({
+            id: attemptId,
+            user_id: profile.id,
+            test_id: test.id,
+            order_id: existingPaidOrder.id,
+            status: "not_started",
+          })
+          .select("id")
+          .single<{ id: string }>();
+        resolvedAttemptId = createdAttempt?.id ?? null;
+      }
+
+      if (resolvedAttemptId && resolvedAttemptId !== existingPaidOrder.attempt_id) {
+        await admin.data.from("psychometric_orders").update({ attempt_id: resolvedAttemptId }).eq("id", existingPaidOrder.id);
+      }
+
+      const { data: report } = resolvedAttemptId
+        ? await admin.data.from("psychometric_reports").select("id").eq("attempt_id", resolvedAttemptId).maybeSingle<{ id: string }>()
+        : { data: null };
+
+      const redirectTo = report?.id
+        ? `/dashboard/psychometric/reports/${report.id}`
+        : resolvedAttemptId
+          ? `/dashboard/psychometric/attempts/${resolvedAttemptId}`
+          : "/student/purchases?kind=psychometric";
+
+      return NextResponse.json({
+        alreadyPurchased: true,
+        message: "You have already purchased this test.",
+        existingOrderId: existingPaidOrder.id,
+        attemptId: resolvedAttemptId,
+        reportId: report?.id ?? null,
+        redirectTo,
+      });
+    }
 
     const { data: activePaidAttempt } = await admin.data
       .from("test_attempts")

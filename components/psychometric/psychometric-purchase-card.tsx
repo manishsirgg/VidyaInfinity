@@ -15,12 +15,14 @@ export function PsychometricPurchaseCard({
   price,
   purchaseLocked,
   role,
+  entitlement,
 }: {
   testId: string;
   testTitle: string;
   price: number;
   purchaseLocked?: boolean;
   role?: string | null;
+  entitlement?: { attemptId: string | null; reportId: string | null; redirectTo: string } | null;
 }) {
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
@@ -28,6 +30,7 @@ export function PsychometricPurchaseCard({
   const [couponLoading, setCouponLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
+  const [alreadyPurchasedInfo, setAlreadyPurchasedInfo] = useState<{ attemptId: string | null; reportId: string | null; redirectTo: string } | null>(entitlement ?? null);
   const [pricing, setPricing] = useState<{ baseAmount: number; discountPercent: number; discountAmount: number; finalAmount: number } | null>(null);
 
   const viewPricing = useMemo(() => pricing ?? { baseAmount: price, discountPercent: 0, discountAmount: 0, finalAmount: price }, [price, pricing]);
@@ -87,6 +90,18 @@ export function PsychometricPurchaseCard({
       body: JSON.stringify(requestBody),
     });
     const createBody = await createRes.json().catch(() => null);
+
+    if (createBody?.alreadyPurchased) {
+      setLoading(false);
+      setAlreadyPurchasedInfo({
+        attemptId: createBody?.attemptId ?? null,
+        reportId: createBody?.reportId ?? null,
+        redirectTo: createBody?.redirectTo ?? "/student/purchases?kind=psychometric",
+      });
+      setIsError(false);
+      setMessage("You have already purchased this test. Continue from your purchases.");
+      return;
+    }
 
     if (!createRes.ok || !createBody?.order?.id || !createBody?.localOrderId || !createBody?.key) {
       setLoading(false);
@@ -175,11 +190,16 @@ export function PsychometricPurchaseCard({
       <button
         type="button"
         onClick={payNow}
-        disabled={loading || couponLoading || Boolean(purchaseLocked) || Boolean(role && role !== "student")}
+        disabled={loading || couponLoading || Boolean(purchaseLocked) || Boolean(alreadyPurchasedInfo) || Boolean(role && role !== "student")}
         className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
       >
         {loading ? "Processing..." : purchaseLocked ? "Already Purchased" : role === "admin" ? "Student purchase required" : role && role !== "student" ? "Available for student accounts only" : "Pay & Unlock Test"}
       </button>
+      {alreadyPurchasedInfo ? (
+        <a href={alreadyPurchasedInfo.redirectTo} className="mt-3 block w-full rounded border border-emerald-200 bg-emerald-50 px-4 py-2 text-center text-sm font-medium text-emerald-800">
+          {alreadyPurchasedInfo.reportId ? "View Report" : alreadyPurchasedInfo.attemptId ? "Continue Test" : "Go to Purchases"}
+        </a>
+      ) : null}
       {message ? <p className={`mt-2 text-xs ${isError ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
     </div>
   );
