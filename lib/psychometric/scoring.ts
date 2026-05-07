@@ -1,6 +1,6 @@
 import { buildReportContent, pickResultBand } from "@/lib/psychometric/reporting";
 
-type OptionRow = { id: string; question_id: string; score_value: number | null; metadata: Record<string, unknown> | null };
+type OptionRow = { id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null };
 type AnswerRow = { id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null };
 type QuestionRow = { id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null };
 type TestRow = { title: string | null; scoring_config: Record<string, unknown> | null };
@@ -78,12 +78,26 @@ export function computePsychometricReportData(params: {
     if (!dimension[dim]) dimension[dim] = { score: 0, maxScore: 0, percentage: 0 };
     dimension[dim].score += awarded;
     dimension[dim].maxScore += qMax;
-    snapshot.push({ questionId: q.id, question: q.question_text, type: q.question_type, awardedScore: awarded });
+
+    const selectedValues = Array.isArray(a?.selected_values) ? a?.selected_values : [];
+    const selectedOptionTexts = qOpts.filter((o) => selectedValues.includes(o.id)).map((o) => o.option_text ?? "").filter(Boolean);
+    snapshot.push({
+      question_id: q.id,
+      question_text: q.question_text,
+      question_type: q.question_type,
+      option_id: a?.option_id ?? null,
+      selected_values: selectedValues,
+      selected_option_texts: selectedOptionTexts,
+      numeric_value: a?.numeric_value ?? null,
+      answer_text: a?.answer_text ?? null,
+      awarded_score: awarded,
+    });
   }
 
   Object.values(dimension).forEach((d) => {
     d.percentage = d.maxScore > 0 ? Number(((d.score / d.maxScore) * 100).toFixed(2)) : 0;
   });
+
   const total = answers.reduce((sum, answer) => sum + Number(awardedScoresByAnswerId[answer.id] ?? 0), 0);
   const percentageUnclamped = max > 0 ? (total / max) * 100 : 0;
   const percentage = Number(Math.min(100, Math.max(0, percentageUnclamped)).toFixed(2));
