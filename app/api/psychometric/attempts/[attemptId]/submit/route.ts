@@ -87,7 +87,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     throw error;
   }
 
-  console.info("[psychometric-submit] scoring summary", { testId: attempt.test_id, attemptId: attempt.id, totalScore: scoring.total, finalMaxScore: scoring.max, percentageScore: scoring.percentage, snapshotLength: scoring.answersSnapshot.length });
+  console.info("[psychometric-submit] scoring summary", { testId: attempt.test_id, attemptId: attempt.id, totalScore: scoring.totalScore, finalMaxScore: scoring.maxScore, percentageScore: scoring.percentageScore, snapshotLength: scoring.answersSnapshot.length });
 
   for (const [answerId, awarded] of Object.entries(scoring.awardedScoresByAnswerId)) {
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
@@ -95,15 +95,19 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
 
   const reportUpsert = {
     attempt_id: attempt.id, test_id: attempt.test_id, user_id: profileId, order_id: attempt.order_id,
-    total_score: scoring.total, max_score: scoring.max, percentage_score: scoring.percentage, result_band: scoring.resultBand,
+    total_score: scoring.totalScore, max_score: scoring.maxScore, percentage_score: scoring.percentageScore, result_band: scoring.resultBand,
     summary: scoring.content.summary, strengths: scoring.content.strengths, improvement_areas: scoring.content.improvementAreas, recommendations: scoring.content.recommendations,
     dimension_scores: scoring.dimension, answers_snapshot: scoring.answersSnapshot, report_html: `<h1>Vidya Infinity Psychometric Report</h1><p>${scoring.content.summary}</p>`,
-    report_json: { disclaimer: scoring.content.recommendations[2], percentage: scoring.percentage, resultBand: scoring.resultBand }, generated_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    report_json: { disclaimer: scoring.content.recommendations[2], percentage: scoring.percentageScore, resultBand: scoring.resultBand }, generated_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   };
   const { data: report, error: reportError } = await admin.data.from("psychometric_reports").upsert(reportUpsert, { onConflict: "attempt_id" }).select("id").single();
   if (reportError) return NextResponse.json({ error: reportError.message }, { status: 500 });
-  const attemptUpdate: Record<string, unknown> = { status: "completed", submitted_at: new Date().toISOString(), completed_at: new Date().toISOString(), total_score: scoring.total, max_score: scoring.max, percentage_score: scoring.percentage, result_band: scoring.resultBand, report_id: report.id };
-  if (Object.prototype.hasOwnProperty.call(attempt, "score")) attemptUpdate.score = scoring.total;
+  if (answers.length > 0 && scoring.totalScore <= 0) return NextResponse.json({ error: "Report total score could not be calculated." }, { status: 500 });
+  if (scoring.totalScore > 0 && scoring.maxScore <= 0) return NextResponse.json({ error: "Report max score could not be calculated." }, { status: 500 });
+  if (answers.length > 0 && scoring.answersSnapshot.length === 0) return NextResponse.json({ error: "Report answer snapshot could not be generated." }, { status: 500 });
+
+  const attemptUpdate: Record<string, unknown> = { status: "completed", submitted_at: new Date().toISOString(), completed_at: new Date().toISOString(), total_score: scoring.totalScore, max_score: scoring.maxScore, percentage_score: scoring.percentageScore, result_band: scoring.resultBand, report_id: report.id };
+  if (Object.prototype.hasOwnProperty.call(attempt, "score")) attemptUpdate.score = scoring.totalScore;
   const { error: updateError } = await admin.data.from("test_attempts").update(attemptUpdate).eq("id", attempt.id);
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
 
