@@ -1,9 +1,9 @@
 import { buildReportContent, pickResultBand } from "@/lib/psychometric/reporting";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-type OptionRow = { id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null };
+type OptionRow = { id: string; question_id: string; option_text?: string | null; score_value: number | null; sort_order: number | null; is_active: boolean };
 type AnswerRow = { id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null };
-type QuestionRow = { id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null };
+type QuestionRow = { id: string; question_text: string; question_type: string; weight: number | null; max_scale_value: number | null; sort_order: number | null; is_active: boolean; metadata: Record<string, unknown> | null };
 type TestRow = { title: string | null; scoring_config: Record<string, unknown> | null };
 
 export class PsychometricScoringError extends Error {}
@@ -16,14 +16,14 @@ export async function computePsychometricReportData(params: {
   answers: AnswerRow[];
   enforceRequired: boolean;
 }) {
-  const { test, answers, enforceRequired } = params;
+  const { test, answers } = params;
   const testId = String((test as { id?: string | null }).id ?? "unknown");
   const admin = getSupabaseAdmin();
   if (!admin.ok) throw new PsychometricScoringError(admin.error);
 
   const { data: activeQuestions, error: questionsError } = await admin.data
     .from("psychometric_questions")
-    .select("id,question_text,question_type,is_required,weight,min_scale_value,max_scale_value,metadata,scoring_config")
+    .select("id,question_text,question_type,weight,max_scale_value,sort_order,metadata,is_active")
     .eq("test_id", testId)
     .eq("is_active", true)
     .order("sort_order");
@@ -35,7 +35,7 @@ export async function computePsychometricReportData(params: {
   if (activeQuestionIds.length > 0) {
     const { data: activeOptions, error: optionsError } = await admin.data
       .from("psychometric_question_options")
-      .select("id,question_id,score_value,option_text,is_active,metadata")
+      .select("id,question_id,option_text,score_value,sort_order,is_active")
       .in("question_id", activeQuestionIds)
       .eq("is_active", true)
       .order("sort_order");
@@ -67,20 +67,14 @@ export async function computePsychometricReportData(params: {
     const a = ansByQ.get(q.id);
     const qOpts = optsByQ.get(q.id) ?? [];
     const weight = validWeight(q.weight);
-    if (q.is_required && !a && enforceRequired) {
-      throw new PsychometricScoringError(`Required question unanswered: ${q.question_text}`);
-    }
 
     let awarded = 0;
     let qMax = 0;
-    const questionScoringConfig = (q.scoring_config as Record<string, unknown> | null) ?? {};
     if (q.question_type === "single_choice") {
       const optionScores = qOpts.map((o) => validNumber(o.score_value, 0)).filter((v) => Number.isFinite(v));
       qMax = (optionScores.length > 0 ? Math.max(0, ...optionScores) : 0) * weight;
-      if (q.is_required && !a?.option_id && enforceRequired) throw new PsychometricScoringError("Single choice answer required");
       if (a?.option_id) {
         const op = qOpts.find((o) => o.id === a.option_id);
-        if (!op && q.is_required && enforceRequired) throw new PsychometricScoringError("Invalid single choice answer");
         awarded = validNumber(op?.score_value, 0) * weight;
       }
     }
@@ -90,29 +84,24 @@ export async function computePsychometricReportData(params: {
         .filter((v) => Number.isFinite(v) && v > 0)
         .reduce((s, v) => s + v, 0) * weight;
       const vals = Array.isArray(a?.selected_values) ? a.selected_values : [];
-      if (q.is_required && vals.length === 0 && enforceRequired) throw new PsychometricScoringError("At least one option must be selected");
       const selected = qOpts.filter((o) => vals.includes(o.id));
-      if (q.is_required && selected.length !== vals.length && enforceRequired) throw new PsychometricScoringError("Invalid multi choice answer");
       awarded = selected.reduce((s, o) => s + validNumber(o.score_value, 0), 0) * weight;
     }
     if (q.question_type === "scale") {
-      const configuredScaleMax = validNumber(questionScoringConfig.max_scale_value ?? questionScoringConfig.max ?? q.max_scale_value, 0);
-      const validScaleMax = configuredScaleMax > 0 ? configuredScaleMax : 10;
+      const validScaleMax = validNumber(q.max_scale_value, 0) > 0 ? validNumber(q.max_scale_value, 0) : 10;
       qMax = validScaleMax * weight;
       const n = Number(a?.numeric_value);
-      if (q.is_required && !Number.isFinite(n) && enforceRequired) throw new PsychometricScoringError("Missing scale value");
       if (Number.isFinite(n)) {
-        if (n < Number(q.min_scale_value ?? 0) || n > Number(q.max_scale_value ?? 0)) throw new PsychometricScoringError("Scale value out of range");
+        if (n < 0 || n > validScaleMax) throw new PsychometricScoringError("Scale value out of range");
         awarded = n * weight;
       }
     }
     if (q.question_type === "numeric") {
-      if (q.is_required && !Number.isFinite(Number(a?.numeric_value)) && enforceRequired) throw new PsychometricScoringError("Numeric answer required");
-      const numericMax = Number(questionScoringConfig.max_score ?? questionScoringConfig.max ?? 0);
+      const numericConfig = (test.scoring_config as Record<string, unknown> | null)?.numeric as Record<string, unknown> | undefined;
+      const numericMax = Number(numericConfig?.max_score ?? numericConfig?.max ?? 0);
       qMax = Number.isFinite(numericMax) && numericMax > 0 ? numericMax * weight : 0;
     }
     if (q.question_type === "text") {
-      if (q.is_required && !String(a?.answer_text ?? "").trim() && enforceRequired) throw new PsychometricScoringError("Text answer required");
     }
 
     max += qMax;
