@@ -42,7 +42,8 @@ export function computePsychometricReportData(params: {
     let qMax = 0;
     const questionScoringConfig = (q.scoring_config as Record<string, unknown> | null) ?? {};
     if (q.question_type === "single_choice") {
-      qMax = Math.max(0, ...qOpts.map((o) => Number(o.score_value ?? 0))) * weight;
+      const optionScores = qOpts.map((o) => Number(o.score_value ?? 0)).filter((v) => Number.isFinite(v));
+      qMax = (optionScores.length > 0 ? Math.max(0, ...optionScores) : 0) * weight;
       if (q.is_required && !a?.option_id && enforceRequired) throw new PsychometricScoringError("Single choice answer required");
       if (a?.option_id) {
         const op = qOpts.find((o) => o.id === a.option_id);
@@ -51,7 +52,10 @@ export function computePsychometricReportData(params: {
       }
     }
     if (q.question_type === "multiple_choice") {
-      qMax = qOpts.reduce((s, o) => s + Math.max(0, Number(o.score_value ?? 0)), 0) * weight;
+      qMax = qOpts
+        .map((o) => Number(o.score_value ?? 0))
+        .filter((v) => Number.isFinite(v) && v > 0)
+        .reduce((s, v) => s + v, 0) * weight;
       const vals = Array.isArray(a?.selected_values) ? a.selected_values : [];
       if (q.is_required && vals.length === 0 && enforceRequired) throw new PsychometricScoringError("At least one option must be selected");
       const selected = qOpts.filter((o) => vals.includes(o.id));
@@ -59,9 +63,9 @@ export function computePsychometricReportData(params: {
       awarded = selected.reduce((s, o) => s + Number(o.score_value ?? 0), 0) * weight;
     }
     if (q.question_type === "scale") {
-      const testScoringConfig = (test.scoring_config as Record<string, unknown> | null) ?? {};
-      const configuredScaleMax = Number(questionScoringConfig.max_scale_value ?? questionScoringConfig.max ?? testScoringConfig.scale_max ?? q.max_scale_value ?? 10);
-      qMax = Math.max(0, configuredScaleMax) * weight;
+      const configuredScaleMax = Number(questionScoringConfig.max_scale_value ?? questionScoringConfig.max ?? q.max_scale_value);
+      const validScaleMax = Number.isFinite(configuredScaleMax) && configuredScaleMax > 0 ? configuredScaleMax : 10;
+      qMax = validScaleMax * weight;
       const n = Number(a?.numeric_value);
       if (q.is_required && !Number.isFinite(n) && enforceRequired) throw new PsychometricScoringError("Missing scale value");
       if (Number.isFinite(n)) {
