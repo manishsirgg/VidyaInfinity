@@ -66,6 +66,15 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
     throw error;
   }
 
+  console.log("[psychometric-regenerate-helper-output]", {
+    reportId,
+    attemptId: attempt.id,
+    totalScore: scoring.total,
+    maxScore: scoring.max,
+    percentageScore: scoring.percentage,
+    snapshotLength: scoring.answersSnapshot?.length ?? 0,
+  });
+
   for (const [answerId, awarded] of Object.entries(scoring.awardedScoresByAnswerId)) {
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
   }
@@ -77,7 +86,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
   const bands = Array.isArray(scoringConfig?.bands) ? scoringConfig?.bands : undefined;
   const resultBand = pickResultBand(percentageScore, bands);
   const content = scoring.content;
-  const answersSnapshot = scoring.snapshot;
+  const answersSnapshot = scoring.answersSnapshot;
   if (totalScore > 0 && maxScore <= 0) {
     return NextResponse.json({ error: "Report max score could not be calculated." }, { status: 500 });
   }

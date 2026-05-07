@@ -19,13 +19,14 @@ export function computePsychometricReportData(params: {
 }) {
   const { test, questions, options, answers, enforceRequired } = params;
   const testId = String((test as { id?: string | null }).id ?? "unknown");
+  const questionMap = new Map(questions.map((q) => [q.id, q]));
+  const optionMap = new Map(options.map((o) => [o.id, o.option_text ?? null]));
   const optsByQ = new Map<string, OptionRow[]>();
   options.forEach((o) => optsByQ.set(o.question_id, [...(optsByQ.get(o.question_id) ?? []), o]));
   const ansByQ = new Map(answers.map((a) => [a.question_id, a]));
 
   let max = 0;
   const dimension: Record<string, { score: number; maxScore: number; percentage: number }> = {};
-  const snapshot: Array<Record<string, unknown>> = [];
   const awardedScoresByAnswerId: Record<string, number> = {};
   const maxScoreByQuestion: Array<{ questionId: string; questionType: string; qMax: number }> = [];
 
@@ -90,21 +91,52 @@ export function computePsychometricReportData(params: {
     dimension[dim].score += awarded;
     dimension[dim].maxScore += qMax;
 
-    const selectedValues = Array.isArray(a?.selected_values) ? a?.selected_values : [];
-    const selectedOptionTexts = qOpts.filter((o) => selectedValues.includes(o.id)).map((o) => o.option_text ?? "").filter(Boolean);
-    snapshot.push({
-      question_id: q.id,
-      question_text: q.question_text,
-      question_type: q.question_type,
-      option_id: a?.option_id ?? null,
-      selected_values: selectedValues,
-      selected_option_text: qOpts.find((o) => o.id === a?.option_id)?.option_text ?? null,
-      selected_option_texts: selectedOptionTexts,
-      numeric_value: a?.numeric_value ?? null,
-      answer_text: a?.answer_text ?? null,
-      awarded_score: awarded,
-    });
   }
+
+  const normalizeSelectedValues = (selectedValues: unknown): string[] => {
+    if (Array.isArray(selectedValues)) return selectedValues.filter((value): value is string => typeof value === "string");
+    if (typeof selectedValues === "string") {
+      try {
+        const parsed = JSON.parse(selectedValues);
+        if (Array.isArray(parsed)) return parsed.filter((value): value is string => typeof value === "string");
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const answersSnapshot = answers.map((answer) => {
+    const question = questionMap.get(answer.question_id);
+    const normalizedSelectedValues = normalizeSelectedValues(answer.selected_values);
+    return {
+      question_id: answer.question_id,
+      question_text: question?.question_text ?? "Question not available",
+      question_type: question?.question_type ?? "unknown",
+      option_id: answer.option_id ?? null,
+      selected_values: normalizedSelectedValues,
+      selected_option_text: answer.option_id ? optionMap.get(answer.option_id) ?? null : null,
+      selected_option_texts: normalizedSelectedValues.map((id) => optionMap.get(id)).filter((value): value is string => Boolean(value)),
+      numeric_value: answer.numeric_value ?? null,
+      answer_text: answer.answer_text ?? null,
+      awarded_score: Number(answer.awarded_score ?? 0),
+    };
+  });
+
+  console.log("[psychometric-snapshot-built]", {
+    answersCount: answers.length,
+    questionsCount: questions.length,
+    optionsCount: options.length,
+    answersSnapshotLength: answersSnapshot.length,
+    firstAnswer: answers[0]
+      ? {
+          question_id: answers[0].question_id,
+          option_id: answers[0].option_id,
+          selected_values: answers[0].selected_values,
+        }
+      : null,
+    firstSnapshot: answersSnapshot[0] ?? null,
+  });
 
   Object.values(dimension).forEach((d) => {
     d.percentage = d.maxScore > 0 ? Number(((d.score / d.maxScore) * 100).toFixed(2)) : 0;
@@ -122,7 +154,7 @@ export function computePsychometricReportData(params: {
     totalScore: round2(total),
     finalMaxScore: round2(max),
     percentageScore: percentage,
-    snapshotLength: snapshot.length,
+    snapshotLength: answersSnapshot.length,
   });
 
   if (questions.length > 0 && max <= 0 && total > 0) {
@@ -134,5 +166,5 @@ export function computePsychometricReportData(params: {
   const resultBand = pickResultBand(percentage, bands);
   const content = buildReportContent({ testTitle: test.title ?? "Psychometric Test", percentage, resultBand });
 
-  return { max: round2(max), total: round2(total), percentage, resultBand, content, dimension, snapshot, awardedScoresByAnswerId };
+  return { max: round2(max), total: round2(total), percentage, resultBand, content, dimension, answersSnapshot, awardedScoresByAnswerId };
 }

@@ -87,7 +87,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     throw error;
   }
 
-  console.info("[psychometric-submit] scoring summary", { testId: attempt.test_id, attemptId: attempt.id, totalScore: scoring.total, finalMaxScore: scoring.max, percentageScore: scoring.percentage, snapshotLength: scoring.snapshot.length });
+  console.info("[psychometric-submit] scoring summary", { testId: attempt.test_id, attemptId: attempt.id, totalScore: scoring.total, finalMaxScore: scoring.max, percentageScore: scoring.percentage, snapshotLength: scoring.answersSnapshot.length });
 
   for (const [answerId, awarded] of Object.entries(scoring.awardedScoresByAnswerId)) {
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
@@ -97,7 +97,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     attempt_id: attempt.id, test_id: attempt.test_id, user_id: profileId, order_id: attempt.order_id,
     total_score: scoring.total, max_score: scoring.max, percentage_score: scoring.percentage, result_band: scoring.resultBand,
     summary: scoring.content.summary, strengths: scoring.content.strengths, improvement_areas: scoring.content.improvementAreas, recommendations: scoring.content.recommendations,
-    dimension_scores: scoring.dimension, answers_snapshot: scoring.snapshot, report_html: `<h1>Vidya Infinity Psychometric Report</h1><p>${scoring.content.summary}</p>`,
+    dimension_scores: scoring.dimension, answers_snapshot: scoring.answersSnapshot, report_html: `<h1>Vidya Infinity Psychometric Report</h1><p>${scoring.content.summary}</p>`,
     report_json: { disclaimer: scoring.content.recommendations[2], percentage: scoring.percentage, resultBand: scoring.resultBand }, generated_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   };
   const { data: report, error: reportError } = await admin.data.from("psychometric_reports").upsert(reportUpsert, { onConflict: "attempt_id" }).select("id").single();
