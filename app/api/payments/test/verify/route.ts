@@ -39,7 +39,7 @@ export async function POST(request: Request) {
 
     const { data: order, error: orderFetchError } = await admin.data
       .from("psychometric_orders")
-      .select("id,user_id,test_id,payment_status,final_amount,currency,attempt_id")
+      .select("id,user_id,test_id,payment_status,final_amount,currency,attempt_id,coupon_id")
       .eq("id", localOrderId)
       .eq("razorpay_order_id", orderId)
       .eq("user_id", profile.id)

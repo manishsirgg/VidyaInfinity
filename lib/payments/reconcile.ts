@@ -336,6 +336,7 @@ export async function reconcileCourseOrderPaid({
     institute_receivable_amount: number;
     currency: string;
     payment_status: string;
+    coupon_id?: string | null;
   };
   razorpayOrderId: string;
   razorpayPaymentId: string;
@@ -396,7 +397,9 @@ export async function reconcileCourseOrderPaid({
 
   const resolvedAccessEndAt = resolveAccessEndAt(effectivePaidAt, courseForDuration?.duration_value ?? null, courseForDuration?.duration_unit ?? null);
 
-  if (order.payment_status !== "paid") {
+  const shouldCountCouponUsage = order.payment_status !== "paid";
+
+  if (shouldCountCouponUsage) {
     const { error: updateError } = await supabase
       .from("course_orders")
       .update({
@@ -788,6 +791,7 @@ export async function reconcilePsychometricOrderPaid({
     final_paid_amount?: number | null;
     currency: string;
     payment_status: string;
+    coupon_id?: string | null;
   };
   razorpayOrderId: string;
   razorpayPaymentId: string;
@@ -805,7 +809,9 @@ export async function reconcilePsychometricOrderPaid({
 
   const canonicalPaidOrderId = order.id;
 
-  if (order.payment_status !== "paid") {
+  const shouldCountCouponUsage = order.payment_status !== "paid";
+
+  if (shouldCountCouponUsage) {
     const { error: updateError } = await supabase
       .from("psychometric_orders")
       .update({
@@ -873,6 +879,29 @@ export async function reconcilePsychometricOrderPaid({
       error: txnError.message,
     });
     return { error: txnError.message };
+  }
+
+  if (shouldCountCouponUsage && order.coupon_id) {
+    const { data: couponRow, error: couponFetchError } = await supabase
+      .from("coupons")
+      .select("id,max_uses,used_count")
+      .eq("id", order.coupon_id)
+      .maybeSingle<{ id: string; max_uses: number | null; used_count: number }>();
+
+    if (couponFetchError) return { error: couponFetchError.message };
+
+    if (couponRow) {
+      const currentUsedCount = Number(couponRow.used_count ?? 0);
+      const maxUses = couponRow.max_uses;
+      if (maxUses === null || currentUsedCount < maxUses) {
+        const { error: couponUpdateError } = await supabase
+          .from("coupons")
+          .update({ used_count: currentUsedCount + 1 })
+          .eq("id", couponRow.id)
+          .eq("used_count", currentUsedCount);
+        if (couponUpdateError) return { error: couponUpdateError.message };
+      }
+    }
   }
 
   const { data: existingUnlockedAttempt } = await supabase

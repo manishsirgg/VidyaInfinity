@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 declare global {
   interface Window {
@@ -23,20 +23,63 @@ export function PsychometricPurchaseCard({
   role?: string | null;
 }) {
   const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [couponLoading, setCouponLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [isError, setIsError] = useState(false);
+  const [pricing, setPricing] = useState<{ baseAmount: number; discountPercent: number; discountAmount: number; finalAmount: number } | null>(null);
+
+  const viewPricing = useMemo(() => pricing ?? { baseAmount: price, discountPercent: 0, discountAmount: 0, finalAmount: price }, [price, pricing]);
+
+  async function applyCoupon() {
+    setCouponLoading(true);
+    setMessage("");
+    setIsError(false);
+    const normalizedCouponCode = couponCode.trim().toUpperCase();
+    if (!normalizedCouponCode) {
+      setCouponLoading(false);
+      setIsError(true);
+      setMessage("Enter a coupon code first.");
+      return;
+    }
+
+    const res = await fetch("/api/psychometric/create-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ testId, couponCode: normalizedCouponCode, validateOnly: true }),
+    });
+    const body = await res.json().catch(() => null);
+    setCouponLoading(false);
+
+    if (!res.ok || !body?.pricing) {
+      setIsError(true);
+      setMessage(body?.error ?? "Unable to validate coupon.");
+      return;
+    }
+
+    setAppliedCoupon(normalizedCouponCode);
+    setPricing(body.pricing);
+    setCouponCode(normalizedCouponCode);
+    setIsError(false);
+    setMessage(`Coupon ${normalizedCouponCode} applied successfully.`);
+  }
+
+  function removeCoupon() {
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setPricing(null);
+    setIsError(false);
+    setMessage("Coupon removed.");
+  }
 
   async function payNow() {
     setLoading(true);
     setMessage("");
     setIsError(false);
 
-    const normalizedCouponCode = couponCode.trim().toUpperCase();
     const requestBody: { testId: string; couponCode?: string } = { testId };
-    if (normalizedCouponCode) {
-      requestBody.couponCode = normalizedCouponCode;
-    }
+    if (appliedCoupon) requestBody.couponCode = appliedCoupon;
 
     const createRes = await fetch("/api/psychometric/create-order", {
       method: "POST",
@@ -106,8 +149,10 @@ export function PsychometricPurchaseCard({
   return (
     <div className="mt-6 rounded-xl border bg-white p-4">
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
-      <p className="text-sm text-slate-600">One-time price</p>
-      <p className="text-xl font-semibold">₹{price}</p>
+      <p className="text-sm text-slate-600">Base price</p>
+      <p className="text-xl font-semibold">₹{viewPricing.baseAmount.toFixed(2)}</p>
+      <p className="mt-1 text-sm text-emerald-700">Discount: ₹{viewPricing.discountAmount.toFixed(2)}</p>
+      <p className="text-lg font-semibold">Payable: ₹{viewPricing.finalAmount.toFixed(2)}</p>
       <div className="mt-3">
         <label className="text-xs text-slate-600">Coupon code (optional)</label>
         <input
@@ -116,12 +161,21 @@ export function PsychometricPurchaseCard({
           placeholder="Enter coupon code"
           autoComplete="off"
           className="mt-1 w-full rounded border px-3 py-2 text-sm"
+          disabled={loading || couponLoading}
         />
+      </div>
+      <div className="mt-2 flex gap-2">
+        <button type="button" onClick={applyCoupon} disabled={loading || couponLoading} className="rounded border px-3 py-1 text-xs disabled:opacity-60">
+          {couponLoading ? "Applying..." : "Apply coupon"}
+        </button>
+        <button type="button" onClick={removeCoupon} disabled={loading || couponLoading || !appliedCoupon} className="rounded border px-3 py-1 text-xs disabled:opacity-60">
+          Remove coupon
+        </button>
       </div>
       <button
         type="button"
         onClick={payNow}
-        disabled={loading || Boolean(purchaseLocked) || Boolean(role && role !== "student")}
+        disabled={loading || couponLoading || Boolean(purchaseLocked) || Boolean(role && role !== "student")}
         className="mt-3 w-full rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
       >
         {loading ? "Processing..." : purchaseLocked ? "Already Purchased" : role === "admin" ? "Student purchase required" : role && role !== "student" ? "Available for student accounts only" : "Pay & Unlock Test"}
