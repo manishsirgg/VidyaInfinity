@@ -1,4 +1,5 @@
 import { buildReportContent, pickResultBand } from "@/lib/psychometric/reporting";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type OptionRow = { id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null };
 type AnswerRow = { id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null };
@@ -10,15 +11,37 @@ export class PsychometricScoringError extends Error {}
 const round2 = (value: number) => Number(value.toFixed(2));
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-export function computePsychometricReportData(params: {
+export async function computePsychometricReportData(params: {
   test: TestRow;
-  questions: QuestionRow[];
-  options: OptionRow[];
   answers: AnswerRow[];
   enforceRequired: boolean;
 }) {
-  const { test, questions, options, answers, enforceRequired } = params;
+  const { test, answers, enforceRequired } = params;
   const testId = String((test as { id?: string | null }).id ?? "unknown");
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) throw new PsychometricScoringError(admin.error);
+
+  const { data: activeQuestions, error: questionsError } = await admin.data
+    .from("psychometric_questions")
+    .select("id,question_text,question_type,is_required,weight,min_scale_value,max_scale_value,metadata,scoring_config")
+    .eq("test_id", testId)
+    .eq("is_active", true)
+    .order("sort_order");
+  if (questionsError) throw new PsychometricScoringError(questionsError.message);
+
+  const questions = (activeQuestions ?? []) as QuestionRow[];
+  const activeQuestionIds = questions.map((q) => q.id);
+  const options: OptionRow[] = [];
+  if (activeQuestionIds.length > 0) {
+    const { data: activeOptions, error: optionsError } = await admin.data
+      .from("psychometric_question_options")
+      .select("id,question_id,score_value,option_text,is_active,metadata")
+      .in("question_id", activeQuestionIds)
+      .eq("is_active", true)
+      .order("sort_order");
+    if (optionsError) throw new PsychometricScoringError(optionsError.message);
+    options.push(...((activeOptions ?? []) as OptionRow[]));
+  }
   const questionMap = new Map(questions.map((q) => [q.id, q]));
   const optionMap = new Map(options.map((o) => [o.id, o.option_text ?? null]));
   const optsByQ = new Map<string, OptionRow[]>();
@@ -30,11 +53,20 @@ export function computePsychometricReportData(params: {
   const awardedScoresByAnswerId: Record<string, number> = {};
   const maxScoreByQuestion: Array<{ questionId: string; questionType: string; qMax: number }> = [];
 
+  const validWeight = (value: unknown) => {
+    const n = Number(value ?? 1);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  };
+
+  const validNumber = (value: unknown, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
   for (const q of questions) {
     const a = ansByQ.get(q.id);
     const qOpts = optsByQ.get(q.id) ?? [];
-    const parsedWeight = Number(q.weight ?? 1);
-    const weight = Number.isFinite(parsedWeight) && parsedWeight > 0 ? parsedWeight : 1;
+    const weight = validWeight(q.weight);
     if (q.is_required && !a && enforceRequired) {
       throw new PsychometricScoringError(`Required question unanswered: ${q.question_text}`);
     }
@@ -43,29 +75,29 @@ export function computePsychometricReportData(params: {
     let qMax = 0;
     const questionScoringConfig = (q.scoring_config as Record<string, unknown> | null) ?? {};
     if (q.question_type === "single_choice") {
-      const optionScores = qOpts.map((o) => Number(o.score_value ?? 0)).filter((v) => Number.isFinite(v));
+      const optionScores = qOpts.map((o) => validNumber(o.score_value, 0)).filter((v) => Number.isFinite(v));
       qMax = (optionScores.length > 0 ? Math.max(0, ...optionScores) : 0) * weight;
       if (q.is_required && !a?.option_id && enforceRequired) throw new PsychometricScoringError("Single choice answer required");
       if (a?.option_id) {
         const op = qOpts.find((o) => o.id === a.option_id);
         if (!op && q.is_required && enforceRequired) throw new PsychometricScoringError("Invalid single choice answer");
-        awarded = Number(op?.score_value ?? 0) * weight;
+        awarded = validNumber(op?.score_value, 0) * weight;
       }
     }
     if (q.question_type === "multiple_choice") {
       qMax = qOpts
-        .map((o) => Number(o.score_value ?? 0))
+        .map((o) => validNumber(o.score_value, 0))
         .filter((v) => Number.isFinite(v) && v > 0)
         .reduce((s, v) => s + v, 0) * weight;
       const vals = Array.isArray(a?.selected_values) ? a.selected_values : [];
       if (q.is_required && vals.length === 0 && enforceRequired) throw new PsychometricScoringError("At least one option must be selected");
       const selected = qOpts.filter((o) => vals.includes(o.id));
       if (q.is_required && selected.length !== vals.length && enforceRequired) throw new PsychometricScoringError("Invalid multi choice answer");
-      awarded = selected.reduce((s, o) => s + Number(o.score_value ?? 0), 0) * weight;
+      awarded = selected.reduce((s, o) => s + validNumber(o.score_value, 0), 0) * weight;
     }
     if (q.question_type === "scale") {
-      const configuredScaleMax = Number(questionScoringConfig.max_scale_value ?? questionScoringConfig.max ?? q.max_scale_value);
-      const validScaleMax = Number.isFinite(configuredScaleMax) && configuredScaleMax > 0 ? configuredScaleMax : 10;
+      const configuredScaleMax = validNumber(questionScoringConfig.max_scale_value ?? questionScoringConfig.max ?? q.max_scale_value, 0);
+      const validScaleMax = configuredScaleMax > 0 ? configuredScaleMax : 10;
       qMax = validScaleMax * weight;
       const n = Number(a?.numeric_value);
       if (q.is_required && !Number.isFinite(n) && enforceRequired) throw new PsychometricScoringError("Missing scale value");
@@ -147,15 +179,19 @@ export function computePsychometricReportData(params: {
   const percentageUnclamped = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
   const percentageScore = round2(clamp(percentageUnclamped, 0, 100));
 
-  console.info("[psychometric-scoring] max score summary", {
+  const maxByType = questions.reduce<Record<string, number>>((acc, q) => {
+    const found = maxScoreByQuestion.find((row) => row.questionId === q.id);
+    acc[q.question_type] = round2((acc[q.question_type] ?? 0) + (found?.qMax ?? 0));
+    return acc;
+  }, {});
+
+  console.log("[psychometric-max-score-debug]", {
     testId,
     activeQuestionCount: questions.length,
     activeOptionCount: options.length,
-    maxScoreByQuestion,
-    totalScore,
+    maxByQuestion: maxScoreByQuestion,
+    maxByType,
     finalMaxScore: maxScore,
-    percentageScore,
-    snapshotLength: answersSnapshot.length,
   });
 
   console.log("[psychometric-scoring-final-debug]", {
