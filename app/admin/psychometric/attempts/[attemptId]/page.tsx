@@ -25,9 +25,8 @@ type QuestionRow = {
   question_type: string;
   sort_order: number | null;
   is_active: boolean | null;
-  min_scale_value: number | null;
   max_scale_value: number | null;
-  scoring_config: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
   weight: number | null;
 };
 
@@ -79,7 +78,7 @@ export default async function AttemptDetail({ params }: { params: Promise<{ atte
     supabase.from("psychometric_tests").select("title,category").eq("id", attempt.test_id).maybeSingle<{ title: string | null; category: string | null }>(),
     attempt.order_id ? supabase.from("psychometric_orders").select("id,payment_status").eq("id", attempt.order_id).maybeSingle<{ id: string; payment_status: string | null }>() : Promise.resolve({ data: null, error: null }),
     attempt.report_id ? supabase.from("psychometric_reports").select("id").eq("id", attempt.report_id).maybeSingle<{ id: string }>() : Promise.resolve({ data: null, error: null }),
-    supabase.from("psychometric_questions").select("id,question_text,question_type,sort_order,is_active,min_scale_value,max_scale_value,scoring_config,weight").eq("test_id", attempt.test_id).order("sort_order"),
+    supabase.from("psychometric_questions").select("id,question_text,question_type,weight,max_scale_value,sort_order,metadata,is_active").eq("test_id", attempt.test_id).order("sort_order"),
     supabase.from("psychometric_question_options").select("id,question_id,option_text,score_value,is_active,sort_order").eq("is_active", true).order("sort_order"),
     supabase.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score,created_at,updated_at").eq("attempt_id", attempt.id),
   ]);
@@ -102,7 +101,7 @@ export default async function AttemptDetail({ params }: { params: Promise<{ atte
     } else if (q.question_type === "scale") {
       maxPerQuestion[q.id] = Math.max(0, Number(q.max_scale_value ?? 0)) * weight;
     } else {
-      maxPerQuestion[q.id] = Number((q.scoring_config as { max_score?: number } | null)?.max_score ?? 0) * weight;
+      maxPerQuestion[q.id] = 0;
     }
   }
   const computedMax = Object.values(maxPerQuestion).reduce((sum, value) => sum + Number(value || 0), 0);
