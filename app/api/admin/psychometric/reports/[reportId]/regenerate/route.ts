@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
-import { computePsychometricReportData } from "@/lib/psychometric/scoring";
+import { computePsychometricReportData, PsychometricScoringError } from "@/lib/psychometric/scoring";
 import { pickResultBand } from "@/lib/psychometric/reporting";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -52,13 +52,19 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
     return NextResponse.json({ error: "No saved answers found for this report attempt." }, { status: 400 });
   }
 
-  const scoring = computePsychometricReportData({
-    test: test as { title: string | null; scoring_config: Record<string, unknown> | null },
-    questions: (questions ?? []) as Array<{ id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null }>,
-    options: (options ?? []) as Array<{ id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null }>,
-    answers: (answers ?? []) as Array<{ id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null }>,
-    enforceRequired: true,
-  });
+  let scoring;
+  try {
+    scoring = computePsychometricReportData({
+      test: test as { id?: string | null; title: string | null; scoring_config: Record<string, unknown> | null },
+      questions: (questions ?? []) as Array<{ id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null }>,
+      options: (options ?? []) as Array<{ id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null }>,
+      answers: (answers ?? []) as Array<{ id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null }>,
+      enforceRequired: true,
+    });
+  } catch (error) {
+    if (error instanceof PsychometricScoringError) return NextResponse.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
 
   for (const [answerId, awarded] of Object.entries(scoring.awardedScoresByAnswerId)) {
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
@@ -73,7 +79,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
   const resultBand = pickResultBand(percentageScore, bands);
   const content = scoring.content;
   const answersSnapshot = scoring.snapshot;
-  console.info("[psychometric-regenerate] scoring summary", { attemptId: attempt.id, answersLoaded: answers.length, totalScore, maxScore, percentage: percentageScore, snapshotLength: answersSnapshot.length });
+  console.info("[psychometric-regenerate] scoring summary", { testId: attempt.test_id, attemptId: attempt.id, totalScore, finalMaxScore: maxScore, percentageScore, snapshotLength: answersSnapshot.length });
 
   const now = new Date().toISOString();
   const { error: updateReportError } = await admin.data.from("psychometric_reports").update({
