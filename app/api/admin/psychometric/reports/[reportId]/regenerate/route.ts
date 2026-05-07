@@ -39,21 +39,32 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
 
   const qIds = (questions ?? []).map((q) => q.id);
   const [{ data: options }, { data: answers }] = await Promise.all([
-    admin.data.from("psychometric_question_options").select("id,question_id,score_value,metadata").in("question_id", qIds).eq("is_active", true).order("sort_order"),
-    admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score,test_id,user_id,attempt_id").eq("attempt_id", report.attempt_id).eq("test_id", report.test_id).eq("user_id", report.user_id),
+    admin.data.from("psychometric_question_options").select("id,question_id,option_text,score_value,metadata").in("question_id", qIds).eq("is_active", true).order("sort_order"),
+    admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score,test_id,user_id,attempt_id").eq("attempt_id", attempt.id).eq("user_id", attempt.user_id).eq("test_id", attempt.test_id),
   ]);
 
-  if (!answers || answers.length === 0) return NextResponse.json({ error: "No saved answers found for this report attempt." }, { status: 400 });
+  if (!answers || answers.length === 0) {
+    const { count: anyAnswersCount } = await admin.data.from("psychometric_answers").select("id", { count: "exact", head: true }).eq("attempt_id", attempt.id);
+    if ((anyAnswersCount ?? 0) > 0) {
+      console.error("[psychometric-regenerate] answer loading mismatch", { reportId, attemptId: attempt.id, userId: attempt.user_id, testId: attempt.test_id, anyAnswersCount });
+      return NextResponse.json({ error: "Saved answers were detected, but could not be loaded for regeneration." }, { status: 409 });
+    }
+    return NextResponse.json({ error: "No saved answers found for this report attempt." }, { status: 400 });
+  }
 
   const scoring = computePsychometricReportData({
     test: test as { title: string | null; scoring_config: Record<string, unknown> | null },
     questions: (questions ?? []) as Array<{ id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null }>,
-    options: (options ?? []) as Array<{ id: string; question_id: string; score_value: number | null; metadata: Record<string, unknown> | null }>,
+    options: (options ?? []) as Array<{ id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null }>,
     answers: (answers ?? []) as Array<{ id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null }>,
     enforceRequired: true,
   });
 
-  const totalScore = (answers ?? []).reduce((sum, answer) => sum + Number(answer.awarded_score ?? 0), 0);
+  for (const [answerId, awarded] of Object.entries(scoring.awardedScoresByAnswerId)) {
+    await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
+  }
+
+  const totalScore = (answers ?? []).reduce((sum, answer) => sum + Number(scoring.awardedScoresByAnswerId[answer.id] ?? answer.awarded_score ?? 0), 0);
   const maxScore = scoring.max;
   const percentageUnclamped = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
   const percentageScore = Number(Math.min(100, Math.max(0, percentageUnclamped)).toFixed(2));
@@ -61,18 +72,8 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
   const bands = Array.isArray(scoringConfig?.bands) ? scoringConfig?.bands : undefined;
   const resultBand = pickResultBand(percentageScore, bands);
   const content = scoring.content;
-  const answersSnapshot = (answers ?? []).map((answer) => ({
-    id: answer.id,
-    attempt_id: answer.attempt_id,
-    question_id: answer.question_id,
-    option_id: answer.option_id,
-    selected_values: answer.selected_values,
-    numeric_value: answer.numeric_value,
-    answer_text: answer.answer_text,
-    awarded_score: Number(answer.awarded_score ?? 0),
-    test_id: answer.test_id,
-    user_id: answer.user_id,
-  }));
+  const answersSnapshot = scoring.snapshot;
+  console.info("[psychometric-regenerate] scoring summary", { attemptId: attempt.id, answersLoaded: answers.length, totalScore, maxScore, percentage: percentageScore, snapshotLength: answersSnapshot.length });
 
   const now = new Date().toISOString();
   const { error: updateReportError } = await admin.data.from("psychometric_reports").update({

@@ -62,16 +62,23 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
 
   const { data: questions } = await admin.data.from("psychometric_questions").select("id,question_text,question_type,is_required,weight,min_scale_value,max_scale_value,metadata,scoring_config").eq("test_id", test.id).eq("is_active", true).order("sort_order");
   const qIds = (questions ?? []).map((q) => q.id);
-  const { data: options } = await admin.data.from("psychometric_question_options").select("id,question_id,score_value,metadata").in("question_id", qIds).eq("is_active", true).order("sort_order");
-  const { data: answers } = await admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score").eq("attempt_id", attempt.id).eq("user_id", profileId);
-  if (!answers || answers.length === 0) return NextResponse.json({ error: "No answers saved yet. Please answer the required questions before submitting." }, { status: 400 });
+  const { data: options } = await admin.data.from("psychometric_question_options").select("id,question_id,option_text,score_value,metadata").in("question_id", qIds).eq("is_active", true).order("sort_order");
+  const { data: answers } = await admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score").eq("attempt_id", attempt.id).eq("user_id", attempt.user_id).eq("test_id", attempt.test_id);
+  if (!answers || answers.length === 0) {
+    const { count: anyAnswersCount } = await admin.data.from("psychometric_answers").select("id", { count: "exact", head: true }).eq("attempt_id", attempt.id);
+    if ((anyAnswersCount ?? 0) > 0) {
+      console.error("[psychometric-submit] answer loading mismatch", { attemptId: attempt.id, profileId, attemptUserId: attempt.user_id, testId: attempt.test_id, anyAnswersCount });
+      return NextResponse.json({ error: "Saved answers were detected, but could not be loaded for report generation. Please retry once or contact support." }, { status: 409 });
+    }
+    return NextResponse.json({ error: "No answers saved yet. Please answer the required questions before submitting." }, { status: 400 });
+  }
 
   let scoring;
   try {
     scoring = computePsychometricReportData({
     test: test as { title: string | null; scoring_config: Record<string, unknown> | null },
     questions: (questions ?? []) as Array<{ id: string; question_text: string; question_type: string; is_required: boolean; weight: number | null; min_scale_value: number | null; max_scale_value: number | null; metadata: Record<string, unknown> | null; scoring_config: Record<string, unknown> | null }>,
-    options: (options ?? []) as Array<{ id: string; question_id: string; score_value: number | null; metadata: Record<string, unknown> | null }>,
+    options: (options ?? []) as Array<{ id: string; question_id: string; option_text?: string | null; score_value: number | null; metadata: Record<string, unknown> | null }>,
     answers: (answers ?? []) as Array<{ id: string; question_id: string; option_id: string | null; selected_values: string[] | null; numeric_value: number | null; answer_text: string | null; awarded_score: number | string | null }>,
     enforceRequired: true,
     });
@@ -79,6 +86,8 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     if (error instanceof PsychometricScoringError) return NextResponse.json({ error: error.message }, { status: 400 });
     throw error;
   }
+
+  console.info("[psychometric-submit] scoring summary", { attemptId: attempt.id, answersLoaded: answers.length, totalScore: scoring.total, maxScore: scoring.max, percentage: scoring.percentage, snapshotLength: scoring.snapshot.length });
 
   for (const [answerId, awarded] of Object.entries(scoring.awardedScoresByAnswerId)) {
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
