@@ -51,8 +51,8 @@ function mkPdf(blocks: Block[]) {
     add(`0.81 0.91 1 rg BT /F1 10 Tf ${left} ${pageHeight - 72} Td (${esc(BRAND.tagline)}) Tj ET`);
     add(`1 1 1 rg BT /F2 12 Tf ${left} ${pageHeight - 92} Td (Psychometric Report) Tj ET`);
     add(`0.95 0.98 1 rg 460 ${pageHeight - 102} 90 70 re S`);
-    add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 70} Td (Logo: /brand/vidya-infinity-logo.png) Tj ET`);
-    add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 82} Td ((Fallback header shown if logo unavailable)) Tj ET`);
+    add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 70} Td (Vidya Infinity) Tj ET`);
+    add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 82} Td (Global Education Architects) Tj ET`);
   };
 
   const newPage = () => {

@@ -101,7 +101,8 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   if (scoring.totalScore > 0 && scoring.maxScore <= 0) return NextResponse.json({ error: "Report max score could not be calculated." }, { status: 500 });
   if (answers.length > 0 && scoring.answersSnapshot.length === 0) return NextResponse.json({ error: "Report answer snapshot could not be generated." }, { status: 500 });
 
-  const attemptUpdate: Record<string, unknown> = { status: "completed", submitted_at: new Date().toISOString(), completed_at: new Date().toISOString(), total_score: scoring.totalScore, max_score: scoring.maxScore, percentage_score: scoring.percentageScore, result_band: scoring.resultBand, report_id: report.id };
+  const now = new Date().toISOString();
+  const attemptUpdate: Record<string, unknown> = { status: "completed", submitted_at: now, completed_at: now, total_score: scoring.totalScore, max_score: scoring.maxScore, percentage_score: scoring.percentageScore, result_band: scoring.resultBand, report_id: report.id, updated_at: now };
   if (Object.prototype.hasOwnProperty.call(attempt, "score")) attemptUpdate.score = scoring.totalScore;
   const { error: updateError } = await admin.data.from("test_attempts").update(attemptUpdate).eq("id", attempt.id);
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });

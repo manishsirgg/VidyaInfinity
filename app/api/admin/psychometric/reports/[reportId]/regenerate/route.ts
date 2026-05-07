@@ -126,7 +126,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ reportId:
   }).eq("id", report.id);
   if (updateReportError) return NextResponse.json({ error: updateReportError.message }, { status: 500 });
 
-  const attemptUpdate: Record<string, unknown> = { status: "completed", total_score: totalScore, max_score: maxScore, percentage_score: percentageScore, result_band: resultBand, report_id: report.id };
+  const attemptUpdate: Record<string, unknown> = { status: "completed", total_score: totalScore, max_score: maxScore, percentage_score: percentageScore, result_band: resultBand, report_id: report.id, updated_at: now };
   if (Object.prototype.hasOwnProperty.call(attempt, "score")) attemptUpdate.score = totalScore;
   await admin.data.from("test_attempts").update(attemptUpdate).eq("id", attempt.id);
 
