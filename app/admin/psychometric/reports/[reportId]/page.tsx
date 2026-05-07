@@ -38,7 +38,7 @@ type AttemptRow = {
 
 type AnswerRow = { awarded_score: number | null; updated_at: string | null };
 
-type QuestionRow = { id: string; question_type: string; max_scale_value: number | null; scoring_config: Record<string, unknown> | null };
+type QuestionRow = { id: string; question_text: string; question_type: string; weight: number | null; max_scale_value: number | null; sort_order: number | null; metadata: Record<string, unknown> | null; is_active: boolean | null };
 type OptionRow = { question_id: string; score_value: number | null };
 
 const tone = (status?: string | null) => {
@@ -74,7 +74,7 @@ export default async function ReportDetail({ params }: { params: Promise<{ repor
     supabase.from("test_attempts").select("id,status,order_id,created_at,updated_at").eq("id", report.attempt_id).maybeSingle<AttemptRow>(),
     report.order_id ? supabase.from("psychometric_orders").select("id,payment_status").eq("id", report.order_id).maybeSingle<{ id: string; payment_status: string | null }>() : Promise.resolve({ data: null, error: null }),
     supabase.from("psychometric_answers").select("awarded_score,updated_at").eq("attempt_id", report.attempt_id).returns<AnswerRow[]>(),
-    supabase.from("psychometric_questions").select("id,question_type,max_scale_value,scoring_config").eq("test_id", report.test_id).eq("is_active", true).returns<QuestionRow[]>(),
+    supabase.from("psychometric_questions").select("id,question_text,question_type,weight,max_scale_value,sort_order,metadata,is_active").eq("test_id", report.test_id).eq("is_active", true).returns<QuestionRow[]>(),
     supabase.from("psychometric_question_options").select("question_id,score_value").returns<OptionRow[]>(),
   ]);
 
@@ -95,7 +95,7 @@ export default async function ReportDetail({ params }: { params: Promise<{ repor
     if (q.question_type === "single_choice" || q.question_type === "multiple_choice") {
       return options.some((o) => o.question_id === q.id && Number(o.score_value ?? 0) > 0);
     }
-    return Number((q.scoring_config as { max_score?: number } | null)?.max_score ?? 0) > 0;
+    return false;
   });
 
   const staleReasons: string[] = [];
