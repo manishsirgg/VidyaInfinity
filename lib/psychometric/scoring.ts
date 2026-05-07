@@ -142,29 +142,50 @@ export function computePsychometricReportData(params: {
     d.percentage = d.maxScore > 0 ? Number(((d.score / d.maxScore) * 100).toFixed(2)) : 0;
   });
 
-  const total = answers.reduce((sum, answer) => sum + Number(awardedScoresByAnswerId[answer.id] ?? 0), 0);
-  const percentageUnclamped = max > 0 ? (total / max) * 100 : 0;
-  const percentage = round2(clamp(percentageUnclamped, 0, 100));
+  const totalScore = round2(answers.reduce((sum, answer) => sum + Number(answer.awarded_score ?? 0), 0));
+  const maxScore = round2(max);
+  const percentageUnclamped = maxScore > 0 ? (totalScore / maxScore) * 100 : 0;
+  const percentageScore = round2(clamp(percentageUnclamped, 0, 100));
 
   console.info("[psychometric-scoring] max score summary", {
     testId,
     activeQuestionCount: questions.length,
     activeOptionCount: options.length,
     maxScoreByQuestion,
-    totalScore: round2(total),
-    finalMaxScore: round2(max),
-    percentageScore: percentage,
+    totalScore,
+    finalMaxScore: maxScore,
+    percentageScore,
     snapshotLength: answersSnapshot.length,
   });
 
-  if (questions.length > 0 && max <= 0 && total > 0) {
-    console.error("[psychometric-scoring] max score calculation failed", { testId, totalScore: total, finalMaxScore: max, maxScoreByQuestion });
+  console.log("[psychometric-scoring-final-debug]", {
+    answersCount: answers.length,
+    firstAnswerRaw: answers[0] ?? null,
+    totalScore,
+    activeQuestionCount: questions.length,
+    activeOptionCount: options.length,
+    maxScore,
+    percentageScore,
+    snapshotLength: answersSnapshot.length,
+  });
+
+  if (questions.length > 0 && maxScore <= 0 && totalScore > 0) {
+    console.error("[psychometric-scoring] max score calculation failed", { testId, totalScore, finalMaxScore: maxScore, maxScoreByQuestion });
     throw new PsychometricScoringError("Report max score could not be calculated.");
   }
   const scoringConfig = test.scoring_config as { bands?: { min: number; max: number; label: string }[] } | null;
   const bands = Array.isArray(scoringConfig?.bands) ? scoringConfig?.bands : undefined;
-  const resultBand = pickResultBand(percentage, bands);
-  const content = buildReportContent({ testTitle: test.title ?? "Psychometric Test", percentage, resultBand });
+  const resultBand = pickResultBand(percentageScore, bands);
+  const content = buildReportContent({ testTitle: test.title ?? "Psychometric Test", percentage: percentageScore, resultBand });
 
-  return { max: round2(max), total: round2(total), percentage, resultBand, content, dimension, answersSnapshot, awardedScoresByAnswerId };
+  return {
+    totalScore,
+    maxScore,
+    percentageScore,
+    answersSnapshot,
+    resultBand,
+    content,
+    dimension,
+    awardedScoresByAnswerId,
+  };
 }
