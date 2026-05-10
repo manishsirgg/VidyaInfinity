@@ -14,7 +14,7 @@ const BRAND = {
   phone: "+91-7828199500",
 };
 
-type LogoImage = { width: number; height: number; compressedRgb: Buffer };
+type LogoImage = { width: number; height: number; compressedRgb: Buffer; usableInHeader: boolean };
 
 function esc(s: string) {
   return s.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
@@ -60,30 +60,28 @@ function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
 
   const drawHeader = () => {
     add(`0.06 0.1 0.24 rg 0 ${pageHeight - 130} ${pageWidth} 130 re f`);
-    add(`1 1 1 rg BT /F2 15 Tf ${left} ${pageHeight - 55} Td (${esc(BRAND.name)}) Tj ET`);
+    add(`1 1 1 rg BT /F2 18 Tf ${left} ${pageHeight - 52} Td (${esc(BRAND.name)}) Tj ET`);
     add(`0.81 0.91 1 rg BT /F1 10 Tf ${left} ${pageHeight - 72} Td (${esc(BRAND.tagline)}) Tj ET`);
     add(`1 1 1 rg BT /F2 12 Tf ${left} ${pageHeight - 92} Td (Psychometric Report) Tj ET`);
 
-    const boxX = 410;
-    const boxY = pageHeight - 122;
-    const boxW = 136;
-    const boxH = 88;
-    const pad = 10;
-    add(`0.99 0.99 0.99 rg ${boxX} ${boxY} ${boxW} ${boxH} re f`);
-    add(`0.86 0.89 0.95 RG 1 w ${boxX} ${boxY} ${boxW} ${boxH} re S`);
+    const rightAreaX = 430;
+    const rightAreaY = pageHeight - 118;
+    const rightAreaW = 130;
+    const rightAreaH = 90;
 
-    if (logoImage) {
-      const fitW = boxW - pad * 2;
-      const fitH = boxH - pad * 2;
-      const ratio = Math.min(fitW / logoImage.width, fitH / logoImage.height);
-      const drawW = Math.max(1, logoImage.width * ratio);
+    if (logoImage?.usableInHeader) {
+      const targetW = 100;
+      const ratio = targetW / logoImage.width;
+      const drawW = Math.max(1, targetW);
       const drawH = Math.max(1, logoImage.height * ratio);
-      const drawX = boxX + (boxW - drawW) / 2;
-      const drawY = boxY + (boxH - drawH) / 2;
+      const drawX = rightAreaX + (rightAreaW - drawW) / 2;
+      const drawY = rightAreaY + (rightAreaH - drawH) / 2;
+      add(`q 1 1 1 rg 0.1 0.16 0.3 RG 0.6 w ${rightAreaX} ${rightAreaY} ${rightAreaW} ${rightAreaH} re S Q`);
       add(`q ${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${drawX.toFixed(2)} ${drawY.toFixed(2)} cm /Im1 Do Q`);
     } else {
-      add(`0.2 0.25 0.35 rg BT /F2 9 Tf ${boxX + 12} ${pageHeight - 70} Td (${esc(BRAND.name)}) Tj ET`);
-      add(`0.28 0.33 0.42 rg BT /F1 8 Tf ${boxX + 12} ${pageHeight - 83} Td (${esc(BRAND.tagline)}) Tj ET`);
+      add(`q 1 1 1 rg 0.1 0.16 0.3 RG 0.6 w ${rightAreaX} ${rightAreaY} ${rightAreaW} ${rightAreaH} re B Q`);
+      add(`0.12 0.19 0.34 rg BT /F2 11 Tf ${rightAreaX + 10} ${pageHeight - 74} Td (VIDYA INFINITY) Tj ET`);
+      add(`0.2 0.27 0.41 rg BT /F1 7.5 Tf ${rightAreaX + 10} ${pageHeight - 88} Td (${esc(BRAND.tagline)}) Tj ET`);
     }
   };
 
@@ -181,9 +179,24 @@ function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
 async function loadLogoImage(): Promise<LogoImage | null> {
   const logoPath = path.join(process.cwd(), "public", "brand", "vidyainfinitylogo.png");
   if (!fs.existsSync(logoPath)) return null;
+
   try {
-    const { data, info } = await sharp(logoPath).ensureAlpha().removeAlpha().raw().toBuffer({ resolveWithObject: true });
-    return { width: info.width, height: info.height, compressedRgb: deflateSync(data) };
+    const image = sharp(logoPath).ensureAlpha().flatten({ background: "#ffffff" });
+    const metadata = await image.metadata();
+    const width = metadata.width ?? 0;
+    const height = metadata.height ?? 0;
+    if (!width || !height) return null;
+
+    const aspectRatio = width / height;
+    const usableInHeader = width >= 220 && aspectRatio >= 0.45 && aspectRatio <= 2.8;
+    const { data, info } = await image.removeAlpha().raw().toBuffer({ resolveWithObject: true });
+
+    return {
+      width: info.width,
+      height: info.height,
+      compressedRgb: deflateSync(data),
+      usableInHeader,
+    };
   } catch {
     return null;
   }
