@@ -4,6 +4,8 @@ import Link from "next/link";
 import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+export const dynamic = "force-dynamic";
+
 type InstituteRecord = {
   id: string;
   user_id: string | null;
