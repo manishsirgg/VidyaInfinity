@@ -37,6 +37,13 @@ function wrapText(text: string, maxChars = 88): string[] {
 
 type Block = { type: "title" | "text" | "bullet"; text: string };
 
+function toAsciiListText(value: string) {
+  return String(value || "")
+    .replace(/^[\s]*(?:â€¢|•|●|▪|◦|·)\s*/g, "")
+    .replace(/\s*(?:â€¢|•|●|▪|◦|·)\s*/g, " - ")
+    .trim();
+}
+
 function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
   const pageWidth = 595;
   const pageHeight = 842;
@@ -57,22 +64,26 @@ function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
     add(`0.81 0.91 1 rg BT /F1 10 Tf ${left} ${pageHeight - 72} Td (${esc(BRAND.tagline)}) Tj ET`);
     add(`1 1 1 rg BT /F2 12 Tf ${left} ${pageHeight - 92} Td (Psychometric Report) Tj ET`);
 
-    const boxX = 455;
-    const boxY = pageHeight - 108;
-    const boxW = 96;
-    const boxH = 72;
-    add(`0.95 0.98 1 rg ${boxX} ${boxY} ${boxW} ${boxH} re S`);
+    const boxX = 410;
+    const boxY = pageHeight - 122;
+    const boxW = 136;
+    const boxH = 88;
+    const pad = 10;
+    add(`0.99 0.99 0.99 rg ${boxX} ${boxY} ${boxW} ${boxH} re f`);
+    add(`0.86 0.89 0.95 RG 1 w ${boxX} ${boxY} ${boxW} ${boxH} re S`);
 
     if (logoImage) {
-      const ratio = Math.min(boxW / logoImage.width, boxH / logoImage.height);
+      const fitW = boxW - pad * 2;
+      const fitH = boxH - pad * 2;
+      const ratio = Math.min(fitW / logoImage.width, fitH / logoImage.height);
       const drawW = Math.max(1, logoImage.width * ratio);
       const drawH = Math.max(1, logoImage.height * ratio);
       const drawX = boxX + (boxW - drawW) / 2;
       const drawY = boxY + (boxH - drawH) / 2;
       add(`q ${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${drawX.toFixed(2)} ${drawY.toFixed(2)} cm /Im1 Do Q`);
     } else {
-      add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 70} Td (${esc(BRAND.name)}) Tj ET`);
-      add(`0.95 0.98 1 rg BT /F1 8 Tf 468 ${pageHeight - 82} Td (${esc(BRAND.tagline)}) Tj ET`);
+      add(`0.2 0.25 0.35 rg BT /F2 9 Tf ${boxX + 12} ${pageHeight - 70} Td (${esc(BRAND.name)}) Tj ET`);
+      add(`0.28 0.33 0.42 rg BT /F1 8 Tf ${boxX + 12} ${pageHeight - 83} Td (${esc(BRAND.tagline)}) Tj ET`);
     }
   };
 
@@ -100,7 +111,7 @@ function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
     }
 
     const prefix = block.type === "bullet" ? "- " : "";
-    const wrapped = wrapText(prefix + block.text);
+    const wrapped = wrapText(prefix + toAsciiListText(block.text));
     for (const line of wrapped) {
       ensureSpace(14);
       add(`0.18 0.2 0.24 rg BT /F1 10 Tf ${left} ${y} Td (${esc(line)}) Tj ET`);
@@ -191,9 +202,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ reportId: 
   if (!report) return NextResponse.json({ error: "Report not found" }, { status: 404 });
   if (auth.profile.role !== "admin" && report.user_id !== auth.profile.id) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const strengths = Array.isArray(report.strengths) ? report.strengths.map((s: unknown) => String(s)) : String(report.strengths ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
-  const improvements = Array.isArray(report.improvement_areas) ? report.improvement_areas.map((s: unknown) => String(s)) : String(report.improvement_areas ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
-  const recommendations = Array.isArray(report.recommendations) ? report.recommendations.map((s: unknown) => String(s)) : String(report.recommendations ?? "").split(",").map((s: string) => s.trim()).filter(Boolean);
+  const strengths = Array.isArray(report.strengths) ? report.strengths.map((s: unknown) => toAsciiListText(String(s))) : String(report.strengths ?? "").split(",").map((s: string) => toAsciiListText(s)).filter(Boolean);
+  const improvements = Array.isArray(report.improvement_areas) ? report.improvement_areas.map((s: unknown) => toAsciiListText(String(s))) : String(report.improvement_areas ?? "").split(",").map((s: string) => toAsciiListText(s)).filter(Boolean);
+  const recommendations = Array.isArray(report.recommendations) ? report.recommendations.map((s: unknown) => toAsciiListText(String(s))) : String(report.recommendations ?? "").split(",").map((s: string) => toAsciiListText(s)).filter(Boolean);
   const dims = report.dimension_scores && typeof report.dimension_scores === "object" ? Object.entries(report.dimension_scores as Record<string, { score: number; maxScore: number; percentage: number }>) : [];
 
   const blocks: Block[] = [
