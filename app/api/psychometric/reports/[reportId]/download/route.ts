@@ -1,7 +1,3 @@
-import fs from "fs";
-import path from "path";
-import { deflateSync } from "zlib";
-import sharp from "sharp";
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -13,8 +9,6 @@ const BRAND = {
   email: "infovidyainfinity@gmail.com",
   phone: "+91-7828199500",
 };
-
-type LogoImage = { width: number; height: number; compressedRgb: Buffer; usableInHeader: boolean };
 
 function esc(s: string) {
   return s.replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
@@ -44,7 +38,7 @@ function toAsciiListText(value: string) {
     .trim();
 }
 
-function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
+function mkPdf(blocks: Block[]) {
   const pageWidth = 595;
   const pageHeight = 842;
   const bottomMargin = 58;
@@ -69,20 +63,10 @@ function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
     const rightAreaW = 130;
     const rightAreaH = 90;
 
-    if (logoImage?.usableInHeader) {
-      const targetW = 100;
-      const ratio = targetW / logoImage.width;
-      const drawW = Math.max(1, targetW);
-      const drawH = Math.max(1, logoImage.height * ratio);
-      const drawX = rightAreaX + (rightAreaW - drawW) / 2;
-      const drawY = rightAreaY + (rightAreaH - drawH) / 2;
-      add(`q 1 1 1 rg 0.1 0.16 0.3 RG 0.6 w ${rightAreaX} ${rightAreaY} ${rightAreaW} ${rightAreaH} re S Q`);
-      add(`q ${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${drawX.toFixed(2)} ${drawY.toFixed(2)} cm /Im1 Do Q`);
-    } else {
-      add(`q 1 1 1 rg 0.1 0.16 0.3 RG 0.6 w ${rightAreaX} ${rightAreaY} ${rightAreaW} ${rightAreaH} re B Q`);
-      add(`0.12 0.19 0.34 rg BT /F2 11 Tf ${rightAreaX + 10} ${pageHeight - 74} Td (VIDYA INFINITY) Tj ET`);
-      add(`0.2 0.27 0.41 rg BT /F1 7.5 Tf ${rightAreaX + 10} ${pageHeight - 88} Td (${esc(BRAND.tagline)}) Tj ET`);
-    }
+    // The full Vidya Infinity logo asset is intentionally not embedded in PDF header because it does not render cleanly at small PDF size. Text-only branding is used for premium readability.
+    add(`q 0.08 0.14 0.27 rg 0.86 0.77 0.56 RG 0.8 w ${rightAreaX} ${rightAreaY} ${rightAreaW} ${rightAreaH} re B Q`);
+    add(`0.98 0.98 0.98 rg BT /F2 11 Tf ${rightAreaX + 10} ${pageHeight - 74} Td (VIDYA INFINITY) Tj ET`);
+    add(`0.9 0.84 0.62 rg BT /F1 7.5 Tf ${rightAreaX + 10} ${pageHeight - 88} Td (${esc(BRAND.tagline)}) Tj ET`);
   };
 
   const newPage = () => {
@@ -126,7 +110,6 @@ function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
   const contentObjectIds: number[] = [];
   const fontRegularId = 3 + pages.length * 2;
   const fontBoldId = fontRegularId + 1;
-  const imageId = logoImage ? fontBoldId + 1 : null;
 
   for (let i = 0; i < pages.length; i += 1) {
     pageObjectIds.push(3 + i * 2);
@@ -143,8 +126,7 @@ function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
       `0.35 0.37 0.42 rg BT /F1 8 Tf 520 10 Td (${esc(`Page ${i + 1} of ${pages.length}`)}) Tj ET`,
     ];
     const stream = [...pages[i], ...footer].join("\n");
-    const xobj = logoImage && imageId ? ` /XObject << /Im1 ${imageId} 0 R >>` : "";
-    objects.push(`${pageObjectIds[i]} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents ${contentObjectIds[i]} 0 R /Resources << /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >>${xobj} >> >>\nendobj\n`);
+    objects.push(`${pageObjectIds[i]} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents ${contentObjectIds[i]} 0 R /Resources << /Font << /F1 ${fontRegularId} 0 R /F2 ${fontBoldId} 0 R >> >> >>\nendobj\n`);
     objects.push(`${contentObjectIds[i]} 0 obj\n<< /Length ${Buffer.byteLength(stream, "utf8")} >>\nstream\n${stream}\nendstream\nendobj\n`);
   }
 
@@ -158,55 +140,19 @@ function mkPdf(blocks: Block[], logoImage: LogoImage | null) {
     pdf += object;
   }
 
-  let imageSection = Buffer.alloc(0);
-  if (logoImage && imageId) {
-    const imageObjPrefix = `${imageId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${logoImage.width} /Height ${logoImage.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length ${logoImage.compressedRgb.length} >>\nstream\n`;
-    const imageObjSuffix = "\nendstream\nendobj\n";
-    const prefixBuffer = Buffer.from(imageObjPrefix, "utf8");
-    const suffixBuffer = Buffer.from(imageObjSuffix, "utf8");
-    offsets.push(Buffer.byteLength(pdf, "utf8") + imageSection.length);
-    imageSection = Buffer.concat([imageSection, prefixBuffer, logoImage.compressedRgb, suffixBuffer]);
-  }
-
-  const beforeXref = Buffer.concat([Buffer.from(pdf, "utf8"), imageSection]);
+  const beforeXref = Buffer.from(pdf, "utf8");
   const xrefStart = beforeXref.length;
-  let xref = `xref\n0 ${objects.length + 1 + (logoImage ? 1 : 0)}\n0000000000 65535 f \n`;
-  for (let i = 1; i <= objects.length + (logoImage ? 1 : 0); i += 1) xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  xref += `trailer\n<< /Size ${objects.length + 1 + (logoImage ? 1 : 0)} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+  let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i <= objects.length; i += 1) xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  xref += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
   return Buffer.concat([beforeXref, Buffer.from(xref, "utf8")]);
 }
 
-async function loadLogoImage(): Promise<LogoImage | null> {
-  const logoPath = path.join(process.cwd(), "public", "brand", "vidyainfinitylogo.png");
-  if (!fs.existsSync(logoPath)) return null;
-
-  try {
-    const image = sharp(logoPath).ensureAlpha().flatten({ background: "#ffffff" });
-    const metadata = await image.metadata();
-    const width = metadata.width ?? 0;
-    const height = metadata.height ?? 0;
-    if (!width || !height) return null;
-
-    const aspectRatio = width / height;
-    const usableInHeader = width >= 220 && aspectRatio >= 0.45 && aspectRatio <= 2.8;
-    const { data, info } = await image.removeAlpha().raw().toBuffer({ resolveWithObject: true });
-
-    return {
-      width: info.width,
-      height: info.height,
-      compressedRgb: deflateSync(data),
-      usableInHeader,
-    };
-  } catch {
-    return null;
-  }
-}
 
 export async function GET(_: Request, { params }: { params: Promise<{ reportId: string }> }) {
   const auth = await requireApiUser();
   if ("error" in auth) return auth.error;
   const { reportId } = await params;
-  const logoImage = await loadLogoImage();
 
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
@@ -244,7 +190,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ reportId: 
     { type: "text", text: report.disclaimer ?? "This report is for educational and guidance purposes only. It is not a medical, psychiatric, or clinical diagnosis." },
   ];
 
-  const pdf = mkPdf(blocks, logoImage);
+  const pdf = mkPdf(blocks);
   return new NextResponse(pdf, {
     headers: {
       "Content-Type": "application/pdf",
