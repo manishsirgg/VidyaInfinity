@@ -26,6 +26,12 @@ type PsychometricReportRow = {
   profiles?: { full_name: string | null } | null;
 };
 
+type DimensionScoreItem = {
+  name: string;
+  score: number;
+  maxScore: number;
+};
+
 const safeNumber = (value: unknown) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -70,6 +76,42 @@ const safeObject = (value: unknown): Record<string, unknown> => {
 
 const sectionCard =
   "rounded-2xl border border-slate-200/80 bg-white/95 p-5 shadow-sm backdrop-blur sm:p-6";
+
+const normalizeDimensionScores = (value: unknown): DimensionScoreItem[] => {
+  const normalized: DimensionScoreItem[] = [];
+  const toFinite = (input: unknown) => {
+    const parsed = Number(input);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const row = safeObject(entry);
+      const name = String(row.name ?? row.dimension ?? row.label ?? "").trim();
+      if (!name) continue;
+      const score = toFinite(row.score ?? row.value);
+      const maxScore = toFinite(row.maxScore ?? row.max_score ?? row.max ?? 100);
+      normalized.push({ name, score, maxScore });
+    }
+    return normalized;
+  }
+
+  const mapObject = safeObject(value);
+  for (const [rawName, rawValue] of Object.entries(mapObject)) {
+    const name = String(rawName).trim();
+    if (!name) continue;
+    if (typeof rawValue === "number" || typeof rawValue === "string") {
+      normalized.push({ name, score: toFinite(rawValue), maxScore: 100 });
+      continue;
+    }
+    const valueObject = safeObject(rawValue);
+    const score = toFinite(valueObject.score ?? valueObject.value);
+    const maxScore = toFinite(valueObject.maxScore ?? valueObject.max_score ?? valueObject.max ?? 100);
+    normalized.push({ name, score, maxScore });
+  }
+
+  return normalized;
+};
 
 export default async function Page({ params }: { params: Promise<{ reportId: string }> }) {
   const { reportId } = await params;
@@ -118,8 +160,7 @@ export default async function Page({ params }: { params: Promise<{ reportId: str
     );
   }
 
-  const dimObj = safeObject(report.dimension_scores);
-  const dim = Object.entries(dimObj);
+  const dimensionItems = normalizeDimensionScores(report.dimension_scores);
   const percentage = Math.min(100, Math.max(0, safeNumber(report.percentage_score)));
   const strengths = safeArray(report.strengths);
   const improvementAreas = safeArray(report.improvement_areas);
@@ -190,12 +231,14 @@ export default async function Page({ params }: { params: Promise<{ reportId: str
           <section className={sectionCard}>
             <h2 className="text-lg font-semibold text-slate-900">Dimension Scores</h2>
             <ul className="mt-4 space-y-3">
-              {(dim.length ? dim : [[FALLBACK_TEXT, {}]]).map(([name, value]) => {
-                const score = safeNumber(safeObject(value).score);
-                const maxScore = safeNumber(safeObject(value).maxScore);
+              {(dimensionItems.length ? dimensionItems : [{ name: FALLBACK_TEXT, score: 0, maxScore: 100 }]).map((item, index) => {
+                const name = String(item.name).trim();
+                const score = Number.isFinite(item.score) ? item.score : 0;
+                const maxScore = Number.isFinite(item.maxScore) && item.maxScore > 0 ? item.maxScore : 100;
                 const pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+                const key = name || `dimension-${index}`;
                 return (
-                  <li key={name} className="rounded-xl border border-slate-200 p-3">
+                  <li key={key} className="rounded-xl border border-slate-200 p-3">
                     <div className="flex items-center justify-between gap-2 text-sm">
                       <span className="font-medium text-slate-800">{name.replaceAll("_", " ")}</span>
                       <span className="text-slate-600">
