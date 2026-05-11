@@ -538,7 +538,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: reconciled.error }, { status: 500 });
       }
 
-      await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", ensuredCourse.id);
 
       console.info("[course/create-order] free course reconciled", { studentId, courseId: ensuredCourse.id, orderRecordId: insertedOrder.id });
 
