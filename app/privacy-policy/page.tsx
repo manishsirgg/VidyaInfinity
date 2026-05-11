@@ -28,7 +28,7 @@ export default function PrivacyPolicyPage() {
           <li>Identity data: name, profile details, role (student/institute/admin), organization details.</li>
           <li>Contact data: email, phone, WhatsApp number, city/state/country, and address details where provided.</li>
           <li>Account and authentication data: login credentials, password reset metadata, session/device identifiers.</li>
-          <li>Course activity data: viewed/saved courses, cart items, purchase history, and enrollment records.</li>
+          <li>Course activity data: viewed/saved courses, purchase history, and enrollment records.</li>
           <li>Financial/payment data: transaction references from payment providers (we do not store full card data).</li>
           <li>Uploaded content: media files, profile images, KYC/compliance documents, blog media, and support requests.</li>
           <li>Assessment data: psychometric test attempts, responses, scores, and generated reports.</li>

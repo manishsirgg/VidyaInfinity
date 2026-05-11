@@ -38,9 +38,6 @@ export default async function SavedCoursesPage() {
           <p className="mt-1 text-sm text-slate-600">Keep courses and webinars here for quick access later.</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/student/cart" className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700">
-            View Cart
-          </Link>
           <Link href="/courses" className="rounded bg-brand-600 px-3 py-2 text-sm text-white">
             Browse Courses
           </Link>
