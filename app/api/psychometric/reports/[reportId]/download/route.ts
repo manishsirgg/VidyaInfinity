@@ -187,7 +187,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ reportId: 
     { type: "title", text: "Recommendations" },
     ...((recommendations.length ? recommendations : ["Not available"]).map((s: string) => ({ type: "bullet" as const, text: s }))),
     { type: "title", text: "Disclaimer" },
-    { type: "text", text: report.disclaimer ?? "This report is for educational and guidance purposes only. It is not a medical, psychiatric, or clinical diagnosis." },
+    { type: "text", text: ((report.report_json && typeof report.report_json === "object" && !Array.isArray(report.report_json) ? (report.report_json as Record<string, unknown>).disclaimer : null) ?? "This report is for educational and guidance purposes only. It is not a medical, psychiatric, or clinical diagnosis.") as string },
   ];
 
   const pdf = mkPdf(blocks);

@@ -62,7 +62,8 @@ export async function finalizePaidPsychometricOrder({
       user_id: order.user_id,
       test_id: order.test_id,
       order_id: order.id,
-      status: "pending",
+      status: "in_progress",
+      started_at: now,
       metadata: {
         source,
         psychometric_order_id: order.id,
