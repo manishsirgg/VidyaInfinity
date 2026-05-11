@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 export function SavedCourseActions({ courseId, webinarId, itemType = "course" }: { courseId?: string; webinarId?: string; itemType?: "course" | "webinar" }) {
-  const [busy, setBusy] = useState<"none" | "save" | "cart">("none");
+  const [busy, setBusy] = useState<"none" | "save">("none");
   const [message, setMessage] = useState("");
 
   async function removeSaved() {
@@ -27,39 +27,8 @@ export function SavedCourseActions({ courseId, webinarId, itemType = "course" }:
     setMessage(`Removed from saved ${itemType === "course" ? "list" : "webinars"}. Refresh to update the list.`);
   }
 
-  async function addToCart() {
-    setBusy("cart");
-    setMessage("");
-
-    const response = await fetch("/api/student/cart", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ courseId }),
-    });
-
-    const body = await response.json().catch(() => null);
-    setBusy("none");
-
-    if (!response.ok) {
-      setMessage(body?.error ?? "Unable to add item to cart.");
-      return;
-    }
-
-    setMessage("Added to checkout cart.");
-  }
-
   return (
     <div className="mt-3 flex flex-wrap gap-2">
-      {itemType === "course" ? (
-        <button
-          type="button"
-          onClick={addToCart}
-          disabled={busy !== "none"}
-          className="rounded bg-brand-600 px-3 py-2 text-xs text-white disabled:opacity-60"
-        >
-          {busy === "cart" ? "Adding..." : "Add to Cart"}
-        </button>
-      ) : null}
       <button
         type="button"
         onClick={removeSaved}
