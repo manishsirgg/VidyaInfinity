@@ -6,6 +6,7 @@ import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications
 import { deliverWebinarAccess } from "@/lib/webinars/access-delivery";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
+import { finalizePaidPsychometricOrder } from "@/lib/payments/psychometric-finalize";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 function resolveAccessEndAt(startAtIso: string, durationValue: number | null, durationUnit: string | null) {
@@ -906,72 +907,13 @@ export async function reconcilePsychometricOrderPaid({
     }
   }
 
-  const { data: existingAttempt } = await supabase
-    .from("test_attempts")
-    .select("id,status")
-    .eq("order_id", canonicalPaidOrderId)
-    .in("status", ["not_started", "unlocked", "in_progress", "submitted"])
-    .limit(1)
-    .maybeSingle<{ id: string; status: string | null }>();
-
-  if (existingAttempt) {
-    console.info("[payments/reconcile] entitlement_row_found", {
-      event: "entitlement_row_found",
-      orderId: canonicalPaidOrderId,
-      entitlementId: existingAttempt.id,
-      userId: order.user_id,
-      testId: order.test_id,
-      source,
-    });
-  }
-
-  let attemptId = existingAttempt?.id ?? null;
-  if (!attemptId) {
-    const { data: insertedAttempt, error: attemptInsertError } = await supabase
-      .from("test_attempts")
-      .insert({
-        user_id: order.user_id,
-        test_id: order.test_id,
-        order_id: canonicalPaidOrderId,
-        status: "not_started",
-        started_at: null,
-      })
-      .select("id")
-      .single<{ id: string }>();
-    if (attemptInsertError || !insertedAttempt) {
-      console.error("[payments/reconcile] reconciliation_failed", {
-        event: "reconciliation_failed",
-        orderId: canonicalPaidOrderId,
-        razorpayOrderId,
-        razorpayPaymentId,
-        source,
-        error: attemptInsertError?.message ?? "Failed to create attempt",
-      });
-      return { error: attemptInsertError?.message ?? "Failed to create attempt" };
-    }
-    attemptId = insertedAttempt.id;
-  }
-
-  const { error: attemptLinkError } = await supabase
-    .from("psychometric_orders")
-    .update({ attempt_id: attemptId, updated_at: now })
-    .eq("id", canonicalPaidOrderId)
-    .is("attempt_id", null);
-  if (attemptLinkError) return { error: attemptLinkError.message };
-
-  console.info("[payments/reconcile] entitlement_row_updated", {
-    event: existingAttempt ? "entitlement_row_updated" : "entitlement_row_created",
-    orderId: canonicalPaidOrderId,
-    userId: order.user_id,
-    testId: order.test_id,
-    source,
-  });
+  const finalized = await finalizePaidPsychometricOrder({ supabase, psychometricOrderId: canonicalPaidOrderId, source });
+  if (finalized.error) return { error: finalized.error };
 
   const { data: convergedAttempt, error: convergedAttemptError } = await supabase
     .from("test_attempts")
     .select("id,status")
-        .eq("order_id", canonicalPaidOrderId)
-    .in("status", ["not_started", "unlocked", "in_progress", "submitted", "completed"])
+    .eq("id", finalized.attemptId)
     .limit(1)
     .maybeSingle<{ id: string; status: string | null }>();
 

@@ -554,10 +554,15 @@ export async function POST(request: Request) {
       }
     }
 
+    const psychometricLookupClauses = [`razorpay_order_id.eq.${razorpayOrderId}`];
+    if (notePsychometricOrderId) psychometricLookupClauses.push(`id.eq.${notePsychometricOrderId}`);
+    else if (noteOrderId) psychometricLookupClauses.push(`id.eq.${noteOrderId}`);
+
     const { data: psychometricOrder, error: psychometricOrderError } = await admin.data
       .from("psychometric_orders")
-      .select("id,user_id,test_id,final_paid_amount,currency,payment_status")
-      .eq("razorpay_order_id", razorpayOrderId)
+      .select("id,user_id,test_id,final_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id")
+      .or(psychometricLookupClauses.join(","))
+      .limit(1)
       .maybeSingle();
 
     if (psychometricOrderError) {
@@ -582,6 +587,9 @@ export async function POST(request: Request) {
       if (reconciled.error) {
         return NextResponse.json({ ok: false, code: "PSYCHOMETRIC_RECONCILE_FAILED", error: reconciled.error }, { status: 202 });
       }
+
+      const finalized = await finalizePaidPsychometricOrder({ supabase: admin.data, psychometricOrderId: psychometricOrder.id, source: "webhook" });
+      if (finalized.error) return NextResponse.json({ ok: false, code: "PSYCHOMETRIC_FINALIZE_FAILED", error: finalized.error }, { status: 202 });
 
       await updateWebhookLogBestEffort({
         admin: admin.data,
