@@ -225,7 +225,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: finalized.error }, { status: 500 });
     }
 
-    await admin.data.from("student_cart_items").delete().eq("student_id", studentId).eq("course_id", order.course_id);
 
     const redirectTo = buildCoursePaymentRedirect({ state: "success", orderId, paymentId });
     console.info("[course/verify] exit", {
