@@ -7,6 +7,7 @@ import { applyRefundToInstitutePayout } from "@/lib/payments/institute-payout-re
 import { mapRazorpayRefundStatus } from "@/lib/payments/refunds";
 import { reconcileRefundAccessAndOrderState } from "@/lib/payments/refund-reconciliation";
 import { reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
+import { finalizePaidPsychometricOrder } from "@/lib/payments/psychometric-finalize";
 import { finalizeCoursePaymentFromRazorpay, finalizeWebinarPaymentFromRazorpay } from "@/lib/payments/finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { activateFeaturedSubscriptionFromPaidOrder, fetchRazorpayPaymentForOrder } from "@/lib/featured-reconciliation";
@@ -108,6 +109,18 @@ export async function POST(request: Request) {
     const razorpayOrderId = paymentEntity?.order_id ?? orderEntity?.id ?? null;
     let razorpayPaymentId = paymentEntity?.id ?? refundEntity?.payment_id ?? null;
     const paymentNotes = (paymentEntity?.notes ?? orderEntity?.notes ?? {}) as Record<string, unknown>;
+    const notePsychometricOrderId =
+      typeof paymentNotes.psychometric_order_id === "string"
+        ? paymentNotes.psychometric_order_id
+        : typeof paymentNotes.psychometricOrderId === "string"
+          ? paymentNotes.psychometricOrderId
+          : typeof paymentNotes.local_order_id === "string"
+            ? paymentNotes.local_order_id
+            : typeof paymentNotes.localOrderId === "string"
+              ? paymentNotes.localOrderId
+              : typeof paymentNotes.order_id === "string"
+                ? paymentNotes.order_id
+                : null;
     const noteCourseOrderId = typeof paymentNotes.course_order_id === "string" ? paymentNotes.course_order_id : null;
     const noteWebinarOrderId = typeof paymentNotes.webinar_order_id === "string" ? paymentNotes.webinar_order_id : null;
     const noteOrderId = typeof paymentNotes.order_id === "string" ? paymentNotes.order_id : null;
@@ -119,6 +132,7 @@ export async function POST(request: Request) {
       razorpay_order_id: razorpayOrderId,
       payment_id: razorpayPaymentId,
       note_order_id: noteOrderId,
+      note_psychometric_order_id: notePsychometricOrderId,
       note_course_order_id: noteCourseOrderId,
       note_webinar_order_id: noteWebinarOrderId,
     });
@@ -554,10 +568,15 @@ export async function POST(request: Request) {
       }
     }
 
+    const psychometricLookupClauses = [`razorpay_order_id.eq.${razorpayOrderId}`];
+    if (notePsychometricOrderId) psychometricLookupClauses.push(`id.eq.${notePsychometricOrderId}`);
+    else if (noteOrderId) psychometricLookupClauses.push(`id.eq.${noteOrderId}`);
+
     const { data: psychometricOrder, error: psychometricOrderError } = await admin.data
       .from("psychometric_orders")
-      .select("id,user_id,test_id,final_paid_amount,currency,payment_status")
-      .eq("razorpay_order_id", razorpayOrderId)
+      .select("id,user_id,test_id,final_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id")
+      .or(psychometricLookupClauses.join(","))
+      .limit(1)
       .maybeSingle();
 
     if (psychometricOrderError) {
@@ -582,6 +601,9 @@ export async function POST(request: Request) {
       if (reconciled.error) {
         return NextResponse.json({ ok: false, code: "PSYCHOMETRIC_RECONCILE_FAILED", error: reconciled.error }, { status: 202 });
       }
+
+      const finalized = await finalizePaidPsychometricOrder({ supabase: admin.data, psychometricOrderId: psychometricOrder.id, source: "webhook" });
+      if (finalized.error) return NextResponse.json({ ok: false, code: "PSYCHOMETRIC_FINALIZE_FAILED", error: finalized.error }, { status: 202 });
 
       await updateWebhookLogBestEffort({
         admin: admin.data,

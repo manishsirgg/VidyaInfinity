@@ -4,6 +4,7 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient } from "@/lib/payments/razorpay";
 import { reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
+import { finalizePaidPsychometricOrder } from "@/lib/payments/psychometric-finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 function normalize(value: string | null | undefined) {
@@ -15,6 +16,18 @@ function isUuid(value: string | null | undefined) {
     value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
   );
 }
+
+type PsychometricOrderStatusRow = {
+  id: string;
+  user_id: string;
+  test_id: string;
+  payment_status: string;
+  final_amount: number;
+  currency: string;
+  paid_at: string | null;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+};
 
 export async function GET(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "psychometric"]);
@@ -36,7 +49,7 @@ export async function GET(request: Request) {
 
   let query = admin.data
     .from("psychometric_orders")
-    .select("id,user_id,test_id,payment_status,final_paid_amount,currency,paid_at,razorpay_order_id,razorpay_payment_id")
+    .select("id,user_id,test_id,payment_status,final_amount,currency,paid_at,razorpay_order_id,razorpay_payment_id")
     .eq("user_id", auth.profile.id)
     .limit(1);
 
@@ -48,17 +61,20 @@ export async function GET(request: Request) {
     query = query.eq("razorpay_payment_id", paymentId);
   }
 
-  const { data: order } = await query.maybeSingle<{
-    id: string;
-    user_id: string;
-    test_id: string;
-    payment_status: string;
-    final_paid_amount: number;
-    currency: string;
-    paid_at: string | null;
-    razorpay_order_id: string | null;
-    razorpay_payment_id: string | null;
-  }>();
+  const { data: initialOrder } = await query.maybeSingle<PsychometricOrderStatusRow>();
+
+  let order = initialOrder;
+
+  if (!order && paymentId) {
+    const { data: byPaymentId } = await admin.data
+      .from("psychometric_orders")
+      .select("id,user_id,test_id,payment_status,final_amount,currency,paid_at,razorpay_order_id,razorpay_payment_id,attempt_id")
+      .eq("user_id", auth.profile.id)
+      .eq("razorpay_payment_id", paymentId)
+      .limit(1)
+      .maybeSingle<PsychometricOrderStatusRow>();
+    if (byPaymentId) order = byPaymentId;
+  }
 
   if (!order) {
     if (paymentId) {
@@ -92,7 +108,7 @@ export async function GET(request: Request) {
         }
       }
     }
-    return NextResponse.json({ ok: false, error: "Psychometric order not found" }, { status: 404 });
+    return NextResponse.json({ ok: false, state: "missing", code: "PSYCHOMETRIC_ORDER_MISSING", error: "Psychometric order row is missing", diagnostics: { order_id: orderId ?? null, payment_id: paymentId ?? null } }, { status: 404 });
   }
 
   let effectivePaymentId = paymentId ?? order.razorpay_payment_id ?? null;
@@ -115,15 +131,9 @@ export async function GET(request: Request) {
     }
   }
 
-  const { data: entitlementRow } = await admin.data
-    .from("test_attempts")
-    .select("id")
-    .eq("user_id", auth.profile.id)
-    .eq("test_id", order.test_id)
-    .limit(1)
-    .maybeSingle<{ id: string }>();
+  let finalizedAttemptId: string | null = null;
 
-  if (!entitlementRow && effectivePaymentId && (normalize(order.payment_status) === "paid" || Boolean(order.paid_at))) {
+  if (effectivePaymentId && (normalize(order.payment_status) === "paid" || Boolean(order.paid_at))) {
     await reconcilePsychometricOrderPaid({
       supabase: admin.data,
       order,
@@ -133,20 +143,18 @@ export async function GET(request: Request) {
     });
   }
 
-  const { data: finalEntitlementRow } = await admin.data
-    .from("test_attempts")
-    .select("id")
-    .eq("order_id", order.id)
-    .limit(1)
-    .maybeSingle<{ id: string }>();
+  const finalized = await finalizePaidPsychometricOrder({ supabase: admin.data, psychometricOrderId: order.id, source: "status_api" });
+  if (finalized.error) return NextResponse.json({ ok: false, state: "pending", error: finalized.error }, { status: 500 });
+  finalizedAttemptId = finalized.attemptId ?? null;
 
   const isPaid = normalize(order.payment_status) === "paid" || Boolean(order.paid_at);
-  if (isPaid || finalEntitlementRow) {
+  if (isPaid || finalizedAttemptId) {
     return NextResponse.json({
       ok: true,
       state: "paid",
-      redirectTo: finalEntitlementRow?.id
-        ? `/dashboard/psychometric/attempts/${finalEntitlementRow.id}`
+      attempt_id: finalizedAttemptId,
+      redirectTo: finalizedAttemptId
+        ? `/dashboard/psychometric/attempts/${finalizedAttemptId}`
         : `/student/payments/success?kind=psychometric&order_id=${encodeURIComponent(order.razorpay_order_id ?? order.id)}&payment_id=${encodeURIComponent(effectivePaymentId ?? "")}`,
     });
   }

@@ -4,6 +4,7 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
+import { finalizePaidPsychometricOrder } from "@/lib/payments/psychometric-finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -119,12 +120,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: reconciled.error }, { status: 500 });
     }
 
-    const { data: resolvedOrder } = await admin.data
-      .from("psychometric_orders")
-      .select("attempt_id")
-      .eq("id", order.id)
-      .maybeSingle<{ attempt_id: string | null }>();
-    const attemptId = resolvedOrder?.attempt_id ?? order.attempt_id ?? null;
+    const finalized = await finalizePaidPsychometricOrder({ supabase: admin.data, psychometricOrderId: order.id, source: "verify_api" });
+    if (finalized.error) return NextResponse.json({ error: finalized.error }, { status: 500 });
+
+    const attemptId = finalized.attemptId ?? null;
     const redirectTo = attemptId ? `/dashboard/psychometric/attempts/${attemptId}` : "/dashboard/psychometric";
 
     return NextResponse.json({ ok: true, idempotent: order.payment_status === "paid", attemptId, redirectTo });
