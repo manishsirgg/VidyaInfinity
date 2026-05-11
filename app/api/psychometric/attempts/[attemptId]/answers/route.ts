@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { isAttemptAnswerable, repairPendingPaidAttempt } from "@/lib/psychometric/attempt-status";
 
 export async function POST(request: Request, { params }: { params: Promise<{ attemptId: string }> }) {
   const auth = await requireApiUser("student");
@@ -13,12 +14,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
 
   const { data: attempt } = await admin.data
     .from("test_attempts")
-    .select("id,user_id,test_id,status,order_id")
+    .select("id,user_id,test_id,status,order_id,metadata,started_at")
     .eq("id", attemptId)
     .single();
   if (!attempt) return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   if (attempt.user_id !== auth.profile.id) return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
-  if (!["not_started", "in_progress", "unlocked"].includes(String(attempt.status))) return NextResponse.json({ error: "Attempt is locked" }, { status: 400 });
+
+  const repairedAttempt = await repairPendingPaidAttempt({
+    supabase: admin.data,
+    attempt,
+    source: "answers_api",
+  });
+  if (!isAttemptAnswerable(repairedAttempt.status)) return NextResponse.json({ error: "Attempt is locked" }, { status: 400 });
 
   const paidStatuses = new Set(["paid", "captured", "success", "confirmed"]);
   let order: { id: string; user_id: string; payment_status: string | null } | null = null;
@@ -97,7 +104,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ att
   const { data: saved, error } = await admin.data.from("psychometric_answers").upsert(payload, { onConflict: "attempt_id,question_id" }).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (attempt.status === "not_started" || attempt.status === "unlocked") {
+  if (repairedAttempt.status === "not_started" || repairedAttempt.status === "unlocked") {
     const { error: attemptStatusUpdateError } = await admin.data.from("test_attempts").update({ status: "in_progress", started_at: new Date().toISOString() }).eq("id", attempt.id);
     if (attemptStatusUpdateError) {
       console.error("[psychometric-autosave-status-update-failed]", { attemptId: attempt.id, error: attemptStatusUpdateError.message });

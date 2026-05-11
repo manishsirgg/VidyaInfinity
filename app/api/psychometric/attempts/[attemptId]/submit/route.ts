@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { computePsychometricReportData, PsychometricScoringError } from "@/lib/psychometric/scoring";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { repairPendingPaidAttempt } from "@/lib/psychometric/attempt-status";
 
 function isPaid(paymentStatus: string | null | undefined, paidAt?: string | null, finalAmount?: number | null) {
   const p = (paymentStatus ?? "").toLowerCase();
@@ -20,23 +21,29 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
 
   const { data: attempt, error: attemptError } = await admin.data
     .from("test_attempts")
-    .select("id,user_id,test_id,order_id,status,score,submitted_at,completed_at")
+    .select("id,user_id,test_id,order_id,status,score,submitted_at,completed_at,metadata,started_at")
     .eq("id", attemptId)
     .maybeSingle();
   if (attemptError || !attempt || attempt.user_id !== profileId) {
     return NextResponse.json({ error: "Attempt not found" }, { status: 404 });
   }
 
+  const attemptAfterRepair = await repairPendingPaidAttempt({
+    supabase: admin.data,
+    attempt,
+    source: "submit_api",
+  });
+
   const { data: existingReport } = await admin.data
     .from("psychometric_reports")
     .select("id")
-    .eq("attempt_id", attempt.id)
+    .eq("attempt_id", attemptAfterRepair.id)
     .maybeSingle();
 
-  if (attempt.status === "completed" && existingReport?.id) {
+  if (attemptAfterRepair.status === "completed" && existingReport?.id) {
     return NextResponse.json({ ok: true, reportId: existingReport.id, redirectTo: `/dashboard/psychometric/reports/${existingReport.id}` });
   }
-  if (["completed", "cancelled", "expired"].includes(String(attempt.status))) return NextResponse.json({ error: "Attempt cannot be submitted" }, { status: 409 });
+  if (["completed", "cancelled", "expired", "submitted"].includes(String(attemptAfterRepair.status))) return NextResponse.json({ error: "Attempt cannot be submitted" }, { status: 409 });
 
   let order: { id: string; user_id: string; payment_status: string | null; paid_at: string | null; final_amount: number | null } | null = null;
   if (attempt.order_id) {
@@ -51,20 +58,20 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     const { data } = await admin.data
       .from("psychometric_orders")
       .select("id,user_id,payment_status,paid_at,final_amount")
-      .eq("attempt_id", attempt.id)
+      .eq("attempt_id", attemptAfterRepair.id)
       .maybeSingle();
     order = data;
   }
   if (!order || order.user_id !== profileId || !isPaid(order.payment_status, order.paid_at, order.final_amount)) return NextResponse.json({ error: "Payment not confirmed" }, { status: 403 });
 
-  const { data: test } = await admin.data.from("psychometric_tests").select("id,title,is_active,scoring_config,category,description").eq("id", attempt.test_id).single();
+  const { data: test } = await admin.data.from("psychometric_tests").select("id,title,is_active,scoring_config,category,description").eq("id", attemptAfterRepair.test_id).single();
   if (!test?.is_active) return NextResponse.json({ error: "Test unavailable" }, { status: 409 });
 
-  const { data: answers } = await admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score").eq("attempt_id", attempt.id).eq("user_id", attempt.user_id).eq("test_id", attempt.test_id);
+  const { data: answers } = await admin.data.from("psychometric_answers").select("id,question_id,option_id,selected_values,numeric_value,answer_text,awarded_score").eq("attempt_id", attemptAfterRepair.id).eq("user_id", attempt.user_id).eq("test_id", attempt.test_id);
   if (!answers || answers.length === 0) {
-    const { count: anyAnswersCount } = await admin.data.from("psychometric_answers").select("id", { count: "exact", head: true }).eq("attempt_id", attempt.id);
+    const { count: anyAnswersCount } = await admin.data.from("psychometric_answers").select("id", { count: "exact", head: true }).eq("attempt_id", attemptAfterRepair.id);
     if ((anyAnswersCount ?? 0) > 0) {
-      console.error("[psychometric-submit] answer loading mismatch", { attemptId: attempt.id, profileId, attemptUserId: attempt.user_id, testId: attempt.test_id, anyAnswersCount });
+      console.error("[psychometric-submit] answer loading mismatch", { attemptId: attemptAfterRepair.id, profileId, attemptUserId: attemptAfterRepair.user_id, testId: attemptAfterRepair.test_id, anyAnswersCount });
       return NextResponse.json({ error: "Saved answers were detected, but could not be loaded for report generation. Please retry once or contact support." }, { status: 409 });
     }
     return NextResponse.json({ error: "No answers saved yet. Please answer the required questions before submitting." }, { status: 400 });
@@ -82,14 +89,14 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     throw error;
   }
 
-  console.info("[psychometric-submit] scoring summary", { testId: attempt.test_id, attemptId: attempt.id, totalScore: scoring.totalScore, finalMaxScore: scoring.maxScore, percentageScore: scoring.percentageScore, snapshotLength: scoring.answersSnapshot.length });
+  console.info("[psychometric-submit] scoring summary", { testId: attemptAfterRepair.test_id, attemptId: attemptAfterRepair.id, totalScore: scoring.totalScore, finalMaxScore: scoring.maxScore, percentageScore: scoring.percentageScore, snapshotLength: scoring.answersSnapshot.length });
 
   for (const [answerId, awarded] of Object.entries(scoring.awardedScoresByAnswerId)) {
     await admin.data.from("psychometric_answers").update({ awarded_score: awarded }).eq("id", answerId);
   }
 
   const reportUpsert = {
-    attempt_id: attempt.id, test_id: attempt.test_id, user_id: profileId, order_id: attempt.order_id,
+    attempt_id: attemptAfterRepair.id, test_id: attemptAfterRepair.test_id, user_id: profileId, order_id: attemptAfterRepair.order_id,
     total_score: scoring.totalScore, max_score: scoring.maxScore, percentage_score: scoring.percentageScore, result_band: scoring.resultBand,
     summary: scoring.content.summary, strengths: scoring.content.strengths, improvement_areas: scoring.content.improvementAreas, recommendations: scoring.content.recommendations,
     dimension_scores: scoring.dimension, answers_snapshot: scoring.answersSnapshot, report_html: `<h1>Vidya Infinity Psychometric Report</h1><p>${scoring.content.summary}</p>`,
@@ -104,7 +111,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   const now = new Date().toISOString();
   const attemptUpdate: Record<string, unknown> = { status: "completed", submitted_at: now, completed_at: now, total_score: scoring.totalScore, max_score: scoring.maxScore, percentage_score: scoring.percentageScore, result_band: scoring.resultBand, report_id: report.id, updated_at: now };
   if (Object.prototype.hasOwnProperty.call(attempt, "score")) attemptUpdate.score = scoring.totalScore;
-  const { error: updateError } = await admin.data.from("test_attempts").update(attemptUpdate).eq("id", attempt.id);
+  const { error: updateError } = await admin.data.from("test_attempts").update(attemptUpdate).eq("id", attemptAfterRepair.id);
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
 
   return NextResponse.json({ ok: true, reportId: report.id, redirectTo: `/dashboard/psychometric/reports/${report.id}` });
