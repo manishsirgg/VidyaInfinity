@@ -17,6 +17,18 @@ function isUuid(value: string | null | undefined) {
   );
 }
 
+type PsychometricOrderStatusRow = {
+  id: string;
+  user_id: string;
+  test_id: string;
+  payment_status: string;
+  final_amount: number;
+  currency: string;
+  paid_at: string | null;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+};
+
 export async function GET(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "psychometric"]);
   if (schemaErrorResponse) return schemaErrorResponse;
@@ -49,17 +61,7 @@ export async function GET(request: Request) {
     query = query.eq("razorpay_payment_id", paymentId);
   }
 
-  const { data: initialOrder } = await query.maybeSingle<{
-    id: string;
-    user_id: string;
-    test_id: string;
-    payment_status: string;
-    final_amount: number;
-    currency: string;
-    paid_at: string | null;
-    razorpay_order_id: string | null;
-    razorpay_payment_id: string | null;
-  }>();
+  const { data: initialOrder } = await query.maybeSingle<PsychometricOrderStatusRow>();
 
   let order = initialOrder;
 
@@ -70,8 +72,8 @@ export async function GET(request: Request) {
       .eq("user_id", auth.profile.id)
       .eq("razorpay_payment_id", paymentId)
       .limit(1)
-      .maybeSingle();
-    if (byPaymentId) order = byPaymentId as typeof order;
+      .maybeSingle<PsychometricOrderStatusRow>();
+    if (byPaymentId) order = byPaymentId;
   }
 
   if (!order) {

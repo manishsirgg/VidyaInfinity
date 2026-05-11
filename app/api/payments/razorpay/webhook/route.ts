@@ -7,6 +7,7 @@ import { applyRefundToInstitutePayout } from "@/lib/payments/institute-payout-re
 import { mapRazorpayRefundStatus } from "@/lib/payments/refunds";
 import { reconcileRefundAccessAndOrderState } from "@/lib/payments/refund-reconciliation";
 import { reconcilePsychometricOrderPaid } from "@/lib/payments/reconcile";
+import { finalizePaidPsychometricOrder } from "@/lib/payments/psychometric-finalize";
 import { finalizeCoursePaymentFromRazorpay, finalizeWebinarPaymentFromRazorpay } from "@/lib/payments/finalize";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { activateFeaturedSubscriptionFromPaidOrder, fetchRazorpayPaymentForOrder } from "@/lib/featured-reconciliation";
@@ -108,6 +109,18 @@ export async function POST(request: Request) {
     const razorpayOrderId = paymentEntity?.order_id ?? orderEntity?.id ?? null;
     let razorpayPaymentId = paymentEntity?.id ?? refundEntity?.payment_id ?? null;
     const paymentNotes = (paymentEntity?.notes ?? orderEntity?.notes ?? {}) as Record<string, unknown>;
+    const notePsychometricOrderId =
+      typeof paymentNotes.psychometric_order_id === "string"
+        ? paymentNotes.psychometric_order_id
+        : typeof paymentNotes.psychometricOrderId === "string"
+          ? paymentNotes.psychometricOrderId
+          : typeof paymentNotes.local_order_id === "string"
+            ? paymentNotes.local_order_id
+            : typeof paymentNotes.localOrderId === "string"
+              ? paymentNotes.localOrderId
+              : typeof paymentNotes.order_id === "string"
+                ? paymentNotes.order_id
+                : null;
     const noteCourseOrderId = typeof paymentNotes.course_order_id === "string" ? paymentNotes.course_order_id : null;
     const noteWebinarOrderId = typeof paymentNotes.webinar_order_id === "string" ? paymentNotes.webinar_order_id : null;
     const noteOrderId = typeof paymentNotes.order_id === "string" ? paymentNotes.order_id : null;
@@ -119,6 +132,7 @@ export async function POST(request: Request) {
       razorpay_order_id: razorpayOrderId,
       payment_id: razorpayPaymentId,
       note_order_id: noteOrderId,
+      note_psychometric_order_id: notePsychometricOrderId,
       note_course_order_id: noteCourseOrderId,
       note_webinar_order_id: noteWebinarOrderId,
     });
