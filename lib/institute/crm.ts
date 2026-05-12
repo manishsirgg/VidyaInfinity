@@ -17,7 +17,18 @@ export async function requireInstituteApiContext() {
   const admin = getSupabaseAdmin();
   if (!admin.ok) return { error: NextResponse.json({ error: admin.error }, { status: 500 }) };
 
-  const { data: institute } = await admin.data.from("institutes").select("id").eq("user_id", auth.user.id).maybeSingle();
+  const { data: instituteRows, error: instituteError } = await admin.data
+    .from("institutes")
+    .select("id,user_id,created_at")
+    .eq("user_id", auth.user.id)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (instituteError) {
+    return { error: NextResponse.json({ error: instituteError.message }, { status: 500 }) };
+  }
+
+  const institute = instituteRows?.[0] ?? null;
   if (!institute?.id) {
     return { error: NextResponse.json({ error: "Institute profile not found" }, { status: 403 }) };
   }
