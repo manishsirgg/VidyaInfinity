@@ -11,6 +11,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ con
   const channel = typeof body.channel === "string" && inValues(body.channel, CRM_FOLLOWUP_CHANNEL) ? body.channel : "other";
   const { data, error } = await admin.from("crm_follow_ups").insert({ contact_id: contactId, institute_id: instituteId, assigned_to: body.assigned_to ?? userId, created_by: userId, status, channel, purpose: body.purpose, notes: body.notes ?? null, due_at: body.due_at, metadata: body.metadata ?? {} }).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  await admin.from("crm_activities").insert({ contact_id: contactId, institute_id, actor_user_id: userId, activity_type: "follow_up_created", title: "Follow-up scheduled", metadata: { followUpId: data.id } });
+  await admin.from("crm_activities").insert({ contact_id: contactId, institute_id: instituteId, actor_user_id: userId, activity_type: "follow_up_created", title: "Follow-up scheduled", metadata: { followUpId: data.id } });
   return NextResponse.json({ followUp: data });
 }
