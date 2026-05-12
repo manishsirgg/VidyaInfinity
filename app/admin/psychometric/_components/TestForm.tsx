@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -59,6 +60,14 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
         banner_image_url: value,
       },
     }));
+    setRawMeta((prevRaw) => {
+      try {
+        const parsed = JSON.parse(prevRaw || "{}");
+        return JSON.stringify({ ...(parsed || {}), banner_image_url: value }, null, 2);
+      } catch {
+        return prevRaw;
+      }
+    });
     setErrors((prev) => ({ ...prev, banner_image_url: "" }));
   };
 
@@ -109,7 +118,10 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
         ...form,
         slug: effectiveSlug,
         scoring_config: { ...(JSON.parse(rawConfig || "{}") || {}), bands },
-        metadata: JSON.parse(rawMeta || "{}"),
+        metadata: {
+          ...(JSON.parse(rawMeta || "{}") || {}),
+          ...(form?.metadata ?? {}),
+        },
       };
       const url = testId ? `/api/admin/psychometric/tests/${testId}` : "/api/admin/psychometric/tests";
       const method = testId ? "PATCH" : "POST";
@@ -140,6 +152,7 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
       <textarea className="w-full rounded-lg border p-2.5" placeholder="Description" value={form.description || ""} onChange={(e) => setField("description", e.target.value)} />
       <input className="w-full rounded-lg border p-2.5" placeholder="Banner image URL (optional)" value={bannerImageUrl} onChange={(e) => setBannerImageUrl(e.target.value)} />
       {errors.banner_image_url && <p className="text-xs text-rose-600">{errors.banner_image_url}</p>}
+      {bannerImageUrl ? <div className="space-y-2 rounded-lg border p-2"><Image src={bannerImageUrl} alt="Psychometric banner preview" width={1200} height={360} className="h-36 w-full rounded object-cover" unoptimized /><button type="button" className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50" onClick={() => setBannerImageUrl("")}>Remove banner</button></div> : null}
     </PsychometricAdminCard>
 
     <PsychometricAdminCard className="space-y-4"><h2 className="text-lg font-semibold">Pricing & Visibility</h2>
