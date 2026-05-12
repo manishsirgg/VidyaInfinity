@@ -18,6 +18,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ fo
   const { data, error } = await admin.from("crm_follow_ups").update(update).eq("id", followUpId).eq("institute_id", instituteId).eq("is_deleted", false).select("*").maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 }); if (!data) return NextResponse.json({ error: "Follow-up not found" }, { status: 404 });
   if (update.status === "completed") await admin.from("crm_activities").insert({ contact_id: data.contact_id, institute_id: instituteId, actor_user_id: userId, activity_type: "follow_up_completed", title: "Follow-up completed", metadata: { followUpId } });
+  if (update.status === "cancelled") await admin.from("crm_activities").insert({ contact_id: data.contact_id, institute_id: instituteId, actor_user_id: userId, activity_type: "follow_up_cancelled", title: "Follow-up cancelled", metadata: { followUpId } });
   return NextResponse.json({ followUp: data });
 }
 export async function DELETE(_: Request, { params }: { params: Promise<{ followUpId: string }> }) {
