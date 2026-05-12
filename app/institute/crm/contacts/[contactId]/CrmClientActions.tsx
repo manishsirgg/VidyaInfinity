@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES, CRM_FOLLOW_UP_CHANNELS, CRM_NOTE_TYPES, crmLabel } from "@/lib/institute/crm-enums";
+import { CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES, CRM_FOLLOW_UP_CHANNELS, CRM_NOTE_TYPES_USER_SELECTABLE, crmLabel } from "@/lib/institute/crm-enums";
 
 function useSubmit() {
   const [loading, setLoading] = useState(false);
@@ -40,7 +40,7 @@ export function AddNoteForm({ contactId }: { contactId: string }) {
   };
   return <form onSubmit={onSubmit} className="space-y-2 rounded-xl border border-slate-200 p-3">
     <h3 className="font-semibold">Add Note</h3>
-    <select value={type} onChange={(e) => setType(e.target.value)} className="w-full rounded border px-2 py-1">{CRM_NOTE_TYPES.map((v) => <option key={v} value={v}>{crmLabel(v)}</option>)}</select>
+    <select value={type} onChange={(e) => setType(e.target.value)} className="w-full rounded border px-2 py-1">{CRM_NOTE_TYPES_USER_SELECTABLE.map((v) => <option key={v} value={v}>{crmLabel(v)}</option>)}</select>
     <textarea required value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded border px-2 py-1" rows={3} />
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} /> Pin note</label>
     <button disabled={loading} className="rounded bg-slate-900 px-3 py-1 text-white disabled:opacity-60">{loading ? "Saving..." : "Add Note"}</button>
