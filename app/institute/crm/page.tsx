@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { crmLabel } from "@/lib/institute/crm-enums";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +40,8 @@ export default async function InstituteCrmPage() {
     { k: "New", v: c.filter((x) => x.lifecycle_stage === "new").length },
     { k: "Contacted", v: c.filter((x) => x.lifecycle_stage === "contacted").length },
     { k: "Converted", v: c.filter((x) => x.converted || x.lifecycle_stage === "converted").length },
-    { k: "Follow-ups Due Today", v: f.filter((x) => x.status === "pending" && x.due_at && new Date(x.due_at).toDateString() === today).length },
-    { k: "Overdue Follow-ups", v: f.filter((x) => x.status === "pending" && x.due_at && new Date(x.due_at) < now).length },
+    { k: "Follow-ups Due Today", v: f.filter((x) => x.status === "scheduled" && x.due_at && new Date(x.due_at).toDateString() === today).length },
+    { k: "Overdue Follow-ups", v: f.filter((x) => x.status === "scheduled" && x.due_at && new Date(x.due_at) < now).length },
     { k: "High Priority", v: c.filter((x) => x.priority === "high" || x.priority === "urgent").length },
     { k: "Course Leads", v: c.filter((x) => x.course_id).length },
     { k: "Webinar Leads", v: c.filter((x) => x.webinar_id).length },
@@ -84,11 +85,11 @@ export default async function InstituteCrmPage() {
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-lg font-semibold text-slate-900">Upcoming Follow-ups</h2>
           <div className="mt-3 space-y-3">
-            {f.filter((item) => item.status === "pending").slice(0, 8).map((item) => (
+            {f.filter((item) => item.status === "scheduled").slice(0, 8).map((item) => (
               <div key={item.id} className="rounded-lg border border-slate-100 p-3 text-sm">
                 <p className="font-medium text-slate-900">{item.purpose || "Follow-up"}</p>
                 <p className="text-slate-600">Due: {formatDateTime(item.due_at)}</p>
-                <p className="text-slate-600">Channel: {item.channel || "—"} · Status: {item.status}</p>
+                <p className="text-slate-600">Channel: {crmLabel(item.channel)} · Status: {crmLabel(item.status)}</p>
                 <p className="text-slate-600">Contact: {relName(item.crm_contacts) ?? "Unknown"}</p>
                 {item.contact_id ? <Link href={`/institute/crm/contacts/${item.contact_id}`} className="text-blue-600">Open contact</Link> : null}
               </div>
