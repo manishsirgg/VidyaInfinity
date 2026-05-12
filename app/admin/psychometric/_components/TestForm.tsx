@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { ChangeEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   PsychometricAdminCard,
@@ -25,6 +25,7 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
   const [manualSlug, setManualSlug] = useState(Boolean(initial?.slug));
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [mediaBusy, setMediaBusy] = useState<null | "banner" | "thumbnail">(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [rawConfig, setRawConfig] = useState(JSON.stringify(initial?.scoring_config || { bands: [] }, null, 2));
   const [rawMeta, setRawMeta] = useState(JSON.stringify(initial?.metadata || {}, null, 2));
@@ -51,24 +52,48 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
     setForm((prev: any) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: "" }));
   };
-  const bannerImageUrl = typeof form?.metadata?.banner_image_url === "string" ? form.metadata.banner_image_url : "";
-  const setBannerImageUrl = (value: string) => {
-    setForm((prev: any) => ({
-      ...prev,
-      metadata: {
-        ...(prev?.metadata ?? {}),
-        banner_image_url: value,
-      },
-    }));
-    setRawMeta((prevRaw) => {
-      try {
-        const parsed = JSON.parse(prevRaw || "{}");
-        return JSON.stringify({ ...(parsed || {}), banner_image_url: value }, null, 2);
-      } catch {
-        return prevRaw;
-      }
-    });
-    setErrors((prev) => ({ ...prev, banner_image_url: "" }));
+  const allowedMediaTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
+  const uploadMedia = async (kind: "banner" | "thumbnail", e: ChangeEvent<HTMLInputElement>) => {
+    if (!testId) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!allowedMediaTypes.includes(file.type)) return setBanner({ kind: "error", message: "Unsupported file type. Use JPG, PNG, WEBP." });
+    if (file.size > 10 * 1024 * 1024) return setBanner({ kind: "error", message: "File too large. Max 10 MB." });
+    setMediaBusy(kind);
+    setBanner(null);
+    try {
+      const fd = new FormData();
+      fd.set("kind", kind);
+      fd.set("file", file);
+      const res = await fetch(`/api/admin/psychometric/tests/${testId}/media`, { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Upload failed");
+      setForm((prev: any) => ({ ...prev, ...json.data }));
+      setBanner({ kind: "success", message: `${kind === "banner" ? "Banner" : "Thumbnail"} uploaded successfully.` });
+    } catch (err) {
+      setBanner({ kind: "error", message: err instanceof Error ? err.message : "Upload failed" });
+    } finally {
+      setMediaBusy(null);
+      e.target.value = "";
+    }
+  };
+
+  const deleteMedia = async (kind: "banner" | "thumbnail") => {
+    if (!testId) return;
+    setMediaBusy(kind);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/admin/psychometric/tests/${testId}/media`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind }) });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Delete failed");
+      setForm((prev: any) => ({ ...prev, ...json.data }));
+      setBanner({ kind: "success", message: `${kind === "banner" ? "Banner" : "Thumbnail"} deleted successfully.` });
+    } catch (err) {
+      setBanner({ kind: "error", message: err instanceof Error ? err.message : "Delete failed" });
+    } finally {
+      setMediaBusy(null);
+    }
   };
 
   const validate = () => {
@@ -77,7 +102,6 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
     if (!effectiveSlug?.trim()) next.slug = "Slug is required.";
     if (Number(form.price) < 0 || Number.isNaN(Number(form.price))) next.price = "Price must be 0 or higher.";
     if (Number(form.duration_minutes) <= 0 || Number.isNaN(Number(form.duration_minutes))) next.duration_minutes = "Duration must be greater than 0.";
-    if (bannerImageUrl && !/^https?:\/\/\S+/i.test(bannerImageUrl.trim())) next.banner_image_url = "Banner image must be a valid http(s) URL.";
 
     for (let i = 0; i < bands.length; i++) {
       const band = bands[i];
@@ -150,9 +174,24 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
       {errors.slug && <p className="text-xs text-rose-600">{errors.slug}</p>}
       <input className="w-full rounded-lg border p-2.5" placeholder="Category" value={form.category || ""} onChange={(e) => setField("category", e.target.value)} />
       <textarea className="w-full rounded-lg border p-2.5" placeholder="Description" value={form.description || ""} onChange={(e) => setField("description", e.target.value)} />
-      <input className="w-full rounded-lg border p-2.5" placeholder="Banner image URL (optional)" value={bannerImageUrl} onChange={(e) => setBannerImageUrl(e.target.value)} />
-      {errors.banner_image_url && <p className="text-xs text-rose-600">{errors.banner_image_url}</p>}
-      {bannerImageUrl ? <div className="space-y-2 rounded-lg border p-2"><Image src={bannerImageUrl} alt="Psychometric banner preview" width={1200} height={360} className="h-36 w-full rounded object-cover" unoptimized /><button type="button" className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50" onClick={() => setBannerImageUrl("")}>Remove banner</button></div> : null}
+    </PsychometricAdminCard>
+
+
+    <PsychometricAdminCard className="space-y-4"><h2 className="text-lg font-semibold">Banner & Media</h2><p className="text-sm text-slate-600">Accepted formats: JPG, PNG, WEBP. Max file size: 10 MB.</p>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Banner</p>
+          {form.banner_url ? <Image src={form.banner_url} alt={form.banner_alt_text || `${form.title || "Psychometric"} banner`} width={1200} height={420} className="h-44 w-full rounded-xl border object-cover" unoptimized /> : <div className="flex h-44 items-center justify-center rounded-xl border border-dashed text-sm text-slate-500">No banner uploaded yet</div>}
+          <div className="flex gap-2"><input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => uploadMedia("banner", e)} className="block w-full text-xs" disabled={!testId || mediaBusy !== null} /><button type="button" onClick={() => deleteMedia("banner")} disabled={!form.banner_path || mediaBusy !== null} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50">Delete</button></div>
+          <input className="w-full rounded-lg border p-2.5" placeholder="Banner alt text (optional)" value={form.banner_alt_text || ""} onChange={(e) => setField("banner_alt_text", e.target.value)} />
+        </div>
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Thumbnail (Optional)</p>
+          {form.thumbnail_url ? <Image src={form.thumbnail_url} alt={form.banner_alt_text || `${form.title || "Psychometric"} thumbnail`} width={640} height={360} className="h-44 w-full rounded-xl border object-cover" unoptimized /> : <div className="flex h-44 items-center justify-center rounded-xl border border-dashed text-sm text-slate-500">No thumbnail uploaded yet</div>}
+          <div className="flex gap-2"><input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={(e) => uploadMedia("thumbnail", e)} className="block w-full text-xs" disabled={!testId || mediaBusy !== null} /><button type="button" onClick={() => deleteMedia("thumbnail")} disabled={!form.thumbnail_path || mediaBusy !== null} className="rounded-lg border px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50">Delete</button></div>
+        </div>
+      </div>
+      {mediaBusy ? <p className="text-xs text-slate-500">Uploading {mediaBusy}...</p> : null}
     </PsychometricAdminCard>
 
     <PsychometricAdminCard className="space-y-4"><h2 className="text-lg font-semibold">Pricing & Visibility</h2>

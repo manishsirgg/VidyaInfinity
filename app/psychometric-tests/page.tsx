@@ -8,7 +8,7 @@ export default async function PsychometricTestsPage() {
   const supabase = await createClient();
   const { data: tests } = await supabase
     .from("psychometric_tests")
-    .select("id,title,slug,price,is_active,metadata")
+    .select("id,title,slug,price,is_active,banner_url,thumbnail_url,banner_alt_text")
     .eq("is_active", true)
     .order("created_at", { ascending: false });
 
@@ -19,10 +19,10 @@ export default async function PsychometricTestsPage() {
         {tests?.map((test) => (
           <Link href={`/psychometric-tests/${test.slug}` as Route} key={test.id} className="group rounded-xl border bg-white p-5 transition hover:border-brand-300">
           <article>
-            {typeof test.metadata === "object" && test.metadata && typeof (test.metadata as Record<string, unknown>).banner_image_url === "string" ? (
+            {test.thumbnail_url || test.banner_url ? (
               <Image
-                src={String((test.metadata as Record<string, unknown>).banner_image_url)}
-                alt={`${test.title} banner`}
+                src={String(test.thumbnail_url || test.banner_url)}
+                alt={test.banner_alt_text || `${test.title} banner`}
                 width={960}
                 height={360}
                 className="mb-4 h-40 w-full rounded-lg object-cover"
