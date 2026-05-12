@@ -70,7 +70,7 @@ export default async function AttemptsPage({ searchParams }: { searchParams?: Pr
 
   const testsForFilter = (tests ?? []).sort((a: any, b: any) => String(a.title ?? "").localeCompare(String(b.title ?? "")));
 
-  return <div className="space-y-4 p-3 md:p-6">
+  return <div className="space-y-4 bg-slate-50/60 p-3 pb-10 md:p-6">
     <PsychometricAdminHeader
       title="Attempt Monitoring"
       description="Track student attempts, payment outcomes, and report readiness."
@@ -78,13 +78,13 @@ export default async function AttemptsPage({ searchParams }: { searchParams?: Pr
     />
     <PsychometricAdminSubnav currentPath="/admin/psychometric/attempts" />
 
-    <PsychometricAdminCard><form className="grid gap-2 md:grid-cols-4"><input name="q" defaultValue={params.q ?? ""} placeholder="Search by student, test, order, or attempt ID" className="rounded border p-2 text-sm" />
-      <select name="status" defaultValue={selectedStatus} className="rounded border p-2 text-sm">{statusOptions.map((s) => <option key={s} value={s}>{s === "all" ? "All statuses" : s.replace("_", " ")}</option>)}</select>
-      <select name="test" defaultValue={params.test ?? ""} className="rounded border p-2 text-sm"><option value="">All tests</option>{testsForFilter.map((t: any) => <option key={t.id} value={t.id}>{t.title ?? t.id}</option>)}</select>
-      <button className="rounded border px-3 py-2 text-sm">Apply Filters</button></form></PsychometricAdminCard>
+    <PsychometricAdminCard><form className="grid gap-2 md:grid-cols-4"><input name="q" defaultValue={params.q ?? ""} placeholder="Search by student, test, order, or attempt ID" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
+      <select name="status" defaultValue={selectedStatus} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">{statusOptions.map((s) => <option key={s} value={s}>{s === "all" ? "All statuses" : s.replace("_", " ")}</option>)}</select>
+      <select name="test" defaultValue={params.test ?? ""} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"><option value="">All tests</option>{testsForFilter.map((t: any) => <option key={t.id} value={t.id}>{t.title ?? t.id}</option>)}</select>
+      <button className="rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-700">Apply Filters</button></form></PsychometricAdminCard>
 
     {error ? <PsychometricEmptyState title="Unable to load attempts" subtitle={error.message} /> : filtered.length === 0 ? <PsychometricEmptyState title="No attempts found" subtitle="Try broadening search or clearing filters." /> : <>
-      <div className="hidden overflow-x-auto rounded-xl border bg-white lg:block"><table className="min-w-[1200px] text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-3 text-left">Student</th><th className="text-left">Test</th><th>Status</th><th>Payment</th><th>Score</th><th>Band</th><th>Created</th><th>Completed</th><th>Actions</th></tr></thead><tbody>{filtered.map((a: any) => {
+      <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm lg:block"><table className="min-w-[1200px] text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-3 text-left">Student</th><th className="text-left">Test</th><th>Status</th><th>Payment</th><th>Score</th><th>Band</th><th>Created</th><th>Completed</th><th>Actions</th></tr></thead><tbody>{filtered.map((a: any) => {
         const p = userMap.get(a.user_id); const t = testMap.get(a.test_id); const o = orderMap.get(a.order_id);
         return <tr key={a.id} className="border-t align-top"><td className="p-3"><p className="font-medium">{p?.full_name ?? "Unknown Student"}</p><p className="text-xs text-slate-500 break-all">{p?.email ?? "—"}</p></td><td>{t?.title ?? "Unknown test"}</td><td><PsychometricStatusBadge label={a.status ?? "unknown"} tone={toneByStatus[a.status] ?? "slate"} /></td><td><PsychometricStatusBadge label={o?.payment_status ?? "unknown"} tone={o?.payment_status === "paid" ? "emerald" : o?.payment_status === "failed" ? "rose" : "amber"} /></td><td>{a.total_score ?? 0} ({a.percentage_score ?? 0}%)</td><td>{a.result_band ?? "—"}</td><td>{a.created_at ? new Date(a.created_at).toLocaleString() : "—"}</td><td>{a.completed_at ? new Date(a.completed_at).toLocaleString() : "—"}</td><td className="space-x-2 whitespace-nowrap"><Link href={`/admin/psychometric/attempts/${a.id}`} className="underline">View Attempt</Link>{a.report_id ? <Link href={`/admin/psychometric/reports/${a.report_id}`} className="underline">View Report</Link> : null}{a.status === "completed" ? <form className="inline" action={`/api/admin/psychometric/reports/${a.id}/regenerate`} method="post"><button className="underline">Regenerate Report</button></form> : null}</td></tr>;
       })}</tbody></table></div>
