@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CRM_PRIORITIES, CRM_STAGES, inValues, isUuid, requireInstituteApiContext } from "@/lib/institute/crm";
+import { CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES, inValues, isUuid, requireInstituteApiContext } from "@/lib/institute/crm";
 
 export async function GET(_: Request, { params }: { params: Promise<{ contactId: string }> }) {
   const { contactId } = await params;
@@ -28,8 +28,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ co
 
   const body = await request.json();
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (body.lifecycle_stage && inValues(body.lifecycle_stage, CRM_STAGES)) update.lifecycle_stage = body.lifecycle_stage;
-  if (body.priority && inValues(body.priority, CRM_PRIORITIES)) update.priority = body.priority;
+  if (body.lifecycle_stage) {
+    if (!inValues(body.lifecycle_stage, CRM_CONTACT_STAGES)) return NextResponse.json({ error: "Invalid contact stage" }, { status: 400 });
+    update.lifecycle_stage = body.lifecycle_stage;
+  }
+  if (body.priority) {
+    if (!inValues(body.priority, CRM_CONTACT_PRIORITIES)) return NextResponse.json({ error: "Invalid contact priority" }, { status: 400 });
+    update.priority = body.priority;
+  }
   for (const k of ["assigned_to", "next_follow_up_at", "notes_summary", "converted", "converted_at", "lost_reason", "is_archived"]) if (k in body) update[k] = body[k];
   if (Object.keys(update).length === 1) return NextResponse.json({ error: "No valid fields provided" }, { status: 400 });
 

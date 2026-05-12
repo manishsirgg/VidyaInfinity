@@ -2,13 +2,14 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES, crmLabel } from "@/lib/institute/crm-enums";
 
 export const dynamic = "force-dynamic";
 
 type Params = { q?: string; stage?: string; priority?: string; type?: string; archived?: string; source?: string; page?: string; due?: string };
 
 const fmt = (v?: string | null) => (v ? new Date(v).toLocaleString() : "—");
-const badge = (text?: string | null) => <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{text || "—"}</span>;
+const badge = (text?: string | null) => <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{crmLabel(text)}</span>;
 const relTitle = (value: unknown) => Array.isArray(value) ? value[0]?.title : (value as { title?: string } | null)?.title;
 
 export default async function ContactsPage({ searchParams }: { searchParams: Promise<Params> }) {
@@ -53,8 +54,8 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
 
     <form className="grid gap-2 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-6">
       <input name="q" defaultValue={params.q} placeholder="Search name/email/phone" className="rounded border px-3 py-2 md:col-span-2" />
-      <select name="stage" defaultValue={params.stage ?? ""} className="rounded border px-3 py-2"><option value="">All stages</option><option>new</option><option>contacted</option><option>qualified</option><option>converted</option><option>lost</option></select>
-      <select name="priority" defaultValue={params.priority ?? ""} className="rounded border px-3 py-2"><option value="">All priorities</option><option>low</option><option>medium</option><option>high</option><option>urgent</option></select>
+      <select name="stage" defaultValue={params.stage ?? ""} className="rounded border px-3 py-2"><option value="">All stages</option>{CRM_CONTACT_STAGES.map((v) => <option key={v} value={v}>{crmLabel(v)}</option>)}</select>
+      <select name="priority" defaultValue={params.priority ?? ""} className="rounded border px-3 py-2"><option value="">All priorities</option>{CRM_CONTACT_PRIORITIES.map((v) => <option key={v} value={v}>{crmLabel(v)}</option>)}</select>
       <select name="type" defaultValue={params.type ?? "all"} className="rounded border px-3 py-2"><option value="all">All types</option><option value="course">Course leads</option><option value="webinar">Webinar leads</option></select>
       <select name="archived" defaultValue={params.archived ?? "active"} className="rounded border px-3 py-2"><option value="active">Active only</option><option value="archived">Archived only</option><option value="all">All</option></select>
       <input name="source" defaultValue={params.source} placeholder="Source" className="rounded border px-3 py-2" />

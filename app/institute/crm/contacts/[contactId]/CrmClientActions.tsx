@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES, CRM_FOLLOW_UP_CHANNELS, CRM_NOTE_TYPES, crmLabel } from "@/lib/institute/crm-enums";
 
 function useSubmit() {
   const [loading, setLoading] = useState(false);
@@ -39,7 +40,7 @@ export function AddNoteForm({ contactId }: { contactId: string }) {
   };
   return <form onSubmit={onSubmit} className="space-y-2 rounded-xl border border-slate-200 p-3">
     <h3 className="font-semibold">Add Note</h3>
-    <select value={type} onChange={(e) => setType(e.target.value)} className="w-full rounded border px-2 py-1"><option>general</option><option>call</option><option>email</option><option>meeting</option><option>internal</option></select>
+    <select value={type} onChange={(e) => setType(e.target.value)} className="w-full rounded border px-2 py-1">{CRM_NOTE_TYPES.map((v) => <option key={v} value={v}>{crmLabel(v)}</option>)}</select>
     <textarea required value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded border px-2 py-1" rows={3} />
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} /> Pin note</label>
     <button disabled={loading} className="rounded bg-slate-900 px-3 py-1 text-white disabled:opacity-60">{loading ? "Saving..." : "Add Note"}</button>
@@ -52,7 +53,7 @@ export function AddFollowUpForm({ contactId }: { contactId: string }) {
   const [dueAt, setDueAt] = useState(""); const [channel, setChannel] = useState("call"); const [purpose, setPurpose] = useState(""); const [notes, setNotes] = useState("");
   const onSubmit = (e: FormEvent) => { e.preventDefault(); submit(`/api/institute/crm/contacts/${contactId}/follow-ups`, "POST", { due_at: new Date(dueAt).toISOString(), channel, purpose, notes: notes || null }); };
   return <form onSubmit={onSubmit} className="space-y-2 rounded-xl border border-slate-200 p-3"><h3 className="font-semibold">Schedule Follow-up</h3>
-    <select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-full rounded border px-2 py-1"><option>call</option><option>email</option><option>whatsapp</option><option>sms</option><option>meeting</option><option>other</option></select>
+    <select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-full rounded border px-2 py-1">{CRM_FOLLOW_UP_CHANNELS.map((v) => <option key={v} value={v}>{crmLabel(v)}</option>)}</select>
     <input required value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="Purpose" className="w-full rounded border px-2 py-1" />
     <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (optional)" className="w-full rounded border px-2 py-1" />
     <input type="datetime-local" required value={dueAt} onChange={(e) => setDueAt(e.target.value)} className="w-full rounded border px-2 py-1" />
@@ -71,8 +72,8 @@ export function StagePriorityForm({ contactId, lifecycleStage, priority, nextFol
 
   return <div className="space-y-2 rounded-xl border border-slate-200 p-3"><h3 className="font-semibold">Quick Actions</h3>
     <form onSubmit={(e) => { e.preventDefault(); submit(`/api/institute/crm/contacts/${contactId}`, "PATCH", { lifecycle_stage: stage, priority: prio, next_follow_up_at: nextAt ? new Date(nextAt).toISOString() : null }); }} className="space-y-2">
-      <select value={stage} onChange={(e) => setStage(e.target.value)} className="w-full rounded border px-2 py-1"><option>new</option><option>contacted</option><option>qualified</option><option>converted</option><option>lost</option></select>
-      <select value={prio} onChange={(e) => setPrio(e.target.value)} className="w-full rounded border px-2 py-1"><option>low</option><option>medium</option><option>high</option><option>urgent</option></select>
+      <select value={stage} onChange={(e) => setStage(e.target.value)} className="w-full rounded border px-2 py-1">{CRM_CONTACT_STAGES.map((v) => <option key={v} value={v}>{crmLabel(v)}</option>)}</select>
+      <select value={prio} onChange={(e) => setPrio(e.target.value)} className="w-full rounded border px-2 py-1">{CRM_CONTACT_PRIORITIES.map((v) => <option key={v} value={v}>{crmLabel(v)}</option>)}</select>
       <input type="datetime-local" value={nextAt} onChange={(e) => setNextAt(e.target.value)} className="w-full rounded border px-2 py-1" />
       <button disabled={loading} className="rounded bg-slate-900 px-3 py-1 text-white">Save Update</button>
     </form>

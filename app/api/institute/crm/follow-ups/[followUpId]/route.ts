@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
-import { CRM_FOLLOWUP_CHANNEL, CRM_FOLLOWUP_STATUS, inValues, isUuid, requireInstituteApiContext } from "@/lib/institute/crm";
+import { CRM_FOLLOW_UP_CHANNELS, CRM_FOLLOW_UP_STATUSES, inValues, isUuid, requireInstituteApiContext } from "@/lib/institute/crm";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ followUpId: string }> }) {
   const { followUpId } = await params; if (!isUuid(followUpId)) return NextResponse.json({ error: "Invalid follow-up id" }, { status: 400 });
   const ctx = await requireInstituteApiContext(); if ("error" in ctx) return ctx.error;
   const { admin, instituteId, userId } = ctx; const body = await request.json();
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (body.status && inValues(body.status, CRM_FOLLOWUP_STATUS)) update.status = body.status;
-  if (body.channel && inValues(body.channel, CRM_FOLLOWUP_CHANNEL)) update.channel = body.channel;
+  if (body.status) {
+    if (!inValues(body.status, CRM_FOLLOW_UP_STATUSES)) return NextResponse.json({ error: "Invalid follow-up status" }, { status: 400 });
+    update.status = body.status;
+  }
+  if (body.channel) {
+    if (!inValues(body.channel, CRM_FOLLOW_UP_CHANNELS)) return NextResponse.json({ error: "Invalid follow-up channel" }, { status: 400 });
+    update.channel = body.channel;
+  }
   for (const k of ["purpose","notes","due_at","completed_at","cancelled_at"]) if (k in body) update[k]=body[k];
   const { data, error } = await admin.from("crm_follow_ups").update(update).eq("id", followUpId).eq("institute_id", instituteId).eq("is_deleted", false).select("*").maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 }); if (!data) return NextResponse.json({ error: "Follow-up not found" }, { status: 404 });
