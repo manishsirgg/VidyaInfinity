@@ -7,7 +7,13 @@ export async function GET() {
   const { admin, instituteId } = ctx;
 
   const [contactsResp, followResp, actResp] = await Promise.all([
-    admin.from("crm_contacts").select("id,lifecycle_stage,priority,course_id,webinar_id,is_archived,converted").eq("owner_type", "institute").eq("owner_institute_id", instituteId).eq("is_deleted", false),
+    admin
+      .from("crm_contacts")
+      .select("id,lifecycle_stage,priority,course_id,webinar_id,is_archived,converted")
+      .eq("owner_type", "institute")
+      .eq("owner_institute_id", instituteId)
+      .eq("is_deleted", false)
+      .eq("is_archived", false),
     admin.from("crm_follow_ups").select("id,due_at,status").eq("institute_id", instituteId).eq("is_deleted", false),
     admin.from("crm_activities").select("id,created_at,title,activity_type,description,contact_id").eq("institute_id", instituteId).order("created_at", { ascending: false }).limit(10),
   ]);
