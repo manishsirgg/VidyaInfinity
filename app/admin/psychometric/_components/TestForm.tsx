@@ -50,6 +50,17 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
     setForm((prev: any) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: "" }));
   };
+  const bannerImageUrl = typeof form?.metadata?.banner_image_url === "string" ? form.metadata.banner_image_url : "";
+  const setBannerImageUrl = (value: string) => {
+    setForm((prev: any) => ({
+      ...prev,
+      metadata: {
+        ...(prev?.metadata ?? {}),
+        banner_image_url: value,
+      },
+    }));
+    setErrors((prev) => ({ ...prev, banner_image_url: "" }));
+  };
 
   const validate = () => {
     const next: Record<string, string> = {};
@@ -57,6 +68,7 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
     if (!effectiveSlug?.trim()) next.slug = "Slug is required.";
     if (Number(form.price) < 0 || Number.isNaN(Number(form.price))) next.price = "Price must be 0 or higher.";
     if (Number(form.duration_minutes) <= 0 || Number.isNaN(Number(form.duration_minutes))) next.duration_minutes = "Duration must be greater than 0.";
+    if (bannerImageUrl && !/^https?:\/\/\S+/i.test(bannerImageUrl.trim())) next.banner_image_url = "Banner image must be a valid http(s) URL.";
 
     for (let i = 0; i < bands.length; i++) {
       const band = bands[i];
@@ -126,6 +138,8 @@ export default function TestForm({ initial, testId }: { initial?: Record<string,
       {errors.slug && <p className="text-xs text-rose-600">{errors.slug}</p>}
       <input className="w-full rounded-lg border p-2.5" placeholder="Category" value={form.category || ""} onChange={(e) => setField("category", e.target.value)} />
       <textarea className="w-full rounded-lg border p-2.5" placeholder="Description" value={form.description || ""} onChange={(e) => setField("description", e.target.value)} />
+      <input className="w-full rounded-lg border p-2.5" placeholder="Banner image URL (optional)" value={bannerImageUrl} onChange={(e) => setBannerImageUrl(e.target.value)} />
+      {errors.banner_image_url && <p className="text-xs text-rose-600">{errors.banner_image_url}</p>}
     </PsychometricAdminCard>
 
     <PsychometricAdminCard className="space-y-4"><h2 className="text-lg font-semibold">Pricing & Visibility</h2>

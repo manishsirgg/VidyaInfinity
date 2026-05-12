@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Image from "next/image";
 
 import { PsychometricPurchaseCard } from "@/components/psychometric/psychometric-purchase-card";
 import { createClient } from "@/lib/supabase/server";
@@ -14,7 +15,7 @@ export default async function TestDetailsPage({ params }: { params: Promise<{ sl
 
   const { data: test } = await supabase
     .from("psychometric_tests")
-    .select("id,title,description,price,is_active,duration_minutes,instructions")
+    .select("id,title,description,price,is_active,duration_minutes,instructions,metadata")
     .eq("slug", slug)
     .single();
 
@@ -59,6 +60,16 @@ export default async function TestDetailsPage({ params }: { params: Promise<{ sl
   return (
     <div className="mx-auto max-w-4xl px-4 py-12">
       <article className="rounded-xl border bg-white p-8">
+        {typeof test.metadata === "object" && test.metadata && typeof (test.metadata as Record<string, unknown>).banner_image_url === "string" ? (
+          <Image
+            src={String((test.metadata as Record<string, unknown>).banner_image_url)}
+            alt={`${test.title} banner`}
+            width={1200}
+            height={420}
+            className="mb-6 h-56 w-full rounded-xl object-cover"
+            unoptimized
+          />
+        ) : null}
         <h1 className="text-3xl font-semibold">{test.title}</h1>
         <p className="mt-4 text-slate-600">{test.description}</p>
         <p className="mt-6 text-2xl font-semibold">₹{test.price}</p>
