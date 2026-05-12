@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
+import { recordActivityIfMissing, safeRunCrmAutomation, upsertInstituteCrmContactFromLead } from "@/lib/institute/crm-automation";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { deliverWebinarAccess } from "@/lib/webinars/access-delivery";
 import { notifyWebinarEnrollment } from "@/lib/webinars/enrollment-notifications";
@@ -107,6 +108,47 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
         student_id: auth.user.id,
         registration_id: registration.id,
         error: deliveryError instanceof Error ? deliveryError.message : "Unknown error",
+      });
+    });
+
+    await safeRunCrmAutomation("webinar_registration", async () => {
+      const { data: profile } = await admin.data
+        .from("profiles")
+        .select("full_name,email,phone")
+        .eq("id", auth.user.id)
+        .maybeSingle<{ full_name: string | null; email: string | null; phone: string | null }>();
+      const contact = await upsertInstituteCrmContactFromLead(admin.data, {
+        instituteId: webinar.institute_id,
+        fullName: profile?.full_name ?? "Student",
+        email: profile?.email ?? null,
+        phone: profile?.phone ?? null,
+        source: "webinar_registration",
+        serviceType: "webinar",
+        lifecycleStage: "interested",
+        studentId: auth.user.id,
+        webinarId: webinar.id,
+        metadata: {
+          registration_id: registration.id,
+          webinar_id: webinar.id,
+          payment_status: "not_required",
+          access_status: "granted",
+          automation_source: "api/webinars/register",
+        },
+      });
+      if (!contact?.id) return;
+      await recordActivityIfMissing(admin.data, {
+        contactId: contact.id,
+        instituteId: webinar.institute_id,
+        actorUserId: auth.user.id,
+        activityType: "webinar_registered",
+        title: "Webinar registered",
+        dedupeKey: `webinar_registration:${registration.id}`,
+        metadata: {
+          registration_id: registration.id,
+          webinar_id: webinar.id,
+          payment_status: "not_required",
+          access_status: "granted",
+        },
       });
     });
   }
