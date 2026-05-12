@@ -356,6 +356,16 @@ export default async function InstituteDashboardPage() {
             <Link href="/institute/leads" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Review leads
             </Link>
+            <Link href="/institute/crm" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              <span className="block font-medium">CRM Dashboard</span>
+              <span className="mt-0.5 block text-xs text-slate-600">
+                Manage leads, contacts, notes, follow-ups, and conversions.
+              </span>
+            </Link>
+            <Link href="/institute/crm/contacts" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              <span className="block font-medium">CRM Contacts</span>
+              <span className="mt-0.5 block text-xs text-slate-600">View and manage institute CRM contacts.</span>
+            </Link>
             <Link href="/institute/enrollments" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Track enrollments
             </Link>
