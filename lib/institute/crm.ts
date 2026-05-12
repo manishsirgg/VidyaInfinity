@@ -5,7 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const CRM_STAGES = ["new", "contacted", "qualified", "converted", "lost"] as const;
 export const CRM_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
-export const CRM_FOLLOWUP_STATUS = ["pending", "completed", "cancelled"] as const;
+export const CRM_FOLLOWUP_STATUS = ["scheduled", "completed", "cancelled"] as const;
 export const CRM_FOLLOWUP_CHANNEL = ["call", "email", "whatsapp", "sms", "meeting", "other"] as const;
 export const CRM_NOTE_TYPES = ["general", "call", "email", "meeting", "internal"] as const;
 export const CRM_ACTIVITY_TYPES = ["note_added", "follow_up_created", "follow_up_completed", "status_changed", "priority_changed", "contact_updated"] as const;

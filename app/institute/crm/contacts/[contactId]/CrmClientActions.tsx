@@ -9,14 +9,14 @@ function useSubmit() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const submit = async (url: string, method: string, body: unknown) => {
+  const submit = async (url: string, method: string, body: unknown, options?: { refresh?: boolean; successMessage?: string }) => {
     setLoading(true); setError(null); setMessage(null);
     try {
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Request failed");
-      setMessage("Saved successfully");
-      router.refresh();
+      setMessage(options?.successMessage ?? "Saved successfully");
+      if (options?.refresh !== false) router.refresh();
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
@@ -63,6 +63,7 @@ export function AddFollowUpForm({ contactId }: { contactId: string }) {
 
 export function StagePriorityForm({ contactId, lifecycleStage, priority, nextFollowUpAt }: { contactId: string; lifecycleStage?: string | null; priority?: string | null; nextFollowUpAt?: string | null }) {
   const { loading, message, error, submit } = useSubmit();
+  const router = useRouter();
   const [stage, setStage] = useState(lifecycleStage ?? "new");
   const [prio, setPrio] = useState(priority ?? "medium");
   const [nextAt, setNextAt] = useState(nextFollowUpAt ? new Date(nextFollowUpAt).toISOString().slice(0, 16) : "");
@@ -80,7 +81,11 @@ export function StagePriorityForm({ contactId, lifecycleStage, priority, nextFol
       <button onClick={() => submit(`/api/institute/crm/contacts/${contactId}`, "PATCH", { lifecycle_stage: "qualified" })} className="rounded border px-2 py-1">Mark Qualified</button>
       <button onClick={() => submit(`/api/institute/crm/contacts/${contactId}`, "PATCH", { lifecycle_stage: "converted", converted: true, converted_at: new Date().toISOString() })} className="rounded border px-2 py-1">Mark Converted</button>
       <button onClick={() => { if (!lostReason.trim()) return; submit(`/api/institute/crm/contacts/${contactId}`, "PATCH", { lifecycle_stage: "lost", converted: false, lost_reason: lostReason }); }} className="rounded border px-2 py-1">Mark Lost</button>
-      <button onClick={() => window.confirm("Archive this contact?") && submit(`/api/institute/crm/contacts/${contactId}`, "PATCH", { is_archived: true })} className="col-span-2 rounded border border-red-300 px-2 py-1 text-red-700">Archive Contact</button>
+      <button onClick={async () => {
+        if (!window.confirm("Archive this contact?")) return;
+        const ok = await submit(`/api/institute/crm/contacts/${contactId}`, "PATCH", { is_archived: true }, { refresh: false, successMessage: "Contact archived" });
+        if (ok) router.push("/institute/crm/contacts");
+      }} className="col-span-2 rounded border border-red-300 px-2 py-1 text-red-700">Archive Contact</button>
     </div>
     <textarea value={lostReason} onChange={(e) => setLostReason(e.target.value)} placeholder="Lost reason (required for Mark Lost)" className="w-full rounded border px-2 py-1" rows={2} />
     {error ? <p className="text-sm text-red-600">{error}</p> : null}{message ? <p className="text-sm text-green-600">{message}</p> : null}
@@ -89,7 +94,7 @@ export function StagePriorityForm({ contactId, lifecycleStage, priority, nextFol
 
 export function FollowUpActions({ followUpId, status }: { followUpId: string; status: string | null }) {
   const { loading, error, submit } = useSubmit();
-  if (status !== "pending") return null;
+  if (status !== "scheduled") return null;
   return <div className="mt-2 flex gap-2 text-xs">
     <button disabled={loading} onClick={() => submit(`/api/institute/crm/follow-ups/${followUpId}`, "PATCH", { status: "completed", completed_at: new Date().toISOString() })} className="rounded border px-2 py-1">Mark completed</button>
     <button disabled={loading} onClick={() => submit(`/api/institute/crm/follow-ups/${followUpId}`, "PATCH", { status: "cancelled", cancelled_at: new Date().toISOString() })} className="rounded border px-2 py-1">Cancel</button>
