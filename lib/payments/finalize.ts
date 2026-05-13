@@ -1,6 +1,6 @@
 import { normalizePaymentStatus } from "@/lib/payments/payment-status";
 import { reconcileCourseOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
-import { recordActivityIfMissing, safeRunCrmAutomation, upsertInstituteCrmContactFromLead } from "@/lib/institute/crm-automation";
+import { markCourseOrderConvertedInCrm, markWebinarOrderConvertedInCrm, safeRunCrmAutomation } from "@/lib/institute/crm-automation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type FinalizeSource = "verify_api" | "webhook";
@@ -126,34 +126,11 @@ export async function finalizeCoursePaymentFromRazorpay({
   });
 
   await safeRunCrmAutomation("course_conversion", async () => {
-    const [{ data: profile }, { data: enrollment }] = await Promise.all([
-      supabase.from("profiles").select("full_name,email,phone").eq("id", order.student_id).maybeSingle<{ full_name: string | null; email: string | null; phone: string | null }>(),
-      supabase.from("course_enrollments").select("id").eq("course_order_id", order.id).limit(1).maybeSingle<{ id: string }>(),
-    ]);
-    const contact = await upsertInstituteCrmContactFromLead(supabase, {
-      instituteId: order.institute_id,
-      fullName: profile?.full_name ?? "Student",
-      email: profile?.email ?? null,
-      phone: profile?.phone ?? null,
-      serviceType: "course",
-      source: "course_payment",
-      lifecycleStage: "converted",
-      forceStage: true,
-      studentId: order.student_id,
-      courseId: order.course_id,
-      metadata: {
-        course_order_id: order.id,
-        enrollment_id: enrollment?.id ?? null,
-        payment_status: "paid",
-        automation_source: "payments/finalize-course",
-      },
+    console.info("[CRM automation][course-paid] starting", { course_order_id: order.id, razorpay_order_id: razorpayOrderId, razorpay_payment_id: razorpayPaymentId });
+    const result = await markCourseOrderConvertedInCrm({
+      courseOrderId: order.id, razorpayOrderId, razorpayPaymentId, source: "payments/finalize-course",
     });
-    if (!contact?.id) return;
-    await supabase.from("crm_contacts").update({ converted: true, converted_at: new Date().toISOString(), last_course_order_id: order.id }).eq("id", contact.id);
-    await recordActivityIfMissing(supabase, {
-      contactId: contact.id, instituteId: order.institute_id, actorUserId: order.student_id, activityType: "course_purchased", title: "Course purchased", dedupeKey: `course_order:${order.id}`,
-      metadata: { course_order_id: order.id, enrollment_id: enrollment?.id ?? null, payment_status: "paid", gross_amount: order.gross_amount, razorpay_order_id: razorpayOrderId, razorpay_payment_id: razorpayPaymentId },
-    });
+    console.info("[CRM automation][course-paid] completed", { course_order_id: order.id, contact_id: result.contactId });
   });
 
   return { error: null as string | null, finalized: true, reason: "finalized" as const, order };
@@ -254,21 +231,11 @@ export async function finalizeWebinarPaymentFromRazorpay({
   });
 
   await safeRunCrmAutomation("webinar_conversion", async () => {
-    const [{ data: profile }, { data: registration }] = await Promise.all([
-      supabase.from("profiles").select("full_name,email,phone").eq("id", order.student_id).maybeSingle<{ full_name: string | null; email: string | null; phone: string | null }>(),
-      supabase.from("webinar_registrations").select("id,payment_status,access_status").eq("webinar_order_id", order.id).limit(1).maybeSingle<{ id: string; payment_status: string | null; access_status: string | null }>(),
-    ]);
-    const contact = await upsertInstituteCrmContactFromLead(supabase, {
-      instituteId: order.institute_id, fullName: profile?.full_name ?? "Student", email: profile?.email ?? null, phone: profile?.phone ?? null, serviceType: "webinar", source: "webinar_payment",
-      lifecycleStage: "converted", forceStage: true, studentId: order.student_id, webinarId: order.webinar_id,
-      metadata: { webinar_order_id: order.id, registration_id: registration?.id ?? null, payment_status: "paid", access_status: registration?.access_status ?? order.access_status, automation_source: "payments/finalize-webinar" },
+    console.info("[CRM automation][webinar-paid] starting", { webinar_order_id: order.id, razorpay_order_id: razorpayOrderId, razorpay_payment_id: razorpayPaymentId });
+    const result = await markWebinarOrderConvertedInCrm({
+      webinarOrderId: order.id, razorpayOrderId, razorpayPaymentId, source: "payments/finalize-webinar",
     });
-    if (!contact?.id) return;
-    await supabase.from("crm_contacts").update({ converted: true, converted_at: new Date().toISOString(), last_webinar_order_id: order.id }).eq("id", contact.id);
-    await recordActivityIfMissing(supabase, {
-      contactId: contact.id, instituteId: order.institute_id, actorUserId: order.student_id, activityType: "webinar_purchased", title: "Webinar purchased", dedupeKey: `webinar_order:${order.id}`,
-      metadata: { webinar_order_id: order.id, registration_id: registration?.id ?? null, payment_status: registration?.payment_status ?? "paid", access_status: registration?.access_status ?? order.access_status, razorpay_order_id: razorpayOrderId, razorpay_payment_id: razorpayPaymentId },
-    });
+    console.info("[CRM automation][webinar-paid] completed", { webinar_order_id: order.id, contact_id: result.contactId });
   });
 
   return { error: null as string | null, finalized: true, reason: "finalized" as const, order };
