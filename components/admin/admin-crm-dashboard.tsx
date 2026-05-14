@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import { CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES, CRM_FOLLOW_UP_CHANNELS, crmLabel } from "@/lib/institute/crm-enums";
 
@@ -17,6 +18,8 @@ type CrmContact = {
   next_follow_up_at: string | null;
   last_activity_at: string | null;
   created_at: string | null;
+  linked_institute_id?: string | null;
+  conversion_status?: string | null;
 };
 
 type ContactDetail = {
@@ -47,11 +50,14 @@ type DashboardData = {
     contacted: number;
     qualified: number;
     converted: number;
+    highPriorityContacts: number;
     overdueFollowUps: number;
-    followUpsDueToday: number;
+    recentConversions: number;
     sourceCounts: Record<string, number>;
     serviceTypeCounts: Record<string, number>;
+    instituteCounts: Record<string, string>;
   };
+  recentConversionsList?: Array<{ id: string; contact_id: string | null; title: string; activity_type: string; created_at: string | null }>;
 };
 
 type CrmTag = { id: string; name: string; color: string | null };
@@ -96,6 +102,8 @@ export function AdminCrmDashboard() {
   const [serviceType, setServiceType] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [convertedOnly, setConvertedOnly] = useState(false);
+  const [instituteId, setInstituteId] = useState("");
   const [sort, setSort] = useState("newest");
   const [page, setPage] = useState(1);
   const [editAssignedTo, setEditAssignedTo] = useState("");
@@ -103,6 +111,7 @@ export function AdminCrmDashboard() {
 
   const sources = useMemo(() => Object.keys(result?.kpis.sourceCounts ?? {}), [result]);
   const serviceTypes = useMemo(() => Object.keys(result?.kpis.serviceTypeCounts ?? {}), [result]);
+  const institutes = useMemo(() => Object.entries(result?.kpis.instituteCounts ?? {}), [result]);
 
   async function loadContacts(options?: { page?: number }) {
     setLoading(true);
@@ -114,7 +123,9 @@ export function AdminCrmDashboard() {
     if (source) qs.set("source", source);
     if (serviceType) qs.set("serviceType", serviceType);
     if (assignedTo) qs.set("assignedTo", assignedTo);
+    if (instituteId) qs.set("instituteId", instituteId);
     if (overdueOnly) qs.set("overdue", "true");
+    if (convertedOnly) qs.set("converted", "true");
 
     const [contactsResp, tagsResp] = await Promise.all([fetch(`/api/admin/crm/contacts?${qs.toString()}`), fetch("/api/admin/crm/tags")]);
     const contactsBody = await contactsResp.json();
@@ -274,17 +285,21 @@ export function AdminCrmDashboard() {
   return (
     <div className="mx-auto max-w-[1400px] space-y-5 px-4 py-8">
       <h1 className="vi-page-title">Admin CRM</h1>
+      <p className="text-sm text-slate-600">Supervise CRM contacts, activities, follow-ups, and conversions across all institutes.</p>
+      <div className="flex gap-2">
+        <Link href="/admin/crm/maintenance" className="rounded border border-slate-300 px-3 py-2 text-sm">CRM Maintenance</Link>
+        <Link href="/admin/dashboard" className="rounded bg-brand-600 px-3 py-2 text-sm text-white">Admin Dashboard</Link>
+      </div>
       {message ? <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm">{message}</p> : null}
 
       <section className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
         {[
           ["Total", result?.kpis.totalContacts ?? 0],
           ["New", result?.kpis.newContacts ?? 0],
-          ["Contacted", result?.kpis.contacted ?? 0],
-          ["Qualified", result?.kpis.qualified ?? 0],
-          ["Converted", result?.kpis.converted ?? 0],
-          ["Overdue", result?.kpis.overdueFollowUps ?? 0],
-          ["Due today", result?.kpis.followUpsDueToday ?? 0],
+          ["Converted contacts", result?.kpis.converted ?? 0],
+          ["High priority contacts", result?.kpis.highPriorityContacts ?? 0],
+          ["Overdue follow-ups", result?.kpis.overdueFollowUps ?? 0],
+          ["Recent conversions", result?.kpis.recentConversions ?? 0],
           ["Sources", Object.keys(result?.kpis.sourceCounts ?? {}).length],
         ].map(([label, value]) => (
           <article key={String(label)} className="vi-card p-3">
@@ -295,7 +310,7 @@ export function AdminCrmDashboard() {
       </section>
 
       <form onSubmit={applyFilters} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-4 xl:grid-cols-8">
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name/email/phone" className="vi-input py-2 text-sm" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email, phone, WhatsApp…" className="vi-input py-2 text-sm" />
         <select value={stage} onChange={(e) => setStage(e.target.value)} className="vi-input py-2 text-sm">
           <option value="">All stages</option>
           {stageOptions.filter(Boolean).map((item) => (
@@ -321,14 +336,24 @@ export function AdminCrmDashboard() {
           ))}
         </select>
         <input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Assigned admin id" className="vi-input py-2 text-sm" />
+        <select value={instituteId} onChange={(e) => setInstituteId(e.target.value)} className="vi-input py-2 text-sm">
+          <option value="">All institutes</option>
+          {institutes.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
         <select value={sort} onChange={(e) => setSort(e.target.value)} className="vi-input py-2 text-sm">
           <option value="newest">Newest</option>
           <option value="last_activity">Last activity</option>
           <option value="next_follow_up">Next follow-up</option>
         </select>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />Overdue only</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={convertedOnly} onChange={(e) => setConvertedOnly(e.target.checked)} />Converted only</label>
         <button className="rounded bg-brand-600 px-3 py-2 text-sm text-white" type="submit">Apply filters</button>
+        <button type="button" className="rounded border px-3 py-2 text-sm" onClick={() => { setSearch(""); setStage(""); setPriority(""); setSource(""); setServiceType(""); setAssignedTo(""); setInstituteId(""); setOverdueOnly(false); setConvertedOnly(false); setPage(1); void loadContacts({ page: 1 }); }}>Reset filters</button>
       </form>
+      <section className="rounded border bg-white p-3">
+        <h2 className="text-sm font-semibold">Recent conversions</h2>
+        {!result?.recentConversionsList?.length ? <p className="text-xs text-slate-600">No purchase history yet.</p> : <div className="mt-2 space-y-2">{result.recentConversionsList.map((item) => <button key={item.id} className="w-full rounded border p-2 text-left text-xs hover:bg-slate-50" onClick={() => item.contact_id && void openDetail(item.contact_id)}><p className="font-medium">{item.title || crmLabel(item.activity_type)}</p><p className="text-slate-500">{fmt(item.created_at)}</p></button>)}</div>}
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
         <section className="rounded border bg-white p-2">
