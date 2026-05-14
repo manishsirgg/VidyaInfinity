@@ -37,8 +37,8 @@ export function CoursePurchaseCard({
   const purchaseDisabled = !enrollmentOpen || hasActiveEnrollment;
   const enrollmentActiveLabel = hasActiveEnrollment
     ? activeEnrollmentEndsAt
-      ? `Enrollment active until ${new Date(activeEnrollmentEndsAt).toLocaleDateString()}`
-      : "Already Enrolled"
+      ? `Enrollment active until ${new Date(activeEnrollmentEndsAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}.`
+      : "Enrollment Active"
     : null;
 
   useEffect(() => {
@@ -225,7 +225,7 @@ export function CoursePurchaseCard({
       </div>
 
       {message ? <p className={`mt-2 text-xs ${state === "error" ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
-      {hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-amber-700">{enrollmentActiveLabel}</p> : null}
+      {hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-amber-700">{enrollmentActiveLabel} You are already enrolled. Please contact the institute for batch/session details.</p> : null}
       {!enrollmentOpen && !hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-rose-700">{enrollmentBlockedMessage}</p> : null}
     </div>
   );
