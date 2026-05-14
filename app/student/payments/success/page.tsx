@@ -14,6 +14,10 @@ function looksLikeUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function looksLikeRazorpayOrderId(value: string) {
+  return /^order_/i.test(value);
+}
+
 export default async function PaymentSuccessPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const { user } = await requireUser("student");
@@ -91,7 +95,9 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
 
       const attempts: Array<{ label: string; column: "razorpay_order_id" | "razorpay_payment_id" | "id"; value: string }> = [];
       if (razorpayOrderIdParam) attempts.push({ label: "a. razorpay_order_id = razorpay_order_id", column: "razorpay_order_id", value: razorpayOrderIdParam });
-      if (orderId) attempts.push({ label: "b. razorpay_order_id = order_id", column: "razorpay_order_id", value: orderId });
+      if (orderId && looksLikeRazorpayOrderId(orderId)) {
+        attempts.push({ label: "b. razorpay_order_id = order_id (order_ only)", column: "razorpay_order_id", value: orderId });
+      }
       if (paymentId) attempts.push({ label: "c. razorpay_payment_id = payment_id", column: "razorpay_payment_id", value: paymentId });
       if (razorpayPaymentIdParam) attempts.push({ label: "d. razorpay_payment_id = razorpay_payment_id", column: "razorpay_payment_id", value: razorpayPaymentIdParam });
       if (orderId && looksLikeUuid(orderId)) attempts.push({ label: "e. course_orders.id = order_id (uuid only)", column: "id", value: orderId });
@@ -123,7 +129,11 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
         }
       }
 
-      if (data && (!data.courses || (Array.isArray(data.courses) && !data.courses[0])) && data.course_id) {
+      const relatedCourseTitle = data?.courses
+        ? (Array.isArray(data.courses) ? (data.courses[0]?.title ?? null) : (data.courses.title ?? null))
+        : null;
+
+      if (data && (!data.courses || !relatedCourseTitle) && data.course_id) {
         const { data: courseRow } = await supabase
           .from("courses")
           .select("title")
@@ -137,7 +147,7 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
         }
       }
 
-      if (process.env.NODE_ENV !== "production" && !data) {
+      if (!data) {
         console.info("[student/payments/success] Course order lookup failed", {
           order_id: orderId || null,
           razorpay_order_id: razorpayOrderIdParam || null,
@@ -147,9 +157,12 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
           found: false,
           relationLookupError,
         });
-      } else if (process.env.NODE_ENV !== "production" && data) {
+      } else {
         console.info("[student/payments/success] Course order lookup success", {
           strategy: matchedStrategy,
+          order_id: orderId || null,
+          razorpay_order_id: razorpayOrderIdParam || null,
+          payment_id: paymentId || null,
           found: true,
         });
       }
