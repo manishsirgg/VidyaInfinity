@@ -47,7 +47,7 @@ update public.course_enrollments
 set
   student_id = coalesce(student_id, user_id),
   course_order_id = coalesce(course_order_id, order_id),
-  enrollment_status = coalesce(enrollment_status, 'enrolled'),
+  enrollment_status = coalesce(enrollment_status, 'active'),
   enrolled_at = coalesce(enrolled_at, created_at),
   access_start_at = coalesce(access_start_at, enrolled_at, created_at)
 where
@@ -67,7 +67,7 @@ create unique index if not exists course_enrollments_course_order_id_unique_idx
 
 create unique index if not exists course_enrollments_student_course_enrolled_unique_idx
   on public.course_enrollments(student_id, course_id)
-  where enrollment_status = 'enrolled';
+  where enrollment_status = 'active';
 
 -- Backfill FKs only when absent.
 do $$

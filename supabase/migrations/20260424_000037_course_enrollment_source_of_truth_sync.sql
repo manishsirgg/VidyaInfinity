@@ -54,7 +54,7 @@ begin
   v_paid_at := coalesce(new.paid_at, new.created_at, v_now);
 
   if new.payment_status = 'paid' then
-    v_active_status := public.resolve_course_enrollment_status(array['enrolled', 'active'], 'enrolled');
+    v_active_status := public.resolve_course_enrollment_status(array['active'], 'active');
 
     begin
       insert into public.course_enrollments (
@@ -110,7 +110,7 @@ begin
           metadata = coalesce(public.course_enrollments.metadata, '{}'::jsonb) || jsonb_build_object('source', 'db_trigger', 'synced_from', 'course_orders')
         where public.course_enrollments.student_id = v_student_id
           and public.course_enrollments.course_id = new.course_id
-          and public.course_enrollments.enrollment_status in ('enrolled', 'active', 'pending', 'suspended', 'completed');
+          and public.course_enrollments.enrollment_status in ('active', 'pending', 'suspended', 'completed');
     end;
   elsif new.payment_status = 'refunded' then
     v_revoked_status := public.resolve_course_enrollment_status(array['cancelled', 'revoked', 'inactive'], 'cancelled');
@@ -125,7 +125,7 @@ begin
        or (
          public.course_enrollments.student_id = v_student_id
          and public.course_enrollments.course_id = new.course_id
-         and public.course_enrollments.enrollment_status in ('enrolled', 'active', 'pending', 'suspended', 'completed')
+         and public.course_enrollments.enrollment_status in ('active', 'pending', 'suspended', 'completed')
        );
   end if;
 
@@ -158,7 +158,7 @@ updated_existing as (
     user_id = p.student_id,
     course_order_id = p.id,
     institute_id = p.institute_id,
-    enrollment_status = public.resolve_course_enrollment_status(array['enrolled', 'active'], 'enrolled'),
+    enrollment_status = public.resolve_course_enrollment_status(array['active'], 'active'),
     enrolled_at = coalesce(e.enrolled_at, p.paid_at),
     access_start_at = coalesce(e.access_start_at, p.paid_at),
     cancelled_at = null,
@@ -167,7 +167,7 @@ updated_existing as (
   from paid_orders p
   where e.student_id = p.student_id
     and e.course_id = p.course_id
-    and e.enrollment_status in ('enrolled', 'active', 'pending', 'suspended', 'completed')
+    and e.enrollment_status in ('active', 'pending', 'suspended', 'completed')
   returning e.id, e.course_order_id
 )
 insert into public.course_enrollments (
@@ -189,7 +189,7 @@ select
   p.student_id,
   p.course_id,
   p.institute_id,
-  public.resolve_course_enrollment_status(array['enrolled', 'active'], 'enrolled'),
+  public.resolve_course_enrollment_status(array['active'], 'active'),
   p.paid_at,
   p.paid_at,
   jsonb_build_object('source', 'migration_backfill', 'synced_from', 'course_orders')
@@ -222,5 +222,5 @@ where e.course_order_id = r.id
    or (
      e.student_id = r.student_id
      and e.course_id = r.course_id
-     and e.enrollment_status in ('enrolled', 'active', 'pending', 'suspended', 'completed')
+     and e.enrollment_status in ('active', 'pending', 'suspended', 'completed')
    );
