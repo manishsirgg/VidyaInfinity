@@ -115,17 +115,24 @@ export async function recordActivityIfMissing(supabase: SupabaseClient, input: {
 }
 
 export async function safeRunCrmAutomation(label: string, fn: () => Promise<void>) {
-  try { await fn(); } catch (error) { console.error(`[CRM automation] ${label} failed`, error); }
+  console.info(`[CRM automation][${label}] starting`);
+  try {
+    await fn();
+    console.info(`[CRM automation][${label}] completed`);
+  } catch (error) {
+    console.error(`[CRM automation][${label}] failed`, error);
+  }
 }
 
-export async function markCourseOrderConvertedInCrm(input: { courseOrderId: string; razorpayOrderId?: string | null; razorpayPaymentId?: string | null; paidAt?: string | null; source?: string }) {
+export async function markCourseOrderConvertedInCrm(input: string | { courseOrderId: string; razorpayOrderId?: string | null; razorpayPaymentId?: string | null; paidAt?: string | null; source?: string }) {
+  const resolvedInput = typeof input === "string" ? { courseOrderId: input } : input;
   const admin = getSupabaseAdmin();
   if (!admin.ok) throw new Error(admin.error);
   const supabase = admin.data;
   const { data: order, error: orderError } = await supabase
     .from("course_orders")
     .select("id,student_id,course_id,institute_id,payment_status,paid_at,gross_amount,razorpay_order_id,razorpay_payment_id")
-    .eq("id", input.courseOrderId)
+    .eq("id", resolvedInput.courseOrderId)
     .maybeSingle<{ id: string; student_id: string; course_id: string; institute_id: string; payment_status: string | null; paid_at: string | null; gross_amount: number | null; razorpay_order_id: string | null; razorpay_payment_id: string | null }>();
   if (orderError || !order) throw new Error(orderError?.message ?? "Course order not found");
   const [{ data: profile }, { data: enrollment }, { data: course }] = await Promise.all([
@@ -136,28 +143,29 @@ export async function markCourseOrderConvertedInCrm(input: { courseOrderId: stri
   const contact = await upsertInstituteCrmContactFromLead(supabase, {
     instituteId: order.institute_id, fullName: profile?.full_name ?? "Student", email: profile?.email ?? null, phone: profile?.phone ?? null, serviceType: "course", source: "course_payment",
     lifecycleStage: "converted", forceStage: true, studentId: order.student_id, courseId: order.course_id,
-    metadata: { course_order_id: order.id, enrollment_id: enrollment?.id ?? null, payment_status: "paid", automation_source: input.source ?? "payments/finalize-course" },
+    metadata: { course_order_id: order.id, enrollment_id: enrollment?.id ?? null, payment_status: "paid", automation_source: resolvedInput.source ?? "payments/finalize-course" },
   });
   if (!contact?.id) return { contactId: null };
-  const convertedAt = input.paidAt ?? order.paid_at ?? new Date().toISOString();
+  const convertedAt = resolvedInput.paidAt ?? order.paid_at ?? new Date().toISOString();
   await supabase.from("crm_contacts").update({
     converted: true, converted_at: convertedAt, lifecycle_stage: "converted", last_course_order_id: order.id, course_id: order.course_id, linked_profile_id: order.student_id, last_activity_at: new Date().toISOString(),
   }).eq("id", contact.id);
   await recordActivityIfMissing(supabase, {
     contactId: contact.id, instituteId: order.institute_id, actorUserId: order.student_id, activityType: "course_purchased", title: `Course purchased${course?.title ? `: ${course.title}` : ""}`, dedupeKey: `course_order:${order.id}`,
-    metadata: { course_order_id: order.id, enrollment_id: enrollment?.id ?? null, payment_status: "paid", gross_amount: order.gross_amount, razorpay_order_id: input.razorpayOrderId ?? order.razorpay_order_id, razorpay_payment_id: input.razorpayPaymentId ?? order.razorpay_payment_id },
+    metadata: { course_order_id: order.id, enrollment_id: enrollment?.id ?? null, payment_status: "paid", gross_amount: order.gross_amount, razorpay_order_id: resolvedInput.razorpayOrderId ?? order.razorpay_order_id, razorpay_payment_id: resolvedInput.razorpayPaymentId ?? order.razorpay_payment_id },
   });
   return { contactId: contact.id };
 }
 
-export async function markWebinarOrderConvertedInCrm(input: { webinarOrderId: string; razorpayOrderId?: string | null; razorpayPaymentId?: string | null; paidAt?: string | null; source?: string }) {
+export async function markWebinarOrderConvertedInCrm(input: string | { webinarOrderId: string; razorpayOrderId?: string | null; razorpayPaymentId?: string | null; paidAt?: string | null; source?: string }) {
+  const resolvedInput = typeof input === "string" ? { webinarOrderId: input } : input;
   const admin = getSupabaseAdmin();
   if (!admin.ok) throw new Error(admin.error);
   const supabase = admin.data;
   const { data: order, error: orderError } = await supabase
     .from("webinar_orders")
     .select("id,student_id,webinar_id,institute_id,payment_status,paid_at,amount,access_status,razorpay_order_id,razorpay_payment_id")
-    .eq("id", input.webinarOrderId)
+    .eq("id", resolvedInput.webinarOrderId)
     .maybeSingle<{ id: string; student_id: string; webinar_id: string; institute_id: string; payment_status: string | null; paid_at: string | null; amount: number | null; access_status: string | null; razorpay_order_id: string | null; razorpay_payment_id: string | null }>();
   if (orderError || !order) throw new Error(orderError?.message ?? "Webinar order not found");
   const [{ data: profile }, { data: registration }, { data: webinar }] = await Promise.all([
@@ -168,16 +176,16 @@ export async function markWebinarOrderConvertedInCrm(input: { webinarOrderId: st
   const contact = await upsertInstituteCrmContactFromLead(supabase, {
     instituteId: order.institute_id, fullName: profile?.full_name ?? "Student", email: profile?.email ?? null, phone: profile?.phone ?? null, serviceType: "webinar", source: "webinar_payment",
     lifecycleStage: "converted", forceStage: true, studentId: order.student_id, webinarId: order.webinar_id,
-    metadata: { webinar_order_id: order.id, registration_id: registration?.id ?? null, payment_status: registration?.payment_status ?? "paid", access_status: registration?.access_status ?? order.access_status, automation_source: input.source ?? "payments/finalize-webinar" },
+    metadata: { webinar_order_id: order.id, registration_id: registration?.id ?? null, payment_status: registration?.payment_status ?? "paid", access_status: registration?.access_status ?? order.access_status, automation_source: resolvedInput.source ?? "payments/finalize-webinar" },
   });
   if (!contact?.id) return { contactId: null };
-  const convertedAt = input.paidAt ?? order.paid_at ?? new Date().toISOString();
+  const convertedAt = resolvedInput.paidAt ?? order.paid_at ?? new Date().toISOString();
   await supabase.from("crm_contacts").update({
     converted: true, converted_at: convertedAt, lifecycle_stage: "converted", last_webinar_order_id: order.id, webinar_id: order.webinar_id, linked_profile_id: order.student_id, last_activity_at: new Date().toISOString(),
   }).eq("id", contact.id);
   await recordActivityIfMissing(supabase, {
     contactId: contact.id, instituteId: order.institute_id, actorUserId: order.student_id, activityType: "webinar_purchased", title: `Webinar purchased${webinar?.title ? `: ${webinar.title}` : ""}`, dedupeKey: `webinar_order:${order.id}`,
-    metadata: { webinar_order_id: order.id, registration_id: registration?.id ?? null, payment_status: registration?.payment_status ?? "paid", access_status: registration?.access_status ?? order.access_status, razorpay_order_id: input.razorpayOrderId ?? order.razorpay_order_id, razorpay_payment_id: input.razorpayPaymentId ?? order.razorpay_payment_id },
+    metadata: { webinar_order_id: order.id, registration_id: registration?.id ?? null, payment_status: registration?.payment_status ?? "paid", access_status: registration?.access_status ?? order.access_status, razorpay_order_id: resolvedInput.razorpayOrderId ?? order.razorpay_order_id, razorpay_payment_id: resolvedInput.razorpayPaymentId ?? order.razorpay_payment_id },
   });
   return { contactId: contact.id };
 }
