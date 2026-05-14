@@ -45,13 +45,14 @@ type DashboardData = {
   pageSize: number;
   total: number;
   kpis: {
-    totalContacts: number;
-    newContacts: number;
+    totalContacts: number | null;
+    newContacts: number | null;
     contacted: number;
     qualified: number;
-    converted: number;
-    highPriorityContacts: number;
-    overdueFollowUps: number;
+    converted: number | null;
+    convertedContacts?: number | null;
+    highPriorityContacts: number | null;
+    overdueFollowUps: number | null;
     recentConversions: number;
     sourceCounts: Record<string, number>;
     serviceTypeCounts: Record<string, number>;
@@ -294,11 +295,11 @@ export function AdminCrmDashboard() {
 
       <section className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
         {[
-          ["Total", result?.kpis.totalContacts ?? 0],
-          ["New", result?.kpis.newContacts ?? 0],
-          ["Converted contacts", result?.kpis.converted ?? 0],
-          ["High priority contacts", result?.kpis.highPriorityContacts ?? 0],
-          ["Overdue follow-ups", result?.kpis.overdueFollowUps ?? 0],
+          ["Total", displayKpi(result?.kpis.totalContacts)],
+          ["New", displayKpi(result?.kpis.newContacts)],
+          ["Converted contacts", displayKpi(result?.kpis.convertedContacts ?? result?.kpis.converted)],
+          ["High priority contacts", displayKpi(result?.kpis.highPriorityContacts)],
+          ["Overdue follow-ups", displayKpi(result?.kpis.overdueFollowUps)],
           ["Recent conversions", result?.kpis.recentConversions ?? 0],
           ["Sources", Object.keys(result?.kpis.sourceCounts ?? {}).length],
         ].map(([label, value]) => (
@@ -519,3 +520,6 @@ export function AdminCrmDashboard() {
     </div>
   );
 }
+  function displayKpi(value: number | null | undefined) {
+    return value ?? "—";
+  }
