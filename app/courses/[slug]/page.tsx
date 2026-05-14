@@ -176,6 +176,9 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           <p>Batch size: {course.batch_size ?? "-"}</p>
           <p>Faculty: {course.faculty_name ?? "-"}</p>
         </div>
+        <p className="text-xs text-slate-500">
+          Schedule details are provided by the institute. Please contact the institute for the latest batch timing.
+        </p>
 
         <section>
           <h2 className="text-lg font-semibold">Description</h2>
