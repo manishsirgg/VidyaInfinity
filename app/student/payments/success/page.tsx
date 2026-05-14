@@ -10,13 +10,22 @@ function first(value: string | string[] | undefined) {
   return value ?? "";
 }
 
+function looksLikeUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export default async function PaymentSuccessPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const { user } = await requireUser("student");
-  const orderId = first(params.order_id) || first(params.razorpay_order_id);
-  const paymentId = first(params.payment_id) || first(params.razorpay_payment_id);
+  const orderId = first(params.order_id);
+  const razorpayOrderIdParam = first(params.razorpay_order_id);
+  const paymentId = first(params.payment_id);
+  const razorpayPaymentIdParam = first(params.razorpay_payment_id);
   const kindRaw = first(params.kind).trim().toLowerCase();
+  const paymentKindRaw = first(params.paymentKind).trim().toLowerCase();
   const kind = kindRaw === "webinar" || kindRaw === "psychometric" ? kindRaw : "course";
+  const paymentKind = paymentKindRaw === "webinar" || paymentKindRaw === "psychometric" ? paymentKindRaw : "course";
+  const resolvedKind = kindRaw ? kind : paymentKind;
 
   let itemTitle: string | null = null;
   let amount: number | null = null;
@@ -25,16 +34,16 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
   let coursePaymentStatus: string | null = null;
   let resolvedOrderId = orderId || null;
   let resolvedPaymentId = paymentId || null;
-  const kindTitle = kind === "webinar" ? "webinar" : kind === "psychometric" ? "psychometric test" : "course";
+  const kindTitle = resolvedKind === "webinar" ? "webinar" : resolvedKind === "psychometric" ? "psychometric test" : "course";
 
-  if (orderId || (kind === "course" && paymentId)) {
+  if (orderId || razorpayOrderIdParam || paymentId || razorpayPaymentIdParam) {
     const supabase = await createClient();
-    if (kind === "webinar") {
+    if (resolvedKind === "webinar") {
       const { data } = await supabase
         .from("webinar_orders")
         .select("webinar_id,amount,webinars(title,meeting_url)")
         .eq("student_id", user.id)
-        .eq("razorpay_order_id", orderId)
+        .eq("razorpay_order_id", orderId || razorpayOrderIdParam)
         .maybeSingle<{
           webinar_id: string;
           amount: number;
@@ -55,12 +64,12 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
           .maybeSingle<{ access_status: string | null }>();
         webinarAccessGranted = registration?.access_status === "granted";
       }
-    } else if (kind === "psychometric") {
+    } else if (resolvedKind === "psychometric") {
       const { data } = await supabase
         .from("psychometric_orders")
         .select("final_paid_amount,psychometric_tests(title)")
         .eq("user_id", user.id)
-        .eq("razorpay_order_id", orderId)
+        .eq("razorpay_order_id", orderId || razorpayOrderIdParam)
         .maybeSingle<{ final_paid_amount: number; psychometric_tests: { title: string | null } | { title: string | null }[] | null }>();
       amount = data?.final_paid_amount ?? null;
       if (data?.psychometric_tests) {
@@ -69,25 +78,81 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
           : (data.psychometric_tests.title ?? null);
       }
     } else {
-      let query = supabase
-        .from("course_orders")
-        .select("gross_amount,payment_status,razorpay_order_id,razorpay_payment_id,courses(title)")
-        .eq("student_id", user.id)
-        .limit(1);
-
-      if (orderId) {
-        query = query.eq("razorpay_order_id", orderId);
-      } else if (paymentId) {
-        query = query.eq("razorpay_payment_id", paymentId);
-      }
-
-      const { data } = await query.maybeSingle<{
+      type CourseOrderWithRelation = {
         gross_amount: number;
         payment_status: string | null;
         razorpay_order_id: string | null;
         razorpay_payment_id: string | null;
+        course_id: string | null;
+        id: string;
+        paid_at: string | null;
         courses: { title: string | null } | { title: string | null }[] | null;
-      }>();
+      };
+
+      const attempts: Array<{ label: string; column: "razorpay_order_id" | "razorpay_payment_id" | "id"; value: string }> = [];
+      if (razorpayOrderIdParam) attempts.push({ label: "a. razorpay_order_id = razorpay_order_id", column: "razorpay_order_id", value: razorpayOrderIdParam });
+      if (orderId) attempts.push({ label: "b. razorpay_order_id = order_id", column: "razorpay_order_id", value: orderId });
+      if (paymentId) attempts.push({ label: "c. razorpay_payment_id = payment_id", column: "razorpay_payment_id", value: paymentId });
+      if (razorpayPaymentIdParam) attempts.push({ label: "d. razorpay_payment_id = razorpay_payment_id", column: "razorpay_payment_id", value: razorpayPaymentIdParam });
+      if (orderId && looksLikeUuid(orderId)) attempts.push({ label: "e. course_orders.id = order_id (uuid only)", column: "id", value: orderId });
+
+      const seen = new Set<string>();
+      const dedupedAttempts = attempts.filter((attempt) => {
+        const key = `${attempt.column}:${attempt.value}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      let data: CourseOrderWithRelation | null = null;
+      let matchedStrategy: string | null = null;
+      let relationLookupError = false;
+      for (const attempt of dedupedAttempts) {
+        const { data: found, error } = await supabase
+          .from("course_orders")
+          .select("id,gross_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id,paid_at,course_id,courses(title)")
+          .eq("student_id", user.id)
+          .eq(attempt.column, attempt.value)
+          .limit(1)
+          .maybeSingle<CourseOrderWithRelation>();
+        if (error) relationLookupError = true;
+        if (found) {
+          data = found;
+          matchedStrategy = attempt.label;
+          break;
+        }
+      }
+
+      if (data && (!data.courses || (Array.isArray(data.courses) && !data.courses[0])) && data.course_id) {
+        const { data: courseRow } = await supabase
+          .from("courses")
+          .select("title")
+          .eq("id", data.course_id)
+          .maybeSingle<{ title: string | null }>();
+        if (courseRow) {
+          data = {
+            ...data,
+            courses: { title: courseRow.title },
+          };
+        }
+      }
+
+      if (process.env.NODE_ENV !== "production" && !data) {
+        console.info("[student/payments/success] Course order lookup failed", {
+          order_id: orderId || null,
+          razorpay_order_id: razorpayOrderIdParam || null,
+          payment_id: paymentId || null,
+          razorpay_payment_id: razorpayPaymentIdParam || null,
+          lookupStrategies: dedupedAttempts.map((attempt) => attempt.label),
+          found: false,
+          relationLookupError,
+        });
+      } else if (process.env.NODE_ENV !== "production" && data) {
+        console.info("[student/payments/success] Course order lookup success", {
+          strategy: matchedStrategy,
+          found: true,
+        });
+      }
 
       amount = data?.gross_amount ?? null;
       coursePaymentStatus = data?.payment_status ?? null;
@@ -103,25 +168,25 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
     <div className="mx-auto max-w-2xl px-4 py-12">
       <div className="rounded-xl border bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-semibold text-emerald-700">
-          {kind === "webinar" ? "Webinar payment successful" : "Payment successful"}
+          {resolvedKind === "webinar" ? "Webinar payment successful" : "Payment successful"}
         </h1>
         <p className="mt-2 text-sm text-slate-600">
-          {kind === "webinar"
+          {resolvedKind === "webinar"
             ? "Your webinar registration is confirmed and your access has been activated."
             : `Your ${kindTitle} purchase is confirmed and access is being activated.`}
         </p>
 
         <div className="mt-4 space-y-2 rounded bg-slate-50 p-4 text-sm text-slate-700">
-          <p>{kind === "webinar" ? "Webinar" : "Item"}: {itemTitle ?? `Your selected ${kindTitle}`}</p>
+          <p>{resolvedKind === "webinar" ? "Webinar" : "Item"}: {itemTitle ?? `Your selected ${kindTitle}`}</p>
           <p>Amount: {amount !== null ? `₹${amount}` : "-"}</p>
-          <p>{kind === "webinar" ? "Webinar Order ID" : "Order ID"}: {(kind === "course" ? resolvedOrderId : orderId) || "-"}</p>
-          <p>{kind === "webinar" ? "Webinar Payment ID" : "Payment ID"}: {(kind === "course" ? resolvedPaymentId : paymentId) || "-"}</p>
-          {kind === "course" ? <p>Payment Status: {coursePaymentStatus ?? "-"}</p> : null}
+          <p>{resolvedKind === "webinar" ? "Webinar Order ID" : "Order ID"}: {(resolvedKind === "course" ? resolvedOrderId : orderId || razorpayOrderIdParam) || "-"}</p>
+          <p>{resolvedKind === "webinar" ? "Webinar Payment ID" : "Payment ID"}: {(resolvedKind === "course" ? resolvedPaymentId : paymentId || razorpayPaymentIdParam) || "-"}</p>
+          {resolvedKind === "course" ? <p>Payment Status: {coursePaymentStatus ?? "-"}</p> : null}
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link href="/student/dashboard" className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white">Student dashboard</Link>
-          {kind === "webinar" ? (
+          {resolvedKind === "webinar" ? (
             <>
               <Link href="/student/dashboard" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">My Webinar Registrations</Link>
               <Link href="/student/purchases?kind=webinar" className="rounded border px-4 py-2 text-sm font-medium text-slate-700">Webinar Purchases</Link>
