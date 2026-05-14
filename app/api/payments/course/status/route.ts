@@ -58,6 +58,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    let reconciliationFailureCode: string | null = null;
     const auth = await requireApiUser("student", { requireApproved: false });
     if ("error" in auth) return auth.error;
 
@@ -299,6 +300,7 @@ export async function GET(request: Request) {
             });
 
             if (finalized.error) {
+              reconciliationFailureCode = finalized.error;
               console.error("[course/status] passive reconcile failed (gateway fetch)", {
                 ...orderLogCtx,
                 payment_id: effectivePaymentId,
@@ -356,6 +358,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       state: normalized,
+      code: normalized === "pending" && reconciliationFailureCode ? reconciliationFailureCode : undefined,
       redirectTo: buildCoursePaymentRedirect({
         state: redirectState,
         orderId: resolvedOrder.razorpay_order_id ?? orderId,

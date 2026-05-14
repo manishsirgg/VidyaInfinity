@@ -64,30 +64,13 @@ function getOrderKindConstraintMigrationHint(error: { message?: string | null; d
 }
 
 type EnrollmentMutationError = { code?: string | null; message?: string | null; details?: string | null };
-
-function isInvalidEnrollmentEnumValue(error: EnrollmentMutationError | null | undefined) {
-  if (!error) return false;
-  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
-  return text.includes("invalid input value for enum enrollment_status") && text.includes("enrolled");
-}
+const ACTIVE_ENROLLMENT_STATUS = "active" as const;
+const ACTIVE_DUPLICATE_PROTECTION_STATUSES = new Set(["pending", "active", "suspended", "completed"]);
 
 async function withEnrollmentStatusFallback(
-  operation: (enrollmentStatus: "enrolled" | "active") => PromiseLike<{ error: EnrollmentMutationError | null }>,
-  context: { source: "verify_api" | "webhook"; orderId: string; operation: string }
+  operation: (enrollmentStatus: typeof ACTIVE_ENROLLMENT_STATUS) => PromiseLike<{ error: EnrollmentMutationError | null }>,
 ) {
-  const firstTry = await operation("enrolled");
-  if (!firstTry.error || !isInvalidEnrollmentEnumValue(firstTry.error)) {
-    return firstTry;
-  }
-
-  console.warn("[payments/reconcile] enrollment_status_fallback_active", {
-    event: "enrollment_status_fallback_active",
-    source: context.source,
-    orderId: context.orderId,
-    operation: context.operation,
-  });
-
-  return operation("active");
+  return operation(ACTIVE_ENROLLMENT_STATUS);
 }
 
 async function createInstitutePayoutForCourseOrder({
@@ -471,7 +454,7 @@ export async function reconcileCourseOrderPaid({
     source,
   });
 
-  const buildEnrollmentPayload = (enrollmentStatus: "enrolled" | "active") => ({
+  const buildEnrollmentPayload = (enrollmentStatus: typeof ACTIVE_ENROLLMENT_STATUS) => ({
     order_id: canonicalPaidOrderId,
     user_id: order.student_id,
     course_order_id: canonicalPaidOrderId,
@@ -487,6 +470,13 @@ export async function reconcileCourseOrderPaid({
 
   const reconcileEnrollmentRow = async (seedEnrollment: { id: string; course_order_id: string | null; enrollment_status: string | null } | null) => {
     if (seedEnrollment) {
+      const normalizedStatus = String(seedEnrollment.enrollment_status ?? "").trim().toLowerCase();
+      const hasFutureAccess = Boolean(existingEnrollment?.access_end_at && new Date(existingEnrollment.access_end_at).getTime() > Date.now());
+      const isProtectedActiveEnrollment = ACTIVE_DUPLICATE_PROTECTION_STATUSES.has(normalizedStatus) && hasFutureAccess;
+      if (isProtectedActiveEnrollment && seedEnrollment.course_order_id !== canonicalPaidOrderId) {
+        return { error: "ENROLLMENT_ACTIVE_DUPLICATE" };
+      }
+
       console.info("[payments/reconcile] enrollment_row_found", {
         event: "enrollment_row_found",
         orderId: canonicalPaidOrderId,
@@ -502,9 +492,13 @@ export async function reconcileCourseOrderPaid({
         async (enrollmentStatus) =>
           await supabase
             .from("course_enrollments")
-            .update(buildEnrollmentPayload(enrollmentStatus))
+            .update({
+              ...buildEnrollmentPayload(enrollmentStatus),
+              cancelled_at: null,
+              completed_at: null,
+            })
             .eq("id", seedEnrollment.id),
-        { source, orderId: canonicalPaidOrderId, operation: "update_existing_enrollment" }
+        
       );
 
       if (updateEnrollmentError) {
@@ -537,7 +531,7 @@ export async function reconcileCourseOrderPaid({
 
     const { error: insertEnrollmentError } = await withEnrollmentStatusFallback(
       async (enrollmentStatus) => await supabase.from("course_enrollments").insert(buildEnrollmentPayload(enrollmentStatus)),
-      { source, orderId: canonicalPaidOrderId, operation: "insert_new_enrollment" }
+      
     );
 
     if (!insertEnrollmentError) {
@@ -599,7 +593,7 @@ export async function reconcileCourseOrderPaid({
           .from("course_enrollments")
           .update(buildEnrollmentPayload(enrollmentStatus))
           .eq("id", conflictingEnrollment.id),
-      { source, orderId: canonicalPaidOrderId, operation: "update_conflicting_enrollment" }
+      
     );
 
     if (fallbackUpdateError) {
