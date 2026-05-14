@@ -56,6 +56,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   } = await supabase.auth.getUser();
 
   let existingActiveEnrollment = false;
+  let hadExpiredEnrollment = false;
   let activeEnrollmentEndsAt: string | null = null;
   if (user?.id) {
     const { data: existingEnrollmentsByStudent } = await dataClient
@@ -74,10 +75,13 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           .eq("course_id", course.id)
           .order("created_at", { ascending: false })
           .limit(20);
+    const mergedEnrollments = [...(existingEnrollmentsByStudent ?? []), ...(existingEnrollmentsByUser ?? [])];
     const existingEnrollment =
-      [...(existingEnrollmentsByStudent ?? []), ...(existingEnrollmentsByUser ?? [])].find((row) =>
+      mergedEnrollments.find((row) =>
         isCourseEnrollmentCurrentlyActive({ enrollmentStatus: row.enrollment_status, paymentStatus: null, accessEndAt: row.access_end_at })
       ) ?? null;
+
+    hadExpiredEnrollment = mergedEnrollments.some((row) => Boolean(row.access_end_at) && new Date(row.access_end_at as string).getTime() <= Date.now());
 
     if (existingEnrollment) {
       const effectiveEnrollmentEndAt = existingEnrollment.access_end_at ?? null;
@@ -133,6 +137,8 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
         if (hasActivePaidAccess) {
           existingActiveEnrollment = true;
           activeEnrollmentEndsAt = effectivePaidEndAt;
+        } else {
+          hadExpiredEnrollment = true;
         }
       }
     }
@@ -207,6 +213,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           feeAmount={Number(course.fees ?? 0)}
           enrollmentOpen={enrollmentOpen}
           hasActiveEnrollment={existingActiveEnrollment}
+          hasExpiredEnrollment={!existingActiveEnrollment && hadExpiredEnrollment}
           activeEnrollmentEndsAt={activeEnrollmentEndsAt}
         />
         <div className="rounded-xl border bg-white p-4">

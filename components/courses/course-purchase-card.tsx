@@ -17,6 +17,7 @@ export function CoursePurchaseCard({
   enrollmentOpen = true,
   enrollmentBlockedMessage = "This institute is not currently accepting enrollments.",
   hasActiveEnrollment = false,
+  hasExpiredEnrollment = false,
   activeEnrollmentEndsAt = null,
 }: {
   courseId: string;
@@ -25,6 +26,7 @@ export function CoursePurchaseCard({
   enrollmentOpen?: boolean;
   enrollmentBlockedMessage?: string;
   hasActiveEnrollment?: boolean;
+  hasExpiredEnrollment?: boolean;
   activeEnrollmentEndsAt?: string | null;
 }) {
   const [state, setState] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -35,6 +37,7 @@ export function CoursePurchaseCard({
   const router = useRouter();
   const checkoutResolvedRef = useRef(false);
   const purchaseDisabled = !enrollmentOpen || hasActiveEnrollment;
+  const buttonLabel = state === "loading" ? "Processing..." : hasActiveEnrollment ? "Enrollment Active" : hasExpiredEnrollment ? "Join New Batch" : "Pay & Enroll";
   const enrollmentActiveLabel = hasActiveEnrollment
     ? activeEnrollmentEndsAt
       ? `Enrollment active until ${new Date(activeEnrollmentEndsAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}.`
@@ -210,7 +213,7 @@ export function CoursePurchaseCard({
         disabled={state === "loading" || purchaseDisabled}
         className="mt-3 w-full rounded bg-brand-600 px-3 py-2 text-sm text-white disabled:opacity-60"
       >
-        {state === "loading" ? "Processing..." : hasActiveEnrollment ? "Already Enrolled" : "Pay & Enroll"}
+        {buttonLabel}
       </button>
 
       <div className="mt-3">
@@ -226,6 +229,7 @@ export function CoursePurchaseCard({
 
       {message ? <p className={`mt-2 text-xs ${state === "error" ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
       {hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-amber-700">{enrollmentActiveLabel} You are already enrolled. Please contact the institute for batch/session details.</p> : null}
+      {hasExpiredEnrollment && !hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-slate-600">Your previous enrollment has ended. You can enroll again for a new batch/session.</p> : null}
       {!enrollmentOpen && !hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-rose-700">{enrollmentBlockedMessage}</p> : null}
     </div>
   );
