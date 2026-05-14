@@ -15,7 +15,7 @@ const adminModules = [
   { href: "/admin/commission", label: "Commission" },
   { href: "/admin/blogs", label: "Blogs" },
   { href: "/admin/coupons", label: "Coupons" },
-  { href: "/admin/crm", label: "CRM Leads" },
+  { href: "/admin/crm", label: "Admin CRM" },
   { href: "/admin/psychometric", label: "Psychometric Tests" },
   { href: "/admin/psychometric/diagnostics", label: "Psychometric Diagnostics" },
   { href: "/admin/notifications", label: "Notifications" },
@@ -40,6 +40,27 @@ export default async function AdminDashboardPage() {
   }
   const supabase = admin.data;
 
+  const getOverdueFollowUpCount = async () => {
+    const withSoftDeleteFilter = await supabase
+      .from("crm_follow_ups")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "scheduled")
+      .lt("due_at", new Date().toISOString())
+      .eq("is_deleted", false);
+
+    if (!withSoftDeleteFilter.error) {
+      return withSoftDeleteFilter.count ?? 0;
+    }
+
+    const withoutSoftDeleteFilter = await supabase
+      .from("crm_follow_ups")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "scheduled")
+      .lt("due_at", new Date().toISOString());
+
+    return withoutSoftDeleteFilter.count ?? 0;
+  };
+
   const [
     { count: users },
     { count: institutes },
@@ -50,7 +71,11 @@ export default async function AdminDashboardPage() {
     { count: refunds },
     { count: blogs },
     { count: coupons },
-    { count: leads },
+    { count: legacyLeadSubmissions },
+    { count: totalCrmContacts },
+    { count: newCrmContacts },
+    { count: convertedCrmContactsByStage },
+    { count: convertedCrmContactsByFlag },
     { count: tests },
     { count: unreadNotifications },
     { count: webinarCount },
@@ -79,6 +104,10 @@ export default async function AdminDashboardPage() {
     supabase.from("blogs").select("id", { count: "exact", head: true }),
     supabase.from("coupons").select("id", { count: "exact", head: true }).eq("active", true),
     supabase.from("crm_leads").select("id", { count: "exact", head: true }),
+    supabase.from("crm_contacts").select("id", { count: "exact", head: true }).eq("is_deleted", false),
+    supabase.from("crm_contacts").select("id", { count: "exact", head: true }).eq("is_deleted", false).eq("lifecycle_stage", "new"),
+    supabase.from("crm_contacts").select("id", { count: "exact", head: true }).eq("is_deleted", false).eq("lifecycle_stage", "converted"),
+    supabase.from("crm_contacts").select("id", { count: "exact", head: true }).eq("is_deleted", false).eq("converted", true),
     supabase.from("psychometric_tests").select("id", { count: "exact", head: true }).eq("is_active", true),
     supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
     supabase.from("webinars").select("id", { count: "exact", head: true }),
@@ -157,6 +186,8 @@ export default async function AdminDashboardPage() {
     paidWithoutSubscription: [...(courseFeaturedOrders ?? []), ...(webinarFeaturedOrders ?? [])].filter((order) => String(order.payment_status ?? "").toLowerCase().includes("paid")).length,
     failedPayments: [...(courseFeaturedOrders ?? []), ...(webinarFeaturedOrders ?? [])].filter((order) => String(order.payment_status ?? "").toLowerCase().includes("fail")).length,
   };
+  const overdueCrmFollowUps = await getOverdueFollowUpCount();
+  const convertedCrmContacts = Math.max(convertedCrmContactsByStage ?? 0, convertedCrmContactsByFlag ?? 0);
 
   return (
     <div className="vi-page">
@@ -190,8 +221,24 @@ export default async function AdminDashboardPage() {
           Active coupons: {coupons ?? 0}
         </Link>
         <Link href="/admin/crm" className="vi-card p-4">
-          CRM leads: {leads ?? 0}
+          Legacy lead submissions: {legacyLeadSubmissions ?? 0}
         </Link>
+        <Link href="/admin/crm" className="vi-card p-4">
+          Total CRM contacts: {totalCrmContacts ?? 0}
+        </Link>
+        <Link href="/admin/crm" className="vi-card p-4">
+          New CRM contacts: {newCrmContacts ?? 0}
+        </Link>
+        <Link href="/admin/crm" className="vi-card p-4">
+          Converted CRM contacts: {convertedCrmContacts}
+        </Link>
+        <Link href="/admin/crm" className="vi-card p-4">
+          Overdue CRM follow-ups: {overdueCrmFollowUps}
+        </Link>
+        <div className="vi-card p-4">
+          <p className="font-medium text-slate-900">CRM reconciliation / maintenance</p>
+          <p className="mt-1 text-sm text-slate-600">CRM reconciliation available via admin API; UI coming in Phase C.</p>
+        </div>
         <Link href="/admin/psychometric" className="vi-card p-4">
           Active tests: {tests ?? 0}
         </Link>
