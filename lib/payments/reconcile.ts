@@ -52,12 +52,6 @@ function isUniqueViolation(error: { code?: string | null; message?: string | nul
   return text.includes("duplicate key value violates unique constraint");
 }
 
-function isOnePaidPerStudentCourseViolation(error: { message?: string | null; details?: string | null } | null | undefined) {
-  if (!error) return false;
-  const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
-  return text.includes("idx_course_orders_one_paid_per_student_course");
-}
-
 function isRazorpayTransactionOrderKindConstraintError(error: { message?: string | null; details?: string | null } | null | undefined) {
   if (!error) return false;
   const text = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
@@ -361,35 +355,8 @@ export async function reconcileCourseOrderPaid({
   const now = new Date().toISOString();
   console.info("[payments/reconcile] reconcileCourseOrderPaid:start", { orderId: order.id, razorpayOrderId, razorpayPaymentId, source });
 
-  let canonicalPaidOrderId = order.id;
+  const canonicalPaidOrderId = order.id;
   let effectivePaidAt = now;
-
-  const { data: existingPaidOrder } = await supabase
-    .from("course_orders")
-    .select("id,payment_status,paid_at,razorpay_payment_id")
-    .eq("student_id", order.student_id)
-    .eq("course_id", order.course_id)
-    .eq("payment_status", "paid")
-    .limit(1)
-    .maybeSingle<{
-      id: string;
-      payment_status: string | null;
-      paid_at: string | null;
-      razorpay_payment_id: string | null;
-    }>();
-
-  if (existingPaidOrder) {
-    canonicalPaidOrderId = existingPaidOrder.id;
-    effectivePaidAt = existingPaidOrder.paid_at ?? effectivePaidAt;
-    console.info("[payments/reconcile] already_paid_order_found", {
-      event: "already_paid_order_found",
-      orderId: order.id,
-      existingPaidOrderId: existingPaidOrder.id,
-      studentId: order.student_id,
-      courseId: order.course_id,
-      source,
-    });
-  }
 
   const findEnrollmentByStudentCourse = async () =>
     supabase
@@ -426,37 +393,7 @@ export async function reconcileCourseOrderPaid({
       .neq("payment_status", "paid");
 
     if (updateError) {
-      if (isUniqueViolation(updateError) && isOnePaidPerStudentCourseViolation(updateError)) {
-        const { data: paidOrderAfterConflict } = await supabase
-          .from("course_orders")
-          .select("id,payment_status,paid_at,razorpay_payment_id")
-          .eq("student_id", order.student_id)
-          .eq("course_id", order.course_id)
-          .eq("payment_status", "paid")
-          .limit(1)
-          .maybeSingle<{
-            id: string;
-            payment_status: string | null;
-            paid_at: string | null;
-            razorpay_payment_id: string | null;
-          }>();
-
-        if (paidOrderAfterConflict) {
-          canonicalPaidOrderId = paidOrderAfterConflict.id;
-          console.info("[payments/reconcile] duplicate_paid_order_treated_as_success", {
-            event: "duplicate_paid_order_treated_as_success",
-            orderId: order.id,
-            existingPaidOrderId: paidOrderAfterConflict.id,
-            studentId: order.student_id,
-            courseId: order.course_id,
-            source,
-          });
-        } else {
-          return { error: updateError.message };
-        }
-      } else {
-        return { error: updateError.message };
-      }
+      return { error: updateError.message };
     } else {
       effectivePaidAt = now;
     }
@@ -474,7 +411,6 @@ export async function reconcileCourseOrderPaid({
       .update({
         razorpay_payment_id: razorpayPaymentId,
         razorpay_signature: razorpaySignature ?? null,
-        paid_at: now,
       })
       .eq("id", order.id);
 
