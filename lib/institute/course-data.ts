@@ -44,9 +44,11 @@ export type InstituteCourseRecord = {
   rejection_reason: string | null;
   created_at: string;
   updated_at: string;
+  is_deleted: boolean;
+  deleted_at: string | null;
 };
 
-const COURSE_SELECT = "id,institute_id,title,summary,description,category,subject,level,language,fees,duration,duration_value,duration_unit,mode,location,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,rejection_reason,created_at,updated_at";
+const COURSE_SELECT = "id,institute_id,title,summary,description,category,subject,level,language,fees,duration,duration_value,duration_unit,mode,location,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,rejection_reason,created_at,updated_at,is_deleted,deleted_at";
 
 export async function getInstituteDataClient() {
   const supabase = await createClient();
@@ -60,17 +62,20 @@ export async function getInstituteIdByUserId(userId: string): Promise<string | n
   return data?.id ?? null;
 }
 
-export async function listInstituteCourses(userId: string) {
+export async function listInstituteCourses(userId: string, options?: { includeArchived?: boolean }) {
   const instituteId = await getInstituteIdByUserId(userId);
   if (!instituteId) return [] as InstituteCourseRecord[];
 
   const dataClient = await getInstituteDataClient();
-  const { data } = await dataClient
+  let query = dataClient
     .from("courses")
     .select(COURSE_SELECT)
     .eq("institute_id", instituteId)
-    .eq("is_deleted", false)
     .order("created_at", { ascending: false });
+
+  if (!options?.includeArchived) query = query.eq("is_deleted", false);
+
+  const { data } = await query;
 
   return (data ?? []) as InstituteCourseRecord[];
 }

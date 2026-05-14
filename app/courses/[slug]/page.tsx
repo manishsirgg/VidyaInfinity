@@ -28,19 +28,6 @@ function resolveAccessEndAt(startAtIso: string | null, durationValue: number | n
   return resolved.toISOString();
 }
 
-function resolveCourseEndAt(endDate: string | null) {
-  if (!endDate) return null;
-  const normalized = endDate.trim();
-  if (!normalized) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    const parsedDate = new Date(`${normalized}T23:59:59.999Z`);
-    if (Number.isNaN(parsedDate.getTime())) return null;
-    return parsedDate.toISOString();
-  }
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
-}
 
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -93,7 +80,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
       ) ?? null;
 
     if (existingEnrollment) {
-      const effectiveEnrollmentEndAt = existingEnrollment.access_end_at ?? resolveCourseEndAt(course.end_date ?? null);
+      const effectiveEnrollmentEndAt = existingEnrollment.access_end_at ?? null;
       const hasActiveEnrollment = !effectiveEnrollmentEndAt || new Date(effectiveEnrollmentEndAt).getTime() > Date.now();
       if (hasActiveEnrollment) {
         existingActiveEnrollment = true;
@@ -137,7 +124,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           Number(course.duration_value ?? 0) || null,
           course.duration_unit ?? null
         );
-        const effectivePaidEndAt = fallbackEndAt ?? resolveCourseEndAt(course.end_date ?? null);
+        const effectivePaidEndAt = fallbackEndAt;
         const hasActivePaidAccess = isCourseEnrollmentCurrentlyActive({
           enrollmentStatus: "enrolled",
           paymentStatus: normalizedPaymentStatus,

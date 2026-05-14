@@ -100,21 +100,6 @@ function resolveAccessEndAt(startAtIso: string | null, durationValue: number | n
   return resolved.toISOString();
 }
 
-function resolveCourseEndAt(endDate: string | null) {
-  if (!endDate) return null;
-  const normalized = endDate.trim();
-  if (!normalized) return null;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    const endOfDay = new Date(`${normalized}T23:59:59.999Z`);
-    if (Number.isNaN(endOfDay.getTime())) return null;
-    return endOfDay.toISOString();
-  }
-
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
-}
 
 export async function POST(request: Request) {
   const schemaErrorResponse = await getPaymentSchemaErrorResponse(["common", "course"]);
@@ -296,7 +281,7 @@ export async function POST(request: Request) {
 
     const existingEnrollment =
       (existingEnrollments ?? []).find((row) => isEnrollmentBlocking(row.enrollment_status)) ?? null;
-    const enrollmentAccessEndsAt = existingEnrollment?.access_end_at ?? resolveCourseEndAt(ensuredCourse.end_date);
+    const enrollmentAccessEndsAt = existingEnrollment?.access_end_at ?? null;
     const hasActiveEnrollment = Boolean(existingEnrollment && (!enrollmentAccessEndsAt || new Date(enrollmentAccessEndsAt).getTime() > Date.now()));
 
     if (hasActiveEnrollment && existingEnrollment) {
@@ -340,7 +325,7 @@ export async function POST(request: Request) {
           ensuredCourse.duration_value ?? null,
           ensuredCourse.duration_unit ?? null
         );
-        const effectivePaidAccessEndAt = fallbackAccessEndAt ?? resolveCourseEndAt(ensuredCourse.end_date);
+        const effectivePaidAccessEndAt = fallbackAccessEndAt;
         const hasActivePaidAccess = !effectivePaidAccessEndAt || new Date(effectivePaidAccessEndAt).getTime() > Date.now();
         if (hasActivePaidAccess) {
           return NextResponse.json(
