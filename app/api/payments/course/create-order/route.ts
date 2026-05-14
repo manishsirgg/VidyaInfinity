@@ -17,7 +17,6 @@ type CourseRow = {
   fees: number | null;
   batch_size: number | null;
   status: string | null;
-  admission_deadline: string | null;
   is_active: boolean | null;
   is_deleted: boolean | null;
   duration_value: number | null;
@@ -83,22 +82,6 @@ function isEnrollmentBlocking(status: string | null | undefined) {
   const normalized = normalizeStatus(status);
   if (!normalized) return true;
   return !ENROLLMENT_TERMINAL_STATUSES.has(normalized);
-}
-
-function isAdmissionDeadlinePassed(admissionDeadline: string | null) {
-  if (!admissionDeadline) return false;
-  const normalized = admissionDeadline.trim();
-  if (!normalized) return false;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    const endOfDay = new Date(`${normalized}T23:59:59.999Z`);
-    if (Number.isNaN(endOfDay.getTime())) return false;
-    return endOfDay.getTime() < Date.now();
-  }
-
-  const deadlineAt = new Date(normalized);
-  if (Number.isNaN(deadlineAt.getTime())) return false;
-  return deadlineAt.getTime() < Date.now();
 }
 
 function resolveAccessEndAt(startAtIso: string | null, durationValue: number | null, durationUnit: string | null) {
@@ -188,7 +171,7 @@ export async function POST(request: Request) {
 
     const { data: course, error: courseError } = await admin.data
       .from("courses")
-      .select("id,title,institute_id,fees,batch_size,status,admission_deadline,is_active,is_deleted,duration_value,duration_unit,end_date")
+      .select("id,title,institute_id,fees,batch_size,status,is_active,is_deleted,duration_value,duration_unit,end_date")
       .eq("id", courseId)
       .maybeSingle<CourseRow>();
 
@@ -267,14 +250,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Course and institute relationship is invalid." }, { status: 400 });
     }
 
-    if (isAdmissionDeadlinePassed(ensuredCourse.admission_deadline)) {
-      console.warn("[course/create-order] admission deadline passed", {
-        courseId: ensuredCourse.id,
-        studentId,
-        admissionDeadline: ensuredCourse.admission_deadline,
-      });
-      return NextResponse.json({ error: "Admission deadline has passed for this course." }, { status: 400 });
-    }
 
     const { data: courseEnrollmentRows, error: courseEnrollmentRowsError } = await admin.data
       .from("course_enrollments")
