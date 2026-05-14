@@ -22,9 +22,12 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
   let amount: number | null = null;
   let webinarMeetingUrl: string | null = null;
   let webinarAccessGranted = false;
+  let coursePaymentStatus: string | null = null;
+  let resolvedOrderId = orderId || null;
+  let resolvedPaymentId = paymentId || null;
   const kindTitle = kind === "webinar" ? "webinar" : kind === "psychometric" ? "psychometric test" : "course";
 
-  if (orderId) {
+  if (orderId || (kind === "course" && paymentId)) {
     const supabase = await createClient();
     if (kind === "webinar") {
       const { data } = await supabase
@@ -66,14 +69,30 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
           : (data.psychometric_tests.title ?? null);
       }
     } else {
-      const { data } = await supabase
+      let query = supabase
         .from("course_orders")
-        .select("gross_amount,courses(title)")
+        .select("gross_amount,payment_status,razorpay_order_id,razorpay_payment_id,courses(title)")
         .eq("student_id", user.id)
-        .eq("razorpay_order_id", orderId)
-        .maybeSingle<{ gross_amount: number; courses: { title: string | null } | { title: string | null }[] | null }>();
+        .limit(1);
+
+      if (orderId) {
+        query = query.eq("razorpay_order_id", orderId);
+      } else if (paymentId) {
+        query = query.eq("razorpay_payment_id", paymentId);
+      }
+
+      const { data } = await query.maybeSingle<{
+        gross_amount: number;
+        payment_status: string | null;
+        razorpay_order_id: string | null;
+        razorpay_payment_id: string | null;
+        courses: { title: string | null } | { title: string | null }[] | null;
+      }>();
 
       amount = data?.gross_amount ?? null;
+      coursePaymentStatus = data?.payment_status ?? null;
+      resolvedOrderId = data?.razorpay_order_id ?? resolvedOrderId;
+      resolvedPaymentId = data?.razorpay_payment_id ?? resolvedPaymentId;
       if (data?.courses) {
         itemTitle = Array.isArray(data.courses) ? (data.courses[0]?.title ?? null) : (data.courses.title ?? null);
       }
@@ -95,8 +114,9 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
         <div className="mt-4 space-y-2 rounded bg-slate-50 p-4 text-sm text-slate-700">
           <p>{kind === "webinar" ? "Webinar" : "Item"}: {itemTitle ?? `Your selected ${kindTitle}`}</p>
           <p>Amount: {amount !== null ? `₹${amount}` : "-"}</p>
-          <p>{kind === "webinar" ? "Webinar Order ID" : "Order ID"}: {orderId || "-"}</p>
-          <p>{kind === "webinar" ? "Webinar Payment ID" : "Payment ID"}: {paymentId || "-"}</p>
+          <p>{kind === "webinar" ? "Webinar Order ID" : "Order ID"}: {(kind === "course" ? resolvedOrderId : orderId) || "-"}</p>
+          <p>{kind === "webinar" ? "Webinar Payment ID" : "Payment ID"}: {(kind === "course" ? resolvedPaymentId : paymentId) || "-"}</p>
+          {kind === "course" ? <p>Payment Status: {coursePaymentStatus ?? "-"}</p> : null}
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
