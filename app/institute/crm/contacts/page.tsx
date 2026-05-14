@@ -26,7 +26,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
 
   let q = dataClient
     .from("crm_contacts")
-    .select("id,full_name,email,phone,whatsapp_number,source,lifecycle_stage,priority,next_follow_up_at,last_activity_at,created_at,course_id,webinar_id,courses(title),webinars(title)", { count: "exact" })
+    .select("id,full_name,email,phone,whatsapp_number,source,lifecycle_stage,priority,next_follow_up_at,last_activity_at,created_at,course_id,webinar_id,courses(title),webinars(title),converted,last_course_order_id,last_webinar_order_id", { count: "exact" })
     .eq("owner_type", "institute")
     .eq("owner_institute_id", institute.id)
     .eq("is_deleted", false);
@@ -64,9 +64,14 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
 
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
       <table className="min-w-full text-sm">
-        <thead className="bg-slate-50 text-left text-slate-600"><tr><th className="p-3">Name</th><th>Contact</th><th>Source/Type</th><th>Stage</th><th>Priority</th><th>Next Follow-up</th><th>Last Activity</th><th>Created</th><th></th></tr></thead>
+        <thead className="bg-slate-50 text-left text-slate-600"><tr><th className="p-3">Name</th><th>Contact</th><th>Source/Type</th><th>Converted</th><th>Buyer</th><th>Stage</th><th>Priority</th><th>Next Follow-up</th><th>Last Activity</th><th>Created</th><th></th></tr></thead>
         <tbody>
-          {(data ?? []).map((c) => <tr key={c.id} className="border-t"><td className="p-3 font-medium">{c.full_name || "Unnamed"}</td><td>{c.email || "—"}<div>{c.phone || c.whatsapp_number || "—"}</div></td><td>{c.source || "—"}<div className="text-xs text-slate-500">{relTitle(c.courses) ? `Course: ${relTitle(c.courses)}` : relTitle(c.webinars) ? `Webinar: ${relTitle(c.webinars)}` : "No linked lead"}</div></td><td>{badge(c.lifecycle_stage)}</td><td>{badge(c.priority)}</td><td>{fmt(c.next_follow_up_at)}</td><td>{fmt(c.last_activity_at)}</td><td>{fmt(c.created_at)}</td><td><Link href={`/institute/crm/contacts/${c.id}`} className="text-blue-600">View</Link></td></tr>)}
+          {(data ?? []).map((c) => {
+            const isCourseBuyer = Boolean(c.last_course_order_id);
+            const isWebinarBuyer = Boolean(c.last_webinar_order_id);
+            const buyerLabel = isCourseBuyer && isWebinarBuyer ? "Course + Webinar Buyer" : isCourseBuyer ? "Course Buyer" : isWebinarBuyer ? "Webinar Buyer" : "—";
+            return <tr key={c.id} className="border-t"><td className="p-3 font-medium">{c.full_name || "Unnamed"}</td><td>{c.email || "—"}<div>{c.phone || c.whatsapp_number || "—"}</div></td><td>{c.source || "—"}<div className="text-xs text-slate-500">{relTitle(c.courses) ? `Course: ${relTitle(c.courses)}` : relTitle(c.webinars) ? `Webinar: ${relTitle(c.webinars)}` : "No linked lead"}</div></td><td>{c.converted ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">Converted</span> : <span className="text-xs text-slate-500">No</span>}</td><td><span className="text-xs text-slate-600">{buyerLabel}</span></td><td>{badge(c.lifecycle_stage)}</td><td>{badge(c.priority)}</td><td>{fmt(c.next_follow_up_at)}</td><td>{fmt(c.last_activity_at)}</td><td>{fmt(c.created_at)}</td><td><Link href={`/institute/crm/contacts/${c.id}`} className="text-blue-600">View</Link></td></tr>;
+          })}
         </tbody>
       </table>
       {!data?.length ? <div className="p-4 text-sm text-slate-600">{Object.keys(params).some((k) => params[k as keyof Params]) ? "No contacts match your filters." : "No CRM contacts yet."}</div> : null}
