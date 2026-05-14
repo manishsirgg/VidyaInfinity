@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ModerationActions } from "@/components/admin/moderation-actions";
+import { ModerationImagePreview } from "@/components/admin/moderation-image-preview";
 import { ModerationPagination } from "@/components/admin/moderation-pagination";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { requireUser } from "@/lib/auth/get-session";
@@ -26,7 +27,7 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
 
   let query = admin.data
     .from("webinars")
-    .select("id,title,starts_at,ends_at,webinar_mode,price,currency,status,approval_status,rejection_reason,created_at,institutes(name)", { count: "exact" })
+    .select("id,title,starts_at,ends_at,webinar_mode,price,currency,status,approval_status,rejection_reason,created_at,thumbnail_url,banner_url,institutes(name)", { count: "exact" })
     .eq("is_deleted", false)
     .order("created_at", { ascending: false });
 
@@ -89,6 +90,25 @@ export default async function AdminWebinarsPage({ searchParams }: { searchParams
               </div>
             </div>
             {item.rejection_reason ? <p className="mt-2 text-xs text-rose-700">Rejection reason: {item.rejection_reason}</p> : null}
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              Review uploaded images carefully before approving. Reject webinars with obscene, misleading, or inappropriate visuals.
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <ModerationImagePreview
+                label="Thumbnail Image"
+                src={item.thumbnail_url}
+                alt={`${item.title} thumbnail image`}
+                missingText="No thumbnail uploaded"
+                className="h-48 w-full rounded-lg border object-cover"
+              />
+              <ModerationImagePreview
+                label="Banner Image"
+                src={item.banner_url}
+                alt={`${item.title} banner image`}
+                missingText="No banner uploaded"
+                className="h-48 w-full rounded-lg border object-contain bg-slate-50"
+              />
+            </div>
             <ModerationActions targetType="webinars" targetId={item.id} currentStatus={item.approval_status ?? "pending"} />
           </article>
         ))}
