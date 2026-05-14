@@ -235,10 +235,10 @@ export default async function AdminDashboardPage() {
         <Link href="/admin/crm" className="vi-card p-4">
           Overdue CRM follow-ups: {overdueCrmFollowUps}
         </Link>
-        <div className="vi-card p-4">
-          <p className="font-medium text-slate-900">CRM reconciliation / maintenance</p>
-          <p className="mt-1 text-sm text-slate-600">CRM reconciliation available via admin API; UI coming in Phase C.</p>
-        </div>
+        <Link href="/admin/crm/maintenance" className="vi-card p-4">
+          <p className="font-medium text-slate-900">CRM Maintenance</p>
+          <p className="mt-1 text-sm text-slate-600">Reconcile paid course/webinar orders into CRM contacts and activities.</p>
+        </Link>
         <Link href="/admin/psychometric" className="vi-card p-4">
           Active tests: {tests ?? 0}
         </Link>
