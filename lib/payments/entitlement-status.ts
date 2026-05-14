@@ -1,4 +1,4 @@
-export const ACTIVE_COURSE_ENROLLMENT_STATUSES = new Set(["enrolled", "active", "pending", "suspended", "completed"]);
+export const ACTIVE_COURSE_ENROLLMENT_STATUSES = new Set(["active", "pending", "suspended", "completed"]);
 export const INACTIVE_COURSE_ENROLLMENT_STATUSES = new Set(["cancelled", "canceled", "revoked", "inactive", "expired", "dropped", "refunded", "failed"]);
 
 export const ACTIVE_WEBINAR_REGISTRATION_STATUSES = new Set(["registered"]);
