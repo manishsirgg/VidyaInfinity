@@ -1,17 +1,7 @@
+import { CRM_ACTIVITY_TYPES, CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES } from "@/lib/institute/crm-enums";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-export type CrmActivityType =
-  | "lead_created"
-  | "status_changed"
-  | "priority_changed"
-  | "assignment_changed"
-  | "note_added"
-  | "follow_up_created"
-  | "follow_up_completed"
-  | "follow_up_cancelled"
-  | "follow_up_updated"
-  | "tags_updated"
-  | "contact_updated";
+export type CrmActivityType = (typeof CRM_ACTIVITY_TYPES)[number] | "assignment_changed" | "follow_up_updated" | "tags_updated";
 
 export async function createCrmActivity({
   contactId,
@@ -45,9 +35,9 @@ export async function createCrmActivity({
 }
 
 export function isCrmStatus(value: string) {
-  return ["new", "contacted", "qualified", "converted", "lost"].includes(value);
+  return CRM_CONTACT_STAGES.includes(value as (typeof CRM_CONTACT_STAGES)[number]);
 }
 
 export function isCrmPriority(value: string) {
-  return ["low", "medium", "high", "urgent"].includes(value);
+  return CRM_CONTACT_PRIORITIES.includes(value as (typeof CRM_CONTACT_PRIORITIES)[number]);
 }

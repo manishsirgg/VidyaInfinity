@@ -4,6 +4,7 @@ import { createCrmActivity } from "@/lib/admin/crm";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { CRM_NOTE_TYPES_ALL, CRM_NOTE_TYPES_USER_SELECTABLE } from "@/lib/institute/crm-enums";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -23,9 +24,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const body = await request.json();
   const note = typeof body.note === "string" ? body.note.trim() : "";
   const pinned = Boolean(body.is_pinned);
+  const noteType = typeof body.note_type === "string" ? body.note_type.trim().toLowerCase() : "general";
 
   if (!note) {
     return NextResponse.json({ error: "note is required" }, { status: 400 });
+  }
+
+  if (!CRM_NOTE_TYPES_ALL.includes(noteType as (typeof CRM_NOTE_TYPES_ALL)[number])) {
+    return NextResponse.json({ error: "Invalid note type" }, { status: 400 });
+  }
+
+  if (!CRM_NOTE_TYPES_USER_SELECTABLE.includes(noteType as (typeof CRM_NOTE_TYPES_USER_SELECTABLE)[number])) {
+    return NextResponse.json({ error: "Invalid note type" }, { status: 400 });
   }
 
   const admin = getSupabaseAdmin();
@@ -36,7 +46,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const { data, error } = await admin.data
     .from("crm_notes")
-    .insert({ contact_id: id, note, is_pinned: pinned, created_by: auth.user.id })
+    .insert({ contact_id: id, note, note_type: noteType, is_pinned: pinned, created_by: auth.user.id })
     .select("*")
     .single();
 

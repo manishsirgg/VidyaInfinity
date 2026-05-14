@@ -4,6 +4,7 @@ import { createCrmActivity } from "@/lib/admin/crm";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { CRM_FOLLOW_UP_STATUSES } from "@/lib/institute/crm-enums";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -23,8 +24,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ fo
   const body = await request.json();
   const status = typeof body.status === "string" ? body.status.trim().toLowerCase() : "";
 
-  if (!["pending", "completed", "cancelled"].includes(status)) {
-    return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+  if (!CRM_FOLLOW_UP_STATUSES.includes(status as (typeof CRM_FOLLOW_UP_STATUSES)[number])) {
+    return NextResponse.json({ error: "Invalid follow-up status" }, { status: 400 });
   }
 
   const admin = getSupabaseAdmin();
@@ -54,7 +55,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ fo
     .from("crm_follow_ups")
     .select("due_at")
     .eq("contact_id", existing.contact_id)
-    .eq("status", "pending")
+    .eq("status", "scheduled")
     .order("due_at", { ascending: true })
     .limit(1)
     .maybeSingle<{ due_at: string }>();
