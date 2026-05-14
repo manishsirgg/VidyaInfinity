@@ -21,7 +21,6 @@ type CourseRow = {
   is_deleted: boolean | null;
   duration_value: number | null;
   duration_unit: string | null;
-  end_date: string | null;
 };
 
 type StudentProfileRow = {
@@ -37,7 +36,6 @@ type InstituteRow = {
   is_deleted: boolean | null;
 };
 
-const SUCCESS_PAYMENT_STATUSES = new Set(["paid", "captured", "success", "confirmed"]);
 const ENROLLMENT_TERMINAL_STATUSES = new Set(["cancelled", "canceled", "expired", "dropped", "revoked", "refunded", "failed"]);
 
 function extractUnknownErrorMessage(error: unknown) {
@@ -82,22 +80,6 @@ function isEnrollmentBlocking(status: string | null | undefined) {
   const normalized = normalizeStatus(status);
   if (!normalized) return true;
   return !ENROLLMENT_TERMINAL_STATUSES.has(normalized);
-}
-
-function resolveAccessEndAt(startAtIso: string | null, durationValue: number | null, durationUnit: string | null) {
-  if (!startAtIso || !durationValue || durationValue <= 0) return null;
-  const startAt = new Date(startAtIso);
-  if (Number.isNaN(startAt.getTime())) return null;
-
-  const normalizedUnit = String(durationUnit ?? "").trim().toLowerCase();
-  const resolved = new Date(startAt);
-  if (["day", "days"].includes(normalizedUnit)) resolved.setUTCDate(resolved.getUTCDate() + durationValue);
-  else if (["week", "weeks"].includes(normalizedUnit)) resolved.setUTCDate(resolved.getUTCDate() + durationValue * 7);
-  else if (["month", "months"].includes(normalizedUnit)) resolved.setUTCMonth(resolved.getUTCMonth() + durationValue);
-  else if (["year", "years"].includes(normalizedUnit)) resolved.setUTCFullYear(resolved.getUTCFullYear() + durationValue);
-  else return null;
-
-  return resolved.toISOString();
 }
 
 
@@ -156,7 +138,7 @@ export async function POST(request: Request) {
 
     const { data: course, error: courseError } = await admin.data
       .from("courses")
-      .select("id,title,institute_id,fees,batch_size,status,is_active,is_deleted,duration_value,duration_unit,end_date")
+      .select("id,title,institute_id,fees,batch_size,status,is_active,is_deleted,duration_value,duration_unit")
       .eq("id", courseId)
       .maybeSingle<CourseRow>();
 
@@ -296,44 +278,6 @@ export async function POST(request: Request) {
         { error: enrollmentAccessEndsAt ? `Enrollment active until ${enrollmentAccessEndsAt}.` : "You are already enrolled in this course." },
         { status: 409 }
       );
-    }
-
-    const { data: existingPaidOrder, error: existingPaidOrderError } = await admin.data
-      .from("course_orders")
-      .select("id,payment_status,paid_at,created_at")
-      .eq("student_id", studentId)
-      .eq("course_id", ensuredCourse.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle<{ id: string; payment_status: string | null; paid_at: string | null; created_at: string | null }>();
-
-    if (existingPaidOrderError) {
-      console.error("[course/create-order] existing paid order lookup failed", {
-        courseId: ensuredCourse.id,
-        studentId,
-        error: existingPaidOrderError.message,
-      });
-      return NextResponse.json({ error: "Unable to validate existing purchases right now." }, { status: 500 });
-    }
-
-    if (existingPaidOrder) {
-      const normalizedPaymentStatus = normalizeStatus(existingPaidOrder.payment_status);
-      const hasConfirmedPayment = SUCCESS_PAYMENT_STATUSES.has(normalizedPaymentStatus) || Boolean(existingPaidOrder.paid_at);
-      if (hasConfirmedPayment) {
-        const fallbackAccessEndAt = resolveAccessEndAt(
-          existingPaidOrder.paid_at ?? existingPaidOrder.created_at ?? null,
-          ensuredCourse.duration_value ?? null,
-          ensuredCourse.duration_unit ?? null
-        );
-        const effectivePaidAccessEndAt = fallbackAccessEndAt;
-        const hasActivePaidAccess = !effectivePaidAccessEndAt || new Date(effectivePaidAccessEndAt).getTime() > Date.now();
-        if (hasActivePaidAccess) {
-          return NextResponse.json(
-            { error: effectivePaidAccessEndAt ? `Enrollment active until ${effectivePaidAccessEndAt}.` : "You are already enrolled in this course." },
-            { status: 409 }
-          );
-        }
-      }
     }
 
     const { data: commissionRow, error: commissionError } = await admin.data

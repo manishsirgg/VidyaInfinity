@@ -9,25 +9,37 @@ import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { finalizePaidPsychometricOrder } from "@/lib/payments/psychometric-finalize";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-function resolveAccessEndAt(startAtIso: string, durationValue: number | null, durationUnit: string | null) {
-  if (!durationValue || durationValue <= 0) return null;
+const COURSE_ACCESS_FALLBACK_DAYS = 180;
 
+function resolveAccessEndAt(startAtIso: string, durationValue: number | null, durationUnit: string | null) {
+  
   const startAt = new Date(startAtIso);
   if (Number.isNaN(startAt.getTime())) return null;
 
   const normalizedUnit = String(durationUnit ?? "").trim().toLowerCase();
+  const normalizedDurationValue = Number.isFinite(durationValue) ? Number(durationValue) : 0;
+
+  if (normalizedUnit === "lifetime") {
+    return null;
+  }
+
   const resolved = new Date(startAt);
 
-  if (["day", "days"].includes(normalizedUnit)) {
-    resolved.setUTCDate(resolved.getUTCDate() + durationValue);
-  } else if (["week", "weeks"].includes(normalizedUnit)) {
-    resolved.setUTCDate(resolved.getUTCDate() + durationValue * 7);
-  } else if (["month", "months"].includes(normalizedUnit)) {
-    resolved.setUTCMonth(resolved.getUTCMonth() + durationValue);
-  } else if (["year", "years"].includes(normalizedUnit)) {
-    resolved.setUTCFullYear(resolved.getUTCFullYear() + durationValue);
+  if (normalizedDurationValue > 0 && ["day", "days"].includes(normalizedUnit)) {
+    resolved.setUTCDate(resolved.getUTCDate() + normalizedDurationValue);
+  } else if (normalizedDurationValue > 0 && ["week", "weeks"].includes(normalizedUnit)) {
+    resolved.setUTCDate(resolved.getUTCDate() + normalizedDurationValue * 7);
+  } else if (normalizedDurationValue > 0 && ["month", "months"].includes(normalizedUnit)) {
+    resolved.setUTCMonth(resolved.getUTCMonth() + normalizedDurationValue);
+  } else if (normalizedDurationValue > 0 && ["year", "years"].includes(normalizedUnit)) {
+    resolved.setUTCFullYear(resolved.getUTCFullYear() + normalizedDurationValue);
   } else {
-    return null;
+    resolved.setUTCDate(resolved.getUTCDate() + COURSE_ACCESS_FALLBACK_DAYS);
+    return resolved.toISOString();
+  }
+
+  if (normalizedDurationValue <= 0) {
+    resolved.setUTCDate(resolved.getUTCDate() + COURSE_ACCESS_FALLBACK_DAYS);
   }
 
   return resolved.toISOString();
