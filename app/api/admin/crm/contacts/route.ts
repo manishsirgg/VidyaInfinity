@@ -56,7 +56,7 @@ export async function GET(request: Request) {
   const rangeFrom = (page - 1) * pageSize;
   const rangeTo = rangeFrom + pageSize - 1;
 
-  let query = admin.data.from("crm_contacts").select("*", { count: "exact" }).eq("is_deleted", false);
+  let query = admin.data.from("crm_contacts").select("*", { count: "exact" }).eq("is_deleted", false).eq("is_archived", false);
 
   if (search) {
     const escaped = search.replaceAll(",", " ");
@@ -83,26 +83,46 @@ export async function GET(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const [kpiResp, sourceBreakdownResp, serviceBreakdownResp, instituteBreakdownResp, recentConversionsResp] = await Promise.all([
-    admin.data.from("crm_contacts").select("lifecycle_stage,next_follow_up_at,priority,linked_institute_id,conversion_status").eq("is_deleted", false),
-    admin.data.from("crm_contacts").select("source").eq("is_deleted", false),
-    admin.data.from("crm_contacts").select("service_type").eq("is_deleted", false),
+  const nowIso = new Date().toISOString();
+  const [
+    totalContacts,
+    newContacts,
+    convertedContacts,
+    highPriorityContacts,
+    overdueFollowUpsCountResp,
+    sourceBreakdownResp,
+    serviceBreakdownResp,
+    instituteBreakdownResp,
+    recentConversionsResp,
+  ] = await Promise.all([
+    admin.data.from("crm_contacts").select("id", { count: "exact", head: true }).eq("is_deleted", false).eq("is_archived", false),
+    admin.data.from("crm_contacts").select("id", { count: "exact", head: true }).eq("is_deleted", false).eq("is_archived", false).eq("lifecycle_stage", "new"),
+    admin.data.from("crm_contacts").select("id", { count: "exact", head: true }).eq("is_deleted", false).eq("is_archived", false).or("converted.eq.true,lifecycle_stage.eq.converted"),
+    admin.data.from("crm_contacts").select("id", { count: "exact", head: true }).eq("is_deleted", false).eq("is_archived", false).in("priority", ["high", "urgent"]),
+    admin.data
+      .from("crm_follow_ups")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "scheduled")
+      .eq("is_deleted", false)
+      .lt("due_at", nowIso),
+    admin.data.from("crm_contacts").select("source").eq("is_deleted", false).eq("is_archived", false),
+    admin.data.from("crm_contacts").select("service_type").eq("is_deleted", false).eq("is_archived", false),
     admin.data.from("institutes").select("id,name"),
     admin.data.from("crm_activities").select("id,contact_id,title,activity_type,created_at").in("activity_type", ["course_purchased", "webinar_purchased", "course_enrolled", "converted"]).order("created_at", { ascending: false }).limit(10),
   ]);
 
-  const rows = kpiResp.data ?? [];
-  const now = new Date();
-  const overdueFollowUps = rows.filter((row) => {
-    if (!row.next_follow_up_at) return false;
-    return new Date(row.next_follow_up_at) < now;
-  }).length;
-
-  const lifecycleCounts = rows.reduce<Record<string, number>>((acc, row) => {
-    const key = row.lifecycle_stage ?? "unknown";
-    acc[key] = (acc[key] ?? 0) + 1;
-    return acc;
-  }, {});
+  if (overdueFollowUpsCountResp.error) {
+    console.error("[admin-crm] overdue follow-ups count failed", { message: overdueFollowUpsCountResp.error.message });
+  }
+  const overdueFollowUps = overdueFollowUpsCountResp.error ? null : overdueFollowUpsCountResp.count ?? 0;
+  const totalContactsCount = totalContacts.error ? null : totalContacts.count ?? 0;
+  const newContactsCount = newContacts.error ? null : newContacts.count ?? 0;
+  const convertedContactsCount = convertedContacts.error ? null : convertedContacts.count ?? 0;
+  const highPriorityContactsCount = highPriorityContacts.error ? null : highPriorityContacts.count ?? 0;
+  if (totalContacts.error) console.error("[admin-crm] total contacts count failed", { message: totalContacts.error.message });
+  if (newContacts.error) console.error("[admin-crm] new contacts count failed", { message: newContacts.error.message });
+  if (convertedContacts.error) console.error("[admin-crm] converted contacts count failed", { message: convertedContacts.error.message });
+  if (highPriorityContacts.error) console.error("[admin-crm] high priority contacts count failed", { message: highPriorityContacts.error.message });
 
   const sourceCounts = (sourceBreakdownResp.data ?? []).reduce<Record<string, number>>((acc, row) => {
     const key = row.source ?? "unknown";
@@ -115,8 +135,10 @@ export async function GET(request: Request) {
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});
-  const highPriorityContacts = rows.filter((row) => ["high", "urgent"].includes((row.priority ?? "").toLowerCase())).length;
-  const instituteCounts = rows.reduce<Record<string, number>>((acc, row) => {
+  const instituteRows = (
+    await admin.data.from("crm_contacts").select("linked_institute_id").eq("is_deleted", false).eq("is_archived", false)
+  ).data ?? [];
+  const instituteCounts = instituteRows.reduce<Record<string, number>>((acc, row) => {
     if (!row.linked_institute_id) return acc;
     acc[row.linked_institute_id] = (acc[row.linked_institute_id] ?? 0) + 1;
     return acc;
@@ -130,10 +152,11 @@ export async function GET(request: Request) {
     pageSize,
     total: count ?? 0,
     kpis: {
-      totalContacts: rows.length,
-      newContacts: lifecycleCounts.new ?? 0,
-      converted: lifecycleCounts.converted ?? 0,
-      highPriorityContacts,
+      totalContacts: totalContactsCount,
+      newContacts: newContactsCount,
+      converted: convertedContactsCount,
+      convertedContacts: convertedContactsCount,
+      highPriorityContacts: highPriorityContactsCount,
       overdueFollowUps,
       recentConversions: recentConversionsResp.data?.length ?? 0,
       sourceCounts,
