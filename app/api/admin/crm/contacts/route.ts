@@ -17,6 +17,8 @@ type CrmContactRow = {
   next_follow_up_at: string | null;
   last_activity_at: string | null;
   created_at: string | null;
+  linked_institute_id: string | null;
+  conversion_status: string | null;
 };
 
 export async function GET(request: Request) {
@@ -38,6 +40,8 @@ export async function GET(request: Request) {
   const serviceType = params.get("serviceType")?.trim() ?? "";
   const assignedTo = params.get("assignedTo")?.trim() ?? "";
   const overdueOnly = params.get("overdue") === "true";
+  const convertedOnly = params.get("converted") === "true";
+  const instituteId = params.get("instituteId")?.trim() ?? "";
   const sort = params.get("sort") ?? "newest";
 
 
@@ -64,6 +68,8 @@ export async function GET(request: Request) {
   if (source) query = query.eq("source", source);
   if (serviceType) query = query.eq("service_type", serviceType);
   if (assignedTo) query = query.eq("assigned_to", assignedTo);
+  if (instituteId) query = query.eq("linked_institute_id", instituteId);
+  if (convertedOnly) query = query.eq("lifecycle_stage", "converted");
 
   if (overdueOnly) {
     query = query.lt("next_follow_up_at", new Date().toISOString());
@@ -77,20 +83,16 @@ export async function GET(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const [kpiResp, sourceBreakdownResp, serviceBreakdownResp] = await Promise.all([
-    admin.data.from("crm_contacts").select("lifecycle_stage,next_follow_up_at").eq("is_deleted", false),
+  const [kpiResp, sourceBreakdownResp, serviceBreakdownResp, instituteBreakdownResp, recentConversionsResp] = await Promise.all([
+    admin.data.from("crm_contacts").select("lifecycle_stage,next_follow_up_at,priority,linked_institute_id,conversion_status").eq("is_deleted", false),
     admin.data.from("crm_contacts").select("source").eq("is_deleted", false),
     admin.data.from("crm_contacts").select("service_type").eq("is_deleted", false),
+    admin.data.from("institutes").select("id,name"),
+    admin.data.from("crm_activities").select("id,contact_id,title,activity_type,created_at").in("activity_type", ["course_purchased", "webinar_purchased", "course_enrolled", "converted"]).order("created_at", { ascending: false }).limit(10),
   ]);
 
   const rows = kpiResp.data ?? [];
   const now = new Date();
-  const dueToday = rows.filter((row) => {
-    if (!row.next_follow_up_at) return false;
-    const followUpDate = new Date(row.next_follow_up_at);
-    return followUpDate.toDateString() === now.toDateString();
-  }).length;
-
   const overdueFollowUps = rows.filter((row) => {
     if (!row.next_follow_up_at) return false;
     return new Date(row.next_follow_up_at) < now;
@@ -113,6 +115,14 @@ export async function GET(request: Request) {
     acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, {});
+  const highPriorityContacts = rows.filter((row) => ["high", "urgent"].includes((row.priority ?? "").toLowerCase())).length;
+  const instituteCounts = rows.reduce<Record<string, number>>((acc, row) => {
+    if (!row.linked_institute_id) return acc;
+    acc[row.linked_institute_id] = (acc[row.linked_institute_id] ?? 0) + 1;
+    return acc;
+  }, {});
+  const instituteNameMap = new Map((instituteBreakdownResp.data ?? []).map((institute) => [institute.id, institute.name ?? institute.id]));
+  const labeledInstituteCounts = Object.fromEntries(Object.entries(instituteCounts).map(([id, count]) => [id, instituteNameMap.get(id) ?? `${id.slice(0, 8)}… (${count})`]));
 
   return NextResponse.json({
     data: data ?? [],
@@ -122,13 +132,14 @@ export async function GET(request: Request) {
     kpis: {
       totalContacts: rows.length,
       newContacts: lifecycleCounts.new ?? 0,
-      contacted: lifecycleCounts.contacted ?? 0,
-      qualified: lifecycleCounts.qualified ?? 0,
       converted: lifecycleCounts.converted ?? 0,
+      highPriorityContacts,
       overdueFollowUps,
-      followUpsDueToday: dueToday,
+      recentConversions: recentConversionsResp.data?.length ?? 0,
       sourceCounts,
       serviceTypeCounts,
+      instituteCounts: labeledInstituteCounts,
     },
+    recentConversionsList: recentConversionsResp.data ?? [],
   });
 }
