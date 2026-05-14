@@ -125,12 +125,11 @@ export async function finalizeCoursePaymentFromRazorpay({
     source,
   });
 
-  await safeRunCrmAutomation("course_conversion", async () => {
-    console.info("[CRM automation][course-paid] starting", { course_order_id: order.id, razorpay_order_id: razorpayOrderId, razorpay_payment_id: razorpayPaymentId });
+  await safeRunCrmAutomation("course-paid", async () => {
     const result = await markCourseOrderConvertedInCrm({
       courseOrderId: order.id, razorpayOrderId, razorpayPaymentId, source: "payments/finalize-course",
     });
-    console.info("[CRM automation][course-paid] completed", { course_order_id: order.id, contact_id: result.contactId });
+    console.info("[CRM automation][course-paid] contact result", { course_order_id: order.id, contact_id: result.contactId });
   });
 
   return { error: null as string | null, finalized: true, reason: "finalized" as const, order };
@@ -230,12 +229,11 @@ export async function finalizeWebinarPaymentFromRazorpay({
     source,
   });
 
-  await safeRunCrmAutomation("webinar_conversion", async () => {
-    console.info("[CRM automation][webinar-paid] starting", { webinar_order_id: order.id, razorpay_order_id: razorpayOrderId, razorpay_payment_id: razorpayPaymentId });
+  await safeRunCrmAutomation("webinar-paid", async () => {
     const result = await markWebinarOrderConvertedInCrm({
       webinarOrderId: order.id, razorpayOrderId, razorpayPaymentId, source: "payments/finalize-webinar",
     });
-    console.info("[CRM automation][webinar-paid] completed", { webinar_order_id: order.id, contact_id: result.contactId });
+    console.info("[CRM automation][webinar-paid] contact result", { webinar_order_id: order.id, contact_id: result.contactId });
   });
 
   return { error: null as string | null, finalized: true, reason: "finalized" as const, order };
