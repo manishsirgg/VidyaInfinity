@@ -22,13 +22,14 @@ export default async function InstituteCrmPage() {
   if (instituteError) throw new Error(`Unable to load CRM institute profile: ${instituteError.message}`);
   if (!institute) return <div className="p-6">Institute profile not found.</div>;
 
-  const [contacts, follow, acts] = await Promise.all([
+  const [contacts, follow, acts, recentConversions] = await Promise.all([
     dataClient.from("crm_contacts").select("id,full_name,lifecycle_stage,priority,course_id,webinar_id,converted,is_archived").eq("owner_type", "institute").eq("owner_institute_id", institute.id).eq("is_deleted", false),
     dataClient.from("crm_follow_ups").select("id,contact_id,purpose,channel,status,due_at,crm_contacts(full_name)").eq("institute_id", institute.id).eq("is_deleted", false).order("due_at", { ascending: true }).limit(15),
     dataClient.from("crm_activities").select("id,title,description,created_at,contact_id").eq("institute_id", institute.id).order("created_at", { ascending: false }).limit(10),
+    dataClient.from("crm_activities").select("id,title,activity_type,created_at,contact_id").eq("institute_id", institute.id).in("activity_type", ["course_purchased", "webinar_purchased"]).order("created_at", { ascending: false }).limit(6),
   ]);
-  if (contacts.error || follow.error || acts.error) {
-    throw new Error(`Unable to load CRM overview data. ${contacts.error?.message ?? ""} ${follow.error?.message ?? ""} ${acts.error?.message ?? ""}`);
+  if (contacts.error || follow.error || acts.error || recentConversions.error) {
+    throw new Error(`Unable to load CRM overview data. ${contacts.error?.message ?? ""} ${follow.error?.message ?? ""} ${acts.error?.message ?? ""} ${recentConversions.error?.message ?? ""}`);
   }
 
   const c = contacts.data ?? [];
@@ -98,6 +99,22 @@ export default async function InstituteCrmPage() {
           </div>
         </section>
       </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <h2 className="text-lg font-semibold text-slate-900">Recent Conversions</h2>
+        <div className="mt-3 space-y-2">
+          {(recentConversions.data ?? []).map((item) => (
+            <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 p-3 text-sm">
+              <div>
+                <p className="font-medium text-slate-900">{item.title || crmLabel(item.activity_type)}</p>
+                <p className="text-xs text-slate-500">{crmLabel(item.activity_type)} · {formatDateTime(item.created_at)}</p>
+              </div>
+              {item.contact_id ? <Link href={`/institute/crm/contacts/${item.contact_id}`} className="text-blue-600">Open contact</Link> : null}
+            </div>
+          ))}
+          {!recentConversions.data?.length ? <p className="text-sm text-slate-500">No recent conversions yet.</p> : null}
+        </div>
+      </section>
     </div>
   );
 }
