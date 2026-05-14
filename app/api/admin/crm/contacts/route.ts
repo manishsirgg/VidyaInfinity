@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES } from "@/lib/institute/crm-enums";
 
 type CrmContactRow = {
   id: string;
@@ -38,6 +39,15 @@ export async function GET(request: Request) {
   const assignedTo = params.get("assignedTo")?.trim() ?? "";
   const overdueOnly = params.get("overdue") === "true";
   const sort = params.get("sort") ?? "newest";
+
+
+  if (stage && !CRM_CONTACT_STAGES.includes(stage as (typeof CRM_CONTACT_STAGES)[number])) {
+    return NextResponse.json({ error: "Invalid contact stage" }, { status: 400 });
+  }
+
+  if (priority && !CRM_CONTACT_PRIORITIES.includes(priority as (typeof CRM_CONTACT_PRIORITIES)[number])) {
+    return NextResponse.json({ error: "Invalid contact priority" }, { status: 400 });
+  }
 
   const rangeFrom = (page - 1) * pageSize;
   const rangeTo = rangeFrom + pageSize - 1;

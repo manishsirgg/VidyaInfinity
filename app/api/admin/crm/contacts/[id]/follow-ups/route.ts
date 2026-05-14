@@ -4,6 +4,7 @@ import { createCrmActivity } from "@/lib/admin/crm";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { CRM_FOLLOW_UP_CHANNELS, CRM_FOLLOW_UP_STATUSES } from "@/lib/institute/crm-enums";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -23,11 +24,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const body = await request.json();
   const dueAt = typeof body.due_at === "string" ? body.due_at : "";
   const channel = typeof body.channel === "string" ? body.channel.trim().toLowerCase() : "";
+  const status = typeof body.status === "string" ? body.status.trim().toLowerCase() : "scheduled";
   const purpose = typeof body.purpose === "string" ? body.purpose.trim() : "";
   const assignedTo = typeof body.assigned_to === "string" ? body.assigned_to.trim() : "";
 
   if (!dueAt || !purpose || !channel) {
     return NextResponse.json({ error: "due_at, channel, and purpose are required" }, { status: 400 });
+  }
+
+  if (!CRM_FOLLOW_UP_CHANNELS.includes(channel as (typeof CRM_FOLLOW_UP_CHANNELS)[number])) {
+    return NextResponse.json({ error: "Invalid follow-up channel" }, { status: 400 });
+  }
+
+  if (!CRM_FOLLOW_UP_STATUSES.includes(status as (typeof CRM_FOLLOW_UP_STATUSES)[number])) {
+    return NextResponse.json({ error: "Invalid follow-up status" }, { status: 400 });
   }
 
   const admin = getSupabaseAdmin();
@@ -65,7 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       channel,
       purpose,
       assigned_to: assignedTo || auth.user.id,
-      status: "pending",
+      status,
       created_by: auth.user.id,
     })
     .select("*")

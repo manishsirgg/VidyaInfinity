@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import { CRM_CONTACT_PRIORITIES, CRM_CONTACT_STAGES, CRM_FOLLOW_UP_CHANNELS, crmLabel } from "@/lib/institute/crm-enums";
+
 type CrmContact = {
   id: string;
   full_name: string | null;
@@ -54,8 +56,9 @@ type DashboardData = {
 
 type CrmTag = { id: string; name: string; color: string | null };
 
-const stageOptions = ["", "new", "contacted", "qualified", "converted", "lost"];
-const priorityOptions = ["", "low", "medium", "high", "urgent"];
+const stageOptions = ["", ...CRM_CONTACT_STAGES];
+const priorityOptions = ["", ...CRM_CONTACT_PRIORITIES];
+const followUpChannelOptions = CRM_FOLLOW_UP_CHANNELS;
 
 function fmt(value: string | null | undefined) {
   if (!value) return "—";
@@ -296,13 +299,13 @@ export function AdminCrmDashboard() {
         <select value={stage} onChange={(e) => setStage(e.target.value)} className="vi-input py-2 text-sm">
           <option value="">All stages</option>
           {stageOptions.filter(Boolean).map((item) => (
-            <option key={item} value={item}>{item}</option>
+            <option key={item} value={item}>{crmLabel(item)}</option>
           ))}
         </select>
         <select value={priority} onChange={(e) => setPriority(e.target.value)} className="vi-input py-2 text-sm">
           <option value="">All priorities</option>
           {priorityOptions.filter(Boolean).map((item) => (
-            <option key={item} value={item}>{item}</option>
+            <option key={item} value={item}>{crmLabel(item)}</option>
           ))}
         </select>
         <select value={source} onChange={(e) => setSource(e.target.value)} className="vi-input py-2 text-sm">
@@ -347,8 +350,8 @@ export function AdminCrmDashboard() {
                       <td className="px-2 py-2">{contact.email ?? "—"}</td>
                       <td className="px-2 py-2">{contact.source ?? "—"}</td>
                       <td className="px-2 py-2">{contact.service_type ?? "—"}</td>
-                      <td className="px-2 py-2"><span className={`rounded px-2 py-1 text-xs ${badgeClass(contact.lifecycle_stage, "stage")}`}>{contact.lifecycle_stage ?? "new"}</span></td>
-                      <td className="px-2 py-2"><span className={`rounded px-2 py-1 text-xs ${badgeClass(contact.priority, "priority")}`}>{contact.priority ?? "low"}</span></td>
+                      <td className="px-2 py-2"><span className={`rounded px-2 py-1 text-xs ${badgeClass(contact.lifecycle_stage, "stage")}`}>{crmLabel(contact.lifecycle_stage ?? "new")}</span></td>
+                      <td className="px-2 py-2"><span className={`rounded px-2 py-1 text-xs ${badgeClass(contact.priority, "priority")}`}>{crmLabel(contact.priority ?? "low")}</span></td>
                       <td className="px-2 py-2">{contact.assigned_to ?? "—"}</td>
                       <td className="px-2 py-2">{fmt(contact.next_follow_up_at)}</td>
                       <td className="px-2 py-2">{fmt(contact.last_activity_at)}</td>
@@ -387,10 +390,10 @@ export function AdminCrmDashboard() {
                 <h3 className="font-semibold">Update stage / priority / assignment</h3>
                 <div className="grid gap-2 md:grid-cols-2">
                   <select defaultValue={detail.contact.lifecycle_stage ?? ""} onChange={(e) => void patchContact({ lifecycle_stage: e.target.value })} className="rounded border px-2 py-2 text-sm">
-                    {stageOptions.map((item) => <option key={item || "none"} value={item}>{item || "Set stage"}</option>)}
+                    {stageOptions.map((item) => <option key={item || "none"} value={item}>{item ? crmLabel(item) : "Set stage"}</option>)}
                   </select>
                   <select defaultValue={detail.contact.priority ?? ""} onChange={(e) => void patchContact({ priority: e.target.value })} className="rounded border px-2 py-2 text-sm">
-                    {priorityOptions.map((item) => <option key={item || "none"} value={item}>{item || "Set priority"}</option>)}
+                    {priorityOptions.map((item) => <option key={item || "none"} value={item}>{item ? crmLabel(item) : "Set priority"}</option>)}
                   </select>
                   <input
                     value={editAssignedTo}
@@ -429,7 +432,12 @@ export function AdminCrmDashboard() {
                 <h3 className="font-semibold">Follow-ups</h3>
                 <div className="mt-2 grid gap-2 md:grid-cols-2">
                   <input name="due_at" type="datetime-local" required className="rounded border px-2 py-2 text-xs" />
-                  <input name="channel" placeholder="call / whatsapp / email" required className="rounded border px-2 py-2 text-xs" />
+                  <select name="channel" required className="rounded border px-2 py-2 text-xs">
+                    <option value="">Select channel</option>
+                    {followUpChannelOptions.map((channel) => (
+                      <option key={channel} value={channel}>{crmLabel(channel)}</option>
+                    ))}
+                  </select>
                   <input name="purpose" placeholder="Purpose" required className="rounded border px-2 py-2 text-xs" />
                   <input name="assigned_to" placeholder="Assigned admin id (optional)" className="rounded border px-2 py-2 text-xs" />
                 </div>
@@ -437,9 +445,9 @@ export function AdminCrmDashboard() {
                 <div className="mt-2 space-y-2 text-xs">
                   {detail.followUps.map((followUp) => (
                     <div key={followUp.id} className="rounded bg-slate-50 p-2">
-                      <p>{followUp.channel ?? "—"} · {followUp.purpose ?? "—"}</p>
-                      <p>Due: {fmt(followUp.due_at)} · Status: {followUp.status}</p>
-                      {followUp.status === "pending" ? (
+                      <p>{followUp.channel ? crmLabel(followUp.channel) : "—"} · {followUp.purpose ?? "—"}</p>
+                      <p>Due: {fmt(followUp.due_at)} · Status: {crmLabel(followUp.status)}</p>
+                      {followUp.status === "scheduled" ? (
                         <div className="mt-1 flex gap-2">
                           <button type="button" onClick={() => void markFollowUpStatus(followUp.id, "completed")} className="rounded bg-emerald-700 px-2 py-1 text-white">Complete</button>
                           <button type="button" onClick={() => void markFollowUpStatus(followUp.id, "cancelled")} className="rounded bg-rose-700 px-2 py-1 text-white">Cancel</button>
