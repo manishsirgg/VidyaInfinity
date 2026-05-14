@@ -94,6 +94,11 @@ export async function GET(request: Request) {
       razorpay_order_id: order.razorpay_order_id ?? orderId ?? null,
       payment_id: paymentId ?? order.razorpay_payment_id ?? null,
     };
+    console.info("[course/status] order_resolved", {
+      ...orderLogCtx,
+      local_payment_status: order.payment_status,
+      local_paid_at: order.paid_at,
+    });
 
     const [{ data: enrollmentByOrderId, error: enrollmentError }, { data: transaction, error: transactionError }] = await Promise.all([
       admin.data
@@ -150,6 +155,13 @@ export async function GET(request: Request) {
     const shouldTryPassiveReconciliation = (!resolvedEnrollment || !transaction) && Boolean(effectivePaymentId);
 
     if (shouldTryPassiveReconciliation && effectivePaymentId) {
+      console.info("[course/status] passive_reconcile_start", {
+        ...orderLogCtx,
+        effective_payment_id: effectivePaymentId,
+        has_paid_marker: hasPaidMarker,
+        enrollment_found: Boolean(resolvedEnrollment),
+        transaction_found: Boolean(transaction),
+      });
       const razorpay = getRazorpayClient();
 
       if (hasPaidMarker) {
@@ -195,6 +207,8 @@ export async function GET(request: Request) {
             amount?: number;
             currency?: string;
             method?: string;
+            captured_at?: number;
+            created_at?: number;
           };
 
           const expectedAmountInPaise = Math.round(Number(resolvedOrder.gross_amount ?? 0) * 100);
@@ -205,7 +219,19 @@ export async function GET(request: Request) {
             ["captured", "paid"].includes(normalizeStatus(candidate?.status)) &&
             candidate?.order_id === expectedOrderId &&
             Number(candidate?.amount ?? 0) === expectedAmountInPaise &&
-            String(candidate?.currency ?? "").toUpperCase() === expectedCurrency;
+            (expectedCurrency ? String(candidate?.currency ?? "").toUpperCase() === expectedCurrency : true);
+
+          console.info("[course/status] razorpay_payment_fetch", {
+            ...orderLogCtx,
+            fetched_payment_id: payment.id ?? null,
+            fetched_order_id: payment.order_id ?? null,
+            fetched_status: payment.status ?? null,
+            fetched_amount: payment.amount ?? null,
+            fetched_currency: payment.currency ?? null,
+            amount_valid: Number(payment.amount ?? 0) === expectedAmountInPaise,
+            currency_valid: expectedCurrency ? String(payment.currency ?? "").toUpperCase() === expectedCurrency : true,
+            order_valid: payment.order_id === expectedOrderId,
+          });
 
           let resolvedCapturedPayment = matchesOrderShape(payment) ? payment : null;
 
@@ -252,6 +278,12 @@ export async function GET(request: Request) {
               .eq("id", resolvedOrder.id)
               .neq("payment_status", "paid");
 
+            console.info("[course/status] local_recovery_update", {
+              ...orderLogCtx,
+              updated_order_id: resolvedOrder.id,
+              update_error: recoveryUpdateError?.message ?? null,
+            });
+
             if (recoveryUpdateError) {
               console.error("[course/status] local recovery update failed", { ...orderLogCtx, error: recoveryUpdateError.message });
             }
@@ -273,6 +305,10 @@ export async function GET(request: Request) {
                 error: finalized.error,
               });
             } else {
+              console.info("[course/status] reconciliation_success", {
+                ...orderLogCtx,
+                payment_id: effectivePaymentId,
+              });
               const { data: refreshedEnrollment } = await admin.data
                 .from("course_enrollments")
                 .select("id,enrollment_status,course_order_id")
@@ -282,6 +318,10 @@ export async function GET(request: Request) {
                 .maybeSingle<EnrollmentStatusRow>();
 
               resolvedEnrollment = refreshedEnrollment ?? resolvedEnrollment;
+              console.info("[course/status] enrollment_refresh", {
+                ...orderLogCtx,
+                enrollment_found_after_reconcile: Boolean(refreshedEnrollment ?? resolvedEnrollment),
+              });
               resolvedOrder = {
                 ...resolvedOrder,
                 payment_status: "paid",
