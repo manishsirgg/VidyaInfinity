@@ -21,6 +21,7 @@ type StatusRow = {
   razorpay_order_id: string | null;
   razorpay_payment_id: string | null;
   paid_at: string | null;
+  metadata: Record<string, unknown> | null;
 };
 type EnrollmentStatusRow = {
   id: string;
@@ -65,18 +66,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, state: "pending", error: admin.error, code: "ADMIN_CLIENT_UNAVAILABLE" }, { status: 503 });
     }
 
-    if (!orderId && !paymentId) {
-      return NextResponse.json({ ok: false, error: "order_id or payment_id is required", code: "MISSING_IDENTIFIERS" }, { status: 400 });
+    if (!orderId) {
+      return NextResponse.json({ ok: false, error: "order_id is required", code: "MISSING_ORDER_ID" }, { status: 400 });
     }
 
     let query = admin.data
       .from("course_orders")
-      .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id,paid_at")
+      .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id,paid_at,metadata")
       .eq("student_id", auth.user.id)
       .limit(1);
 
-    if (orderId) query = query.eq("razorpay_order_id", orderId);
-    else if (paymentId) query = query.eq("razorpay_payment_id", paymentId);
+    query = query.eq("razorpay_order_id", orderId);
 
     const { data: order, error: orderError } = await query.maybeSingle<StatusRow>();
     if (orderError) {
@@ -173,8 +173,7 @@ export async function GET(request: Request) {
           const { data: refreshedEnrollment } = await admin.data
             .from("course_enrollments")
             .select("id,enrollment_status,course_order_id")
-            .eq("student_id", resolvedOrder.student_id)
-            .eq("course_id", resolvedOrder.course_id)
+             .eq("course_order_id", resolvedOrder.id)
             .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
             .limit(1)
             .maybeSingle<EnrollmentStatusRow>();
@@ -203,7 +202,7 @@ export async function GET(request: Request) {
           const expectedOrderId = resolvedOrder.razorpay_order_id ?? orderId ?? "";
           const matchesOrderShape = (candidate: { id?: string; order_id?: string; status?: string; amount?: number; currency?: string } | null | undefined) =>
             Boolean(candidate?.id) &&
-            normalizeStatus(candidate?.status) === "captured" &&
+            ["captured", "paid"].includes(normalizeStatus(candidate?.status)) &&
             candidate?.order_id === expectedOrderId &&
             Number(candidate?.amount ?? 0) === expectedAmountInPaise &&
             String(candidate?.currency ?? "").toUpperCase() === expectedCurrency;
@@ -225,6 +224,38 @@ export async function GET(request: Request) {
 
           if (resolvedCapturedPayment?.id) {
             effectivePaymentId = resolvedCapturedPayment.id;
+            const razorpayPaidAt = (() => {
+              const capturedAt = Number((resolvedCapturedPayment as { captured_at?: number }).captured_at ?? 0);
+              const createdAt = Number((resolvedCapturedPayment as { created_at?: number }).created_at ?? 0);
+              const ts = capturedAt > 0 ? capturedAt : createdAt;
+              return ts > 0 ? new Date(ts * 1000).toISOString() : new Date().toISOString();
+            })();
+
+            const { error: recoveryUpdateError } = await admin.data
+              .from("course_orders")
+              .update({
+                payment_status: "paid",
+                razorpay_payment_id: resolvedCapturedPayment.id,
+                paid_at: resolvedOrder.paid_at ?? razorpayPaidAt,
+                razorpay_method: resolvedCapturedPayment.method ?? null,
+                updated_at: new Date().toISOString(),
+                metadata: {
+                  ...(resolvedOrder.metadata ?? {}),
+                  razorpay_recovery: {
+                    source: "course_status_retry",
+                    recovered_at: new Date().toISOString(),
+                    payment_id: resolvedCapturedPayment.id,
+                    payment_status: resolvedCapturedPayment.status ?? null,
+                  },
+                },
+              })
+              .eq("id", resolvedOrder.id)
+              .neq("payment_status", "paid");
+
+            if (recoveryUpdateError) {
+              console.error("[course/status] local recovery update failed", { ...orderLogCtx, error: recoveryUpdateError.message });
+            }
+
             const finalized = await finalizeCoursePaymentFromRazorpay({
               supabase: admin.data,
               razorpayOrderId: resolvedOrder.razorpay_order_id ?? orderId ?? resolvedCapturedPayment.order_id ?? "",
@@ -245,8 +276,7 @@ export async function GET(request: Request) {
               const { data: refreshedEnrollment } = await admin.data
                 .from("course_enrollments")
                 .select("id,enrollment_status,course_order_id")
-                .eq("student_id", resolvedOrder.student_id)
-                .eq("course_id", resolvedOrder.course_id)
+                 .eq("course_order_id", resolvedOrder.id)
                 .in("enrollment_status", [...COURSE_ENROLLMENT_ACTIVE_STATUSES])
                 .limit(1)
                 .maybeSingle<EnrollmentStatusRow>();
@@ -256,7 +286,7 @@ export async function GET(request: Request) {
                 ...resolvedOrder,
                 payment_status: "paid",
                 razorpay_payment_id: effectivePaymentId,
-                paid_at: new Date().toISOString(),
+                paid_at: resolvedOrder.paid_at ?? razorpayPaidAt,
               };
             }
           }
