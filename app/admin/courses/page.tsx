@@ -1,9 +1,9 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
 import { ModerationPagination } from "@/components/admin/moderation-pagination";
+import { SyllabusModerationActions } from "@/components/admin/syllabus-moderation-actions";
 import { SyllabusRequestFileActions } from "@/components/admin/syllabus-request-file-actions";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { revalidatePath } from "next/cache";
 
 type CourseMediaItem = {
   id: string;
@@ -62,24 +62,6 @@ type SyllabusRequest = {
   approved_at: string | null;
   rejected_at: string | null;
 };
-
-async function moderateSyllabus(formData: FormData) {
-  "use server";
-  await requireUser("admin");
-  const id = String(formData.get("id") ?? "");
-  const action = String(formData.get("action") ?? "");
-  const rejectionReason = String(formData.get("rejectionReason") ?? "").trim();
-  if (action === "reject" && !rejectionReason) {
-    throw new Error("Rejection reason is required to reject a syllabus request.");
-  }
-  await fetch(`${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/admin/course-syllabus-requests/${id}/moderate`, {
-    method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action, rejectionReason }),
-  });
-  revalidatePath("/admin/courses");
-  revalidatePath("/admin/course-syllabus-updates");
-}
 
 function parsePage(value: string | undefined) {
   const page = Number(value);
@@ -207,12 +189,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                       {request.status === "rejected" && request.rejection_reason ? <p className="text-rose-600">Rejection reason: {request.rejection_reason}</p> : null}
                       {request.status === "pending_review" ? <div className="mt-2 space-y-2">
                         {request.proposed_file_path ? <SyllabusRequestFileActions requestId={request.id} /> : null}
-                        <form action={moderateSyllabus} className="flex flex-wrap gap-2">
-                          <input type="hidden" name="id" value={request.id} />
-                          <button name="action" value="approve" className="rounded bg-emerald-600 px-2 py-1 text-white">Approve Syllabus</button>
-                          <input name="rejectionReason" required placeholder="Rejection reason" className="rounded border px-2 py-1" />
-                          <button name="action" value="reject" className="rounded bg-amber-600 px-2 py-1 text-white">Reject Syllabus</button>
-                        </form>
+                        <SyllabusModerationActions requestId={request.id} />
                       </div> : null}
                     </div> : null}
                   </div>
@@ -298,12 +275,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                       {request.status === "rejected" && request.rejection_reason ? <p className="text-rose-600">Rejection reason: {request.rejection_reason}</p> : null}
                       {request.status === "pending_review" ? <div className="mt-2 space-y-2">
                         {request.proposed_file_path ? <SyllabusRequestFileActions requestId={request.id} /> : null}
-                        <form action={moderateSyllabus} className="flex flex-wrap gap-2">
-                          <input type="hidden" name="id" value={request.id} />
-                          <button name="action" value="approve" className="rounded bg-emerald-600 px-2 py-1 text-white">Approve Syllabus</button>
-                          <input name="rejectionReason" required placeholder="Rejection reason" className="rounded border px-2 py-1" />
-                          <button name="action" value="reject" className="rounded bg-amber-600 px-2 py-1 text-white">Reject Syllabus</button>
-                        </form>
+                        <SyllabusModerationActions requestId={request.id} />
                       </div> : null}
                     </div> : null}
                   </div>
