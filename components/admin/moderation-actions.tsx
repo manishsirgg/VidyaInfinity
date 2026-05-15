@@ -9,6 +9,8 @@ type Props = {
   currentStatus: string;
   isActionable?: boolean;
   disabledReason?: string;
+  approveDisabled?: boolean;
+  approveDisabledReason?: string;
 };
 
 function defaultDisabledReason(status: string) {
@@ -17,7 +19,7 @@ function defaultDisabledReason(status: string) {
   return "No active pending submission";
 }
 
-export function ModerationActions({ targetType, targetId, currentStatus, isActionable, disabledReason }: Props) {
+export function ModerationActions({ targetType, targetId, currentStatus, isActionable, disabledReason, approveDisabled, approveDisabledReason }: Props) {
   const router = useRouter();
   const [status, setStatus] = useState(currentStatus);
   const [error, setError] = useState("");
@@ -26,14 +28,18 @@ export function ModerationActions({ targetType, targetId, currentStatus, isActio
 
   const canModerate = isActionable ?? status === "pending";
   const buttonsDisabled = loading || lockedByAction || !canModerate;
+  const approveButtonDisabled = buttonsDisabled || Boolean(approveDisabled);
 
   const effectiveDisabledReason = useMemo(() => {
-    if (!buttonsDisabled || loading) return "";
+    if (loading) return "";
+    if (!buttonsDisabled && approveDisabled) return approveDisabledReason?.trim() || "Approval is currently unavailable.";
+    if (!buttonsDisabled) return "";
     return disabledReason?.trim() || defaultDisabledReason(status);
-  }, [buttonsDisabled, disabledReason, loading, status]);
+  }, [approveDisabled, approveDisabledReason, buttonsDisabled, disabledReason, loading, status]);
 
   async function moderate(nextStatus: "approved" | "rejected") {
-    if (buttonsDisabled) return;
+    if (nextStatus === "approved" && approveButtonDisabled) return;
+    if (nextStatus === "rejected" && buttonsDisabled) return;
 
     setLoading(true);
     setLockedByAction(true);
@@ -75,7 +81,7 @@ export function ModerationActions({ targetType, targetId, currentStatus, isActio
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs rounded bg-slate-100 px-2 py-1">{status}</span>
         <button
-          disabled={buttonsDisabled}
+          disabled={approveButtonDisabled}
           onClick={() => moderate("approved")}
           className="rounded bg-emerald-600 px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
