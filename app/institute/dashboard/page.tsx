@@ -375,6 +375,9 @@ export default async function InstituteDashboardPage() {
             <Link href="/institute/profile" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               Update institute profile
             </Link>
+            <Link href="/institute/updates" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+              Institute Updates
+            </Link>
             <Link href="/institute/notifications" className="rounded border px-3 py-2 text-sm hover:bg-slate-50">
               View notifications
             </Link>

@@ -198,7 +198,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
       .limit(6);
   };
 
-  const [courses, webinars] = instituteId
+  const [courses, webinars, instituteUpdates] = instituteId
     ? await Promise.all([
         loadInstituteCourses(),
         admin.data
@@ -209,8 +209,17 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
           .eq("is_deleted", false)
           .order("starts_at", { ascending: true })
           .limit(6),
+        admin.data
+          .from("institute_updates")
+          .select("id,content,image_url,video_url,related_course_id,related_webinar_id,published_at,created_at")
+          .eq("institute_id", instituteId)
+          .eq("status", "approved")
+          .is("deleted_at", null)
+          .order("published_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .limit(5),
       ])
-    : [{ data: [] }, { data: [] }];
+    : [{ data: [] }, { data: [] }, { data: [] }];
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -268,6 +277,25 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
             <span className="font-medium">Accreditation #:</span> {instituteAccreditation ?? "-"}
           </p>
         </div>
+        <section className="mt-8">
+          {(instituteUpdates.data ?? []).length > 0 ? (
+            <section className="mt-8">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-slate-900">Latest from This Institute</h2>
+              </div>
+              <div className="space-y-3">
+                {(instituteUpdates.data ?? []).map((update) => (
+                  <article key={update.id} className="rounded-xl border bg-white p-4">
+                    <p className="text-sm text-slate-800">{update.content}</p>
+                    {update.image_url ? <img src={update.image_url} alt="Institute update" className="mt-3 max-h-72 w-full rounded object-cover" /> : null}
+                    {update.video_url ? <video src={update.video_url} controls className="mt-3 max-h-80 w-full rounded bg-black" /> : null}
+                    <p className="mt-2 text-xs text-slate-500">Posted on {new Date(update.published_at ?? update.created_at).toLocaleDateString("en-IN")}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </section>
         <section className="mt-8">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-900">Courses</h2>

@@ -204,6 +204,9 @@ export default async function AdminDashboardPage() {
         <Link href="/admin/courses" className="vi-card p-4">
           Pending course approvals: {pendingCourses ?? 0}
         </Link>
+        <Link href="/admin/institute-updates" className="vi-card p-4">
+          Institute Updates moderation
+        </Link>
         <Link href="/admin/transactions" className="vi-card vi-card-hover p-4">Course orders: {orders ?? 0}</Link>
         <Link href="/admin/refunds" className="vi-card p-4">
           Pending refunds: {refunds ?? 0}
