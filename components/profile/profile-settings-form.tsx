@@ -273,7 +273,7 @@ export function ProfileSettingsForm({ role }: Props) {
               Update avatar
             </label>
             <input id="avatarUpload" name="avatar" type="file" accept="image/png,image/jpeg,image/webp" className="text-sm" />
-            <p className="text-xs text-slate-500">PNG, JPG or WEBP up to 3MB.</p>
+            <p className="text-xs text-slate-500">PNG, JPG or WEBP up to 3MB. Recommended: square image, 512×512 px (1:1).</p>
           </div>
         </div>
 

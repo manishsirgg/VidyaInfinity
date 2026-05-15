@@ -132,7 +132,7 @@ export function UnifiedRegisterForm() {
         <input required name="phone" value={values.phone ?? ""} onChange={(event) => updateValue("phone", event.target.value)} placeholder="Phone number" className="rounded border px-3 py-2" />
         <label className="text-sm font-medium text-slate-700" htmlFor="registerAvatar">Profile avatar image</label>
         <input id="registerAvatar" type="file" name="avatar" accept="image/png,image/jpeg,image/webp" onChange={(event) => onSingleFileChange("avatar", event)} className="rounded border px-3 py-2" />
-        <p className="text-xs text-slate-500">PNG, JPG or WEBP up to 3MB.</p>
+        <p className="text-xs text-slate-500">PNG, JPG or WEBP up to 3MB. Recommended: square image, 512×512 px (1:1).</p>
       </div>
 
       <div data-step={2} className={step === 2 ? "grid gap-3" : "hidden"}>
@@ -188,7 +188,7 @@ export function UnifiedRegisterForm() {
             <textarea name="description" value={values.description ?? ""} onChange={(event) => updateValue("description", event.target.value)} placeholder="Institute description (max 2500 words)" className="min-h-24 rounded border px-3 py-2" />
             <label className="text-sm font-medium text-slate-700" htmlFor="instituteMedia">Institute media (images/videos)</label>
             <input id="instituteMedia" type="file" name="instituteMedia" accept="image/png,image/jpeg,image/webp,video/mp4" multiple onChange={onMultiFileChange} className="rounded border px-3 py-2" />
-            <p className="text-xs text-slate-500">Optional. Upload up to 6 files (PNG, JPG, WEBP, MP4), max 20MB each.</p>
+            <p className="text-xs text-slate-500">Optional. Upload up to 6 files (PNG, JPG, WEBP, MP4), max 20MB each. Recommended image size: 1280×720 px (16:9).</p>
           </>
         ) : (
           <>

@@ -486,6 +486,7 @@ export function BlogManagement({
             <div className="mt-2 flex flex-wrap gap-2">
               <label className="rounded border px-3 py-1.5 text-xs hover:bg-slate-50">
                 Upload cover
+                <span className="ml-1 text-[11px] text-slate-500">(recommended: 1200×630 px, 1.91:1)</span>
                 <input
                   type="file"
                   accept="image/*,video/*,application/pdf"
@@ -507,6 +508,7 @@ export function BlogManagement({
 
               <label className="rounded border px-3 py-1.5 text-xs hover:bg-slate-50">
                 Upload gallery media
+                <span className="ml-1 text-[11px] text-slate-500">(images: ideally 16:9 or 1:1)</span>
                 <input
                   type="file"
                   accept="image/*,video/*,application/pdf"
