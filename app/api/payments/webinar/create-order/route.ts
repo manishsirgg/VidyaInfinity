@@ -97,7 +97,7 @@ export async function POST(request: Request) {
   if (normalizedCouponCode) {
     const { data: coupon } = await admin.data
       .from("coupons")
-      .select("code,discount_percent,active,expiry_date,applies_to")
+      .select("code,discount_percent,active,expiry_date,applies_to,is_deleted,deleted_at,max_uses,used_count")
       .eq("code", normalizedCouponCode)
       .in("applies_to", ["webinar", "all"])
       .maybeSingle();

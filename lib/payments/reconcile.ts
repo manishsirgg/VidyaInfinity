@@ -66,6 +66,36 @@ function getOrderKindConstraintMigrationHint(error: { message?: string | null; d
 type EnrollmentMutationError = { code?: string | null; message?: string | null; details?: string | null };
 const ACTIVE_ENROLLMENT_STATUS = "active" as const;
 const ACTIVE_DUPLICATE_PROTECTION_STATUSES = new Set(["pending", "active", "suspended", "completed"]);
+async function consumeCouponUsageByCode({
+  supabase,
+  couponCode,
+}: {
+  supabase: SupabaseClient;
+  couponCode: string | null | undefined;
+}) {
+  const normalizedCode = String(couponCode ?? "").trim().toUpperCase();
+  if (!normalizedCode) return { error: null as string | null };
+
+  const { data: couponRow, error: couponFetchError } = await supabase
+    .from("coupons")
+    .select("id,max_uses,used_count")
+    .eq("code", normalizedCode)
+    .maybeSingle<{ id: string; max_uses: number | null; used_count: number }>();
+  if (couponFetchError) return { error: couponFetchError.message };
+  if (!couponRow) return { error: null as string | null };
+
+  const currentUsedCount = Number(couponRow.used_count ?? 0);
+  const maxUses = couponRow.max_uses;
+  if (maxUses !== null && currentUsedCount >= maxUses) return { error: null as string | null };
+
+  const { error: couponUpdateError } = await supabase
+    .from("coupons")
+    .update({ used_count: currentUsedCount + 1 })
+    .eq("id", couponRow.id)
+    .eq("used_count", currentUsedCount);
+  if (couponUpdateError) return { error: couponUpdateError.message };
+  return { error: null as string | null };
+}
 
 async function withEnrollmentStatusFallback(
   operation: (enrollmentStatus: typeof ACTIVE_ENROLLMENT_STATUS) => PromiseLike<{ error: EnrollmentMutationError | null }>,
@@ -380,6 +410,11 @@ export async function reconcileCourseOrderPaid({
     } else {
       effectivePaidAt = now;
     }
+    const consumed = await consumeCouponUsageByCode({
+      supabase,
+      couponCode: (order as { metadata?: { coupon_code?: string | null } }).metadata?.coupon_code,
+    });
+    if (consumed.error) return consumed;
   } else if (order.payment_status === "paid") {
     console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
       event: "reconciliation_skipped_already_finalized",
@@ -1045,6 +1080,11 @@ export async function reconcileWebinarOrderPaid({
         return { error: updateError.message };
       }
     }
+    const consumed = await consumeCouponUsageByCode({
+      supabase,
+      couponCode: (order as { metadata?: { coupon_code?: string | null } }).metadata?.coupon_code,
+    });
+    if (consumed.error) return consumed;
   } else if (order.payment_status === "paid") {
     console.info("[payments/reconcile] reconciliation_skipped_already_finalized", {
       event: "reconciliation_skipped_already_finalized",

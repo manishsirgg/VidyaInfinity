@@ -14,6 +14,7 @@ type CourseOrderRow = {
   institute_receivable_amount: number;
   currency: string;
   payment_status: string;
+  metadata?: { coupon_code?: string | null } | null;
 };
 
 type WebinarOrderRow = {
@@ -26,6 +27,7 @@ type WebinarOrderRow = {
   payment_status: string;
   order_status: string;
   access_status: string;
+  metadata?: { coupon_code?: string | null } | null;
 };
 
 function isCapturedStatus(status: string | null | undefined) {
@@ -72,7 +74,7 @@ export async function finalizeCoursePaymentFromRazorpay({
 
   let query = supabase
     .from("course_orders")
-    .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status")
+    .select("id,student_id,course_id,institute_id,gross_amount,institute_receivable_amount,currency,payment_status,metadata")
     .eq("razorpay_order_id", razorpayOrderId)
     .limit(1);
 
@@ -174,7 +176,7 @@ export async function finalizeWebinarPaymentFromRazorpay({
 
   let query = supabase
     .from("webinar_orders")
-    .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,order_status,access_status")
+    .select("id,webinar_id,student_id,institute_id,amount,currency,payment_status,order_status,access_status,metadata")
     .eq("razorpay_order_id", razorpayOrderId)
     .limit(1);
 
