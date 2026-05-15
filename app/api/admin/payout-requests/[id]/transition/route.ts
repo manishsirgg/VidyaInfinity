@@ -24,6 +24,14 @@ const EVENT_BY_STATUS: Partial<Record<(typeof VALID_STATUSES)[number], string>> 
   cancelled: "payout_cancelled",
 };
 
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  requested: ["under_review", "cancelled"],
+  under_review: ["approved", "rejected", "cancelled"],
+  approved: ["processing", "paid", "failed", "cancelled"],
+  processing: ["paid", "failed"],
+  failed: ["processing"],
+};
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("admin");
   if ("error" in auth) return auth.error;
@@ -77,6 +85,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!existingRequest) return jsonError("Payout request not found.", 404);
 
   const currentStatus = String(existingRequest.status ?? "").trim().toLowerCase();
+  if (currentStatus !== nextStatus) {
+    const allowed = ALLOWED_TRANSITIONS[currentStatus] ?? [];
+    if (!allowed.includes(nextStatus)) {
+      return jsonError(
+        `Invalid payout status transition: ${currentStatus || "unknown"} -> ${nextStatus}. Allowed: ${allowed.join(", ") || "none"}.`,
+        409,
+      );
+    }
+  }
+
   if (currentStatus === "paid" && nextStatus !== "paid") {
     return jsonError("Paid payout requests are immutable and cannot transition to another status.", 409);
   }
@@ -85,6 +103,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (existingRequest.payment_reference && paymentReference && paymentReference !== existingRequest.payment_reference) {
       return jsonError("payment_reference is locked once payout is paid.", 409);
     }
+    const existingApprovedAmount = Number(existingRequest.approved_amount ?? existingRequest.requested_amount ?? 0);
+    const incomingApprovedAmount = approvedAmount ?? existingApprovedAmount;
+    const canTreatAsIdempotent =
+      existingRequest.paid_at &&
+      (!paymentReference || paymentReference === existingRequest.payment_reference) &&
+      incomingApprovedAmount === existingApprovedAmount;
+
+    if (canTreatAsIdempotent) {
+      return NextResponse.json({ ok: true, idempotent: true, payout_request: existingRequest });
+    }
+
     if (existingRequest.paid_at) {
       return jsonError("paid_at is already set; paid payout cannot be modified.", 409);
     }
