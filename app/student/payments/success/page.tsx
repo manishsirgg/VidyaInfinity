@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+type ServerSupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 function first(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? "";
@@ -124,7 +125,7 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
       let matchedStrategy: string | null = null;
       let relationLookupError = false;
       let lookupClient: "session" | "admin" | null = null;
-      const attemptLookup = async (client: { from: (table: string) => any }) => {
+      const attemptLookup = async (client: ServerSupabaseClient) => {
         for (const attempt of dedupedAttempts) {
           const { data: found, error } = await client
             .from("course_orders")
@@ -149,7 +150,7 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
       if (!data) {
         const admin = getSupabaseAdmin();
         if (admin.ok) {
-          const adminLookup = await attemptLookup(admin.data);
+          const adminLookup = await attemptLookup(admin.data as ServerSupabaseClient);
           data = adminLookup.found;
           matchedStrategy = adminLookup.strategy;
           if (data) lookupClient = "admin";
