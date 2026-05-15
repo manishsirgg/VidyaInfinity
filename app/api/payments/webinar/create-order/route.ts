@@ -99,7 +99,7 @@ export async function POST(request: Request) {
       .from("coupons")
       .select("code,discount_percent,active,expiry_date,applies_to")
       .eq("code", normalizedCouponCode)
-      .eq("applies_to", "webinar")
+      .in("applies_to", ["webinar", "all"])
       .maybeSingle();
 
     const couponCheck = validateCouponForScope(coupon, "webinar");
