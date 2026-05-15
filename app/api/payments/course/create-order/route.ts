@@ -309,7 +309,7 @@ export async function POST(request: Request) {
     if (normalizedCouponCode) {
       const { data: coupon, error: couponError } = await admin.data
         .from("coupons")
-        .select("code,discount_percent,active,expiry_date,applies_to,is_deleted")
+        .select("code,discount_percent,active,expiry_date,applies_to,is_deleted,deleted_at,max_uses,used_count")
         .eq("code", normalizedCouponCode)
         .in("applies_to", ["course", "all"])
         .maybeSingle<{
@@ -319,6 +319,9 @@ export async function POST(request: Request) {
           expiry_date: string | null;
           applies_to: string | null;
           is_deleted?: boolean | null;
+          deleted_at?: string | null;
+          max_uses?: number | null;
+          used_count?: number | null;
         }>();
 
       if (couponError) return NextResponse.json({ error: couponError.message }, { status: 500 });

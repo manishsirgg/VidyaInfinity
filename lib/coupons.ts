@@ -25,8 +25,12 @@ export function normalizeCouponCode(code: unknown) {
 
 export function isCouponExpired(expiryDate: string | null | undefined) {
   if (!expiryDate) return false;
+  const expiry = new Date(expiryDate);
+  if (!Number.isNaN(expiry.getTime())) {
+    return expiry.getTime() < Date.now();
+  }
   const today = new Date().toISOString().slice(0, 10);
-  return expiryDate < today;
+  return String(expiryDate).trim() < today;
 }
 
 export function isCouponApplicable(couponAppliesTo: string | null | undefined, checkoutScope: CouponScope) {
