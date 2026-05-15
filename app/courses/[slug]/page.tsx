@@ -194,6 +194,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
           <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.target_audience ?? "-"}</p>
         </section>
 
+        <CourseSyllabusSection courseId={course.id} text={course.syllabus_text ?? null} hasFile={Boolean(course.syllabus_file_path)} />
         <section>
           <h2 className="text-lg font-semibold">Media Gallery</h2>
           <CourseMediaGallery
@@ -205,7 +206,6 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
             }))}
           />
         </section>
-        <CourseSyllabusSection courseId={course.id} text={course.syllabus_text ?? null} hasFile={Boolean(course.syllabus_file_path)} />
       </article>
 
       <aside className="space-y-4">
