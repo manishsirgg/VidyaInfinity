@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { InstituteMediaGallery } from "@/components/institutes/institute-media-gallery";
 import { ShareActions } from "@/components/shared/share-actions";
+import { UpdateMediaViewer } from "@/components/shared/update-media-viewer";
 import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { siteConfig } from "@/lib/constants/site";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -287,8 +288,8 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
                 {(instituteUpdates.data ?? []).map((update) => (
                   <article key={update.id} className="rounded-xl border bg-white p-4">
                     <p className="text-sm text-slate-800">{update.content}</p>
-                    {update.image_url ? <img src={update.image_url} alt="Institute update" className="mt-3 max-h-72 w-full rounded object-cover" /> : null}
-                    {update.video_url ? <video src={update.video_url} controls className="mt-3 max-h-80 w-full rounded bg-black" /> : null}
+                    {update.image_url ? <UpdateMediaViewer mediaType="image" src={update.image_url} alt="Institute update" /> : null}
+                    {update.video_url ? <UpdateMediaViewer mediaType="video" src={update.video_url} alt="Institute update" /> : null}
                     <p className="mt-2 text-xs text-slate-500">Posted on {new Date(update.published_at ?? update.created_at).toLocaleDateString("en-IN")}</p>
                   </article>
                 ))}

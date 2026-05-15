@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { UpdateMediaViewer } from "@/components/shared/update-media-viewer";
 
 type InstituteUpdate = {
   id: string;
@@ -117,8 +118,8 @@ export function InstituteUpdatesClient({ initialUpdates }: { initialUpdates: Arr
               </div>
             </div>
             <p className="text-sm leading-relaxed text-slate-700">{u.content}</p>
-            {u.image_url ? <img src={u.image_url} alt="Update media" className="max-h-72 w-full rounded-xl object-cover" /> : null}
-            {u.video_url ? <video src={u.video_url} controls className="max-h-72 w-full rounded-xl" /> : null}
+            {u.image_url ? <UpdateMediaViewer mediaType="image" src={u.image_url} alt="Update media" /> : null}
+            {u.video_url ? <UpdateMediaViewer mediaType="video" src={u.video_url} alt="Update media" /> : null}
             {u.rejection_reason ? <p className="rounded-lg bg-rose-50 p-2 text-xs text-rose-700">Rejection reason: {u.rejection_reason}</p> : null}
 
             {editingId === u.id ? (

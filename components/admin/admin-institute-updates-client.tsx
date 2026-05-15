@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { UpdateMediaViewer } from "@/components/shared/update-media-viewer";
 
 type UpdateRow = {
   id?: string;
@@ -115,8 +116,8 @@ export function AdminInstituteUpdatesClient({ initialUpdates }: { initialUpdates
 
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{String(u.content ?? "")}</p>
 
-                {u.image_url ? <img src={String(u.image_url)} className="mt-4 h-44 w-full rounded-xl object-cover sm:h-56" alt="update" /> : null}
-                {u.video_url ? <video src={String(u.video_url)} controls className="mt-4 h-52 w-full rounded-xl bg-black sm:h-72" /> : null}
+                {u.image_url ? <UpdateMediaViewer mediaType="image" src={String(u.image_url)} alt="Institute update" className="mt-4" /> : null}
+                {u.video_url ? <UpdateMediaViewer mediaType="video" src={String(u.video_url)} alt="Institute update" className="mt-4" /> : null}
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   {ACTIONS.map((action) => {
