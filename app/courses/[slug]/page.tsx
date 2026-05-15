@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { CourseMediaGallery } from "@/components/courses/course-media-gallery";
 import { CoursePurchaseCard } from "@/components/courses/course-purchase-card";
+import { CourseSyllabusSection } from "@/components/courses/course-syllabus-section";
 import { LeadForm } from "@/components/forms/lead-form";
 import { ShareActions } from "@/components/shared/share-actions";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -36,7 +37,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
   const dataClient = admin.ok ? admin.data : supabase;
 
   const baseSelect =
-    "id,title,summary,description,fees,category,subject,level,language,mode,duration,duration_value,duration_unit,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,course_media(file_url,type),institute:institutes(id,status,verified,rejection_reason,is_deleted)";
+    "id,title,summary,description,fees,category,subject,level,language,mode,duration,duration_value,duration_unit,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,syllabus_text,syllabus_file_path,course_media(file_url,type),institute:institutes(id,status,verified,rejection_reason,is_deleted)";
 
   const byId = await dataClient.from("courses").select(baseSelect).eq("id", slug).eq("status", "approved").eq("is_deleted", false).maybeSingle();
   const byLegacySlug = byId.data
@@ -204,6 +205,7 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
             }))}
           />
         </section>
+        <CourseSyllabusSection courseId={course.id} text={course.syllabus_text ?? null} hasFile={Boolean(course.syllabus_file_path)} />
       </article>
 
       <aside className="space-y-4">

@@ -18,6 +18,8 @@ const CERTIFICATE_STATUS_OPTIONS = ["available", "not_available", "optional", "i
 const MAX_MEDIA_FILES = 10;
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024;
+const MAX_SYLLABUS_TEXT_LENGTH = 30000;
+const MAX_SYLLABUS_FILE_BYTES = 10 * 1024 * 1024;
 
 type FileKind = "image" | "video" | null;
 
@@ -119,6 +121,8 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
   const [durationValue, setDurationValue] = useState(String(initialCourse?.duration_value ?? ""));
   const [durationUnit, setDurationUnit] = useState(initialCourse?.duration_unit ?? "");
   const [newMedia, setNewMedia] = useState<File[]>([]);
+  const [syllabusText, setSyllabusText] = useState("");
+  const [syllabusPdf, setSyllabusPdf] = useState<File | null>(null);
   const [removedMediaIds, setRemovedMediaIds] = useState<string[]>([]);
   const [replacementMedia, setReplacementMedia] = useState<Record<string, File>>({});
   const [savedMedia, setSavedMedia] = useState<InstituteCourseMedia[]>(
@@ -322,6 +326,16 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       setError("At least one course media file is required.");
       return;
     }
+    if (syllabusText.trim().length > MAX_SYLLABUS_TEXT_LENGTH) {
+      setState("error");
+      setError("Syllabus text must be 30,000 characters or fewer.");
+      return;
+    }
+    if (syllabusPdf && (syllabusPdf.type !== "application/pdf" || syllabusPdf.size > MAX_SYLLABUS_FILE_BYTES)) {
+      setState("error");
+      setError("Syllabus file must be a PDF up to 10 MB.");
+      return;
+    }
 
     const form = event.currentTarget;
     const formData = new FormData(form);
@@ -404,6 +418,17 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     await removeMarkedMedia(courseId);
     const replacementFailures = await replaceMarkedMedia(courseId);
     const mediaFailures = [...replacementFailures, ...(await uploadNewMedia(courseId))];
+    if (syllabusText.trim() || syllabusPdf) {
+      const syllabusFormData = new FormData();
+      syllabusFormData.set("courseId", courseId);
+      syllabusFormData.set("syllabusText", syllabusText.trim());
+      if (syllabusPdf) syllabusFormData.set("syllabusPdf", syllabusPdf);
+      const syllabusResponse = await fetch("/api/institute/course-syllabus", { method: "POST", body: syllabusFormData });
+      if (!syllabusResponse.ok) {
+        const syllabusBody = (await syllabusResponse.json().catch(() => null)) as { error?: string } | null;
+        mediaFailures.push(syllabusBody?.error ?? "Failed to submit syllabus for review.");
+      }
+    }
 
     setState(mediaFailures.length ? "error" : "success");
     setMessage(successMessage);
@@ -554,6 +579,13 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
             <input name="supportPhone" defaultValue={initialCourse?.support_phone ?? ""} placeholder="+91..." className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </Field>
         </div>
+      </section>
+
+      <section className={`space-y-3 rounded-lg border border-slate-200 p-4 ${step === 4 ? "block" : "hidden"}`}>
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Course Syllabus</h3>
+        <p className="text-xs text-slate-500">Optional. Add syllabus text or upload a PDF. It will be reviewed by Vidya Infinity before becoming visible to students.</p>
+        <textarea value={syllabusText} onChange={(event) => setSyllabusText(event.target.value)} maxLength={MAX_SYLLABUS_TEXT_LENGTH} placeholder="Paste syllabus text (optional)." className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+        <input type="file" accept="application/pdf" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" onChange={(event) => setSyllabusPdf(event.target.files?.[0] ?? null)} />
       </section>
 
       <div className={`rounded border border-slate-200 p-4 ${step === 4 ? "block" : "hidden"}`}>
