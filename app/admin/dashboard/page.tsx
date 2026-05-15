@@ -5,25 +5,41 @@ import { calculateNetPlatformFeeRevenue, calculateRevenueBreakdown } from "@/lib
 import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
-const adminModules = [
-  { href: "/admin/users", label: "Users" },
-  { href: "/admin/institutes", label: "Institutes" },
-  { href: "/admin/courses", label: "Courses" },
-  { href: "/admin/refunds", label: "Refunds" },
-  { href: "/admin/payout-requests", label: "Payout Requests" },
-  { href: "/admin/transactions", label: "Transactions" },
-  { href: "/admin/commission", label: "Commission" },
-  { href: "/admin/blogs", label: "Blogs" },
-  { href: "/admin/coupons", label: "Coupons" },
-  { href: "/admin/crm", label: "Admin CRM" },
-  { href: "/admin/psychometric", label: "Psychometric Tests" },
-  { href: "/admin/psychometric/diagnostics", label: "Psychometric Diagnostics" },
-  { href: "/admin/notifications", label: "Notifications" },
-  { href: "/admin/webinars", label: "Webinars" },
-  { href: "/admin/featured-listings", label: "Featured Listings" },
-  { href: "/admin/featured-listings", label: "Webinar Promotions" },
-  { href: "/admin/featured-reconciliation", label: "Featured Reconciliation" },
-  { href: "/admin/profile", label: "Admin Profile" },
+const adminModuleGroups = [
+  {
+    title: "People & Moderation",
+    modules: [
+      { href: "/admin/users", label: "Users" },
+      { href: "/admin/institutes", label: "Institutes" },
+      { href: "/admin/courses", label: "Courses" },
+      { href: "/admin/webinars", label: "Webinars" },
+      { href: "/admin/institute-updates", label: "Institute Updates" },
+    ],
+  },
+  {
+    title: "Payments & Finance",
+    modules: [
+      { href: "/admin/transactions", label: "Transactions" },
+      { href: "/admin/refunds", label: "Refunds" },
+      { href: "/admin/payout-requests", label: "Payout Requests" },
+      { href: "/admin/commission", label: "Commission" },
+      { href: "/admin/featured-reconciliation", label: "Featured Reconciliation" },
+    ],
+  },
+  {
+    title: "Content, Growth & Tools",
+    modules: [
+      { href: "/admin/blogs", label: "Blogs" },
+      { href: "/admin/coupons", label: "Coupons" },
+      { href: "/admin/featured-listings", label: "Featured Listings" },
+      { href: "/admin/featured-listings", label: "Webinar Promotions" },
+      { href: "/admin/crm", label: "Admin CRM" },
+      { href: "/admin/psychometric", label: "Psychometric Tests" },
+      { href: "/admin/psychometric/diagnostics", label: "Psychometric Diagnostics" },
+      { href: "/admin/notifications", label: "Notifications" },
+      { href: "/admin/profile", label: "Admin Profile" },
+    ],
+  },
 ];
 
 function formatDate(value: string) {
@@ -80,6 +96,7 @@ export default async function AdminDashboardPage() {
     { count: unreadNotifications },
     { count: webinarCount },
     { count: webinarPendingCount },
+    { count: instituteUpdatesPendingCount },
     { count: webinarRegistrationCount },
     { count: webinarOrderCount },
     { count: instituteFeaturedSubscriptionsCount },
@@ -112,6 +129,7 @@ export default async function AdminDashboardPage() {
     supabase.from("notifications").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("is_read", false),
     supabase.from("webinars").select("id", { count: "exact", head: true }),
     supabase.from("webinars").select("id", { count: "exact", head: true }).eq("approval_status", "pending"),
+    supabase.from("institute_updates").select("id", { count: "exact", head: true }).eq("status", "pending_review"),
     supabase.from("webinar_registrations").select("id", { count: "exact", head: true }),
     supabase.from("webinar_orders").select("id", { count: "exact", head: true }),
     supabase.from("institute_featured_subscriptions").select("id", { count: "exact", head: true }),
@@ -205,7 +223,7 @@ export default async function AdminDashboardPage() {
           Pending course approvals: {pendingCourses ?? 0}
         </Link>
         <Link href="/admin/institute-updates" className="vi-card p-4">
-          Institute Updates moderation
+          Institute Updates moderation: {instituteUpdatesPendingCount ?? 0}
         </Link>
         <Link href="/admin/transactions" className="vi-card vi-card-hover p-4">Course orders: {orders ?? 0}</Link>
         <Link href="/admin/refunds" className="vi-card p-4">
@@ -307,13 +325,23 @@ export default async function AdminDashboardPage() {
         </Link>
       </div>
 
-      <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {adminModules.map((module) => (
-          <Link key={module.href} href={module.href} className="vi-card vi-card-hover px-4 py-3 text-sm font-medium text-slate-700">
-            Open {module.label}
-          </Link>
-        ))}
-      </div>
+      <section className="mt-8 space-y-4">
+        <h2 className="text-lg font-semibold text-slate-900">Quick Access</h2>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {adminModuleGroups.map((group) => (
+            <div key={group.title} className="vi-card p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{group.title}</h3>
+              <div className="mt-3 grid gap-2">
+                {group.modules.map((module) => (
+                  <Link key={`${group.title}-${module.label}`} href={module.href} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                    Open {module.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="mt-8 vi-card p-4 sm:p-5">
         <div className="flex items-center justify-between gap-2">
