@@ -56,6 +56,14 @@ export default async function InstituteCourseDetailsPage({ params, searchParams 
         <div><dt className="font-medium">Target audience</dt><dd>{course.target_audience ?? "-"}</dd></div>
         <div><dt className="font-medium">Certificate</dt><dd>{course.certificate_status ?? "-"} {course.certificate_details ? `· ${course.certificate_details}` : ""}</dd></div>
         <div><dt className="font-medium">Batch size</dt><dd>{course.batch_size ?? "-"}</dd></div>
+        <div className="md:col-span-2">
+          <dt className="font-medium">Syllabus text</dt>
+          <dd className="whitespace-pre-wrap">{course.syllabus_text ?? "-"}</dd>
+        </div>
+        <div className="md:col-span-2">
+          <dt className="font-medium">Syllabus file</dt>
+          <dd>{course.syllabus_file_name ?? course.syllabus_file_path ?? "-"}</dd>
+        </div>
       </dl>
 
       <section className="mt-6 rounded border bg-white p-4">

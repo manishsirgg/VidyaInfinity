@@ -40,6 +40,9 @@ export type InstituteCourseRecord = {
   faculty_qualification: string | null;
   support_email: string | null;
   support_phone: string | null;
+  syllabus_text: string | null;
+  syllabus_file_name: string | null;
+  syllabus_file_path: string | null;
   status: string;
   rejection_reason: string | null;
   created_at: string;
@@ -48,7 +51,7 @@ export type InstituteCourseRecord = {
   deleted_at: string | null;
 };
 
-const COURSE_SELECT = "id,institute_id,title,summary,description,category,subject,level,language,fees,duration,duration_value,duration_unit,mode,location,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,rejection_reason,created_at,updated_at,is_deleted,deleted_at";
+const COURSE_SELECT = "id,institute_id,title,summary,description,category,subject,level,language,fees,duration,duration_value,duration_unit,mode,location,schedule,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,syllabus_text,syllabus_file_name,syllabus_file_path,status,rejection_reason,created_at,updated_at,is_deleted,deleted_at";
 
 export async function getInstituteDataClient() {
   const supabase = await createClient();
