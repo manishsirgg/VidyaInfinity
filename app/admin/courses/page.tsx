@@ -1,7 +1,9 @@
 import { ModerationActions } from "@/components/admin/moderation-actions";
 import { ModerationPagination } from "@/components/admin/moderation-pagination";
+import { SyllabusRequestFileActions } from "@/components/admin/syllabus-request-file-actions";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { revalidatePath } from "next/cache";
 
 type CourseMediaItem = {
   id: string;
@@ -44,6 +46,40 @@ function renderMediaPreview(media: CourseMediaItem) {
 }
 
 const PAGE_SIZE = 10;
+const SYLLABUS_PREVIEW_LIMIT = 280;
+
+type SyllabusRequest = {
+  id: string;
+  course_id: string;
+  status: "pending_review" | "approved" | "rejected" | "deleted";
+  proposed_syllabus_text: string | null;
+  proposed_file_path: string | null;
+  proposed_file_name: string | null;
+  proposed_file_size_bytes: number | null;
+  proposed_file_mime_type: string | null;
+  rejection_reason: string | null;
+  created_at: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+};
+
+async function moderateSyllabus(formData: FormData) {
+  "use server";
+  await requireUser("admin");
+  const id = String(formData.get("id") ?? "");
+  const action = String(formData.get("action") ?? "");
+  const rejectionReason = String(formData.get("rejectionReason") ?? "").trim();
+  if (action === "reject" && !rejectionReason) {
+    throw new Error("Rejection reason is required to reject a syllabus request.");
+  }
+  await fetch(`${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/admin/course-syllabus-requests/${id}/moderate`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action, rejectionReason }),
+  });
+  revalidatePath("/admin/courses");
+  revalidatePath("/admin/course-syllabus-updates");
+}
 
 function parsePage(value: string | undefined) {
   const page = Number(value);
@@ -63,13 +99,25 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
 
   const { data: courses, error } = await supabase
     .from("courses")
-    .select(
-      "id,title,summary,description,category,subject,level,mode,language,fees,duration,duration_value,duration_unit,schedule,location,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,syllabus_text,syllabus_file_name,syllabus_file_path,status,rejection_reason,course_media(id,type,file_url),created_at,updated_at"
-    )
+    .select("id,title,summary,description,category,subject,level,mode,language,fees,duration,duration_value,duration_unit,schedule,location,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,syllabus_text,syllabus_file_name,syllabus_file_path,syllabus_approved_at,status,rejection_reason,course_media(id,type,file_url),created_at,updated_at")
     .order("created_at", { ascending: false });
 
   if (error) {
     console.error("Failed to load courses for moderation", { error: error.message });
+  }
+  const courseIds = (courses ?? []).map((course) => course.id);
+  const latestSyllabusRequestByCourseId = new Map<string, SyllabusRequest>();
+  if (courseIds.length > 0) {
+    const { data: syllabusRequests } = await supabase
+      .from("course_syllabus_update_requests")
+      .select("id,course_id,status,proposed_syllabus_text,proposed_file_path,proposed_file_name,proposed_file_size_bytes,proposed_file_mime_type,rejection_reason,created_at,approved_at,rejected_at")
+      .in("course_id", courseIds)
+      .is("deleted_at", null)
+      .in("status", ["pending_review", "rejected", "approved"])
+      .order("created_at", { ascending: false });
+    for (const request of (syllabusRequests ?? []) as SyllabusRequest[]) {
+      if (!latestSyllabusRequestByCourseId.has(request.course_id)) latestSyllabusRequestByCourseId.set(request.course_id, request);
+    }
   }
 
   const pendingCourses = (courses ?? []).filter((course) => course.status === "pending");
@@ -136,8 +184,40 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               <p><span className="font-medium">Learning outcomes:</span> {humanize(course.learning_outcomes)}</p>
               <p><span className="font-medium">Target audience:</span> {humanize(course.target_audience)}</p>
               <p><span className="font-medium">Certificate details:</span> {humanize(course.certificate_details)}</p>
-              <p><span className="font-medium">Syllabus text:</span> {humanize(course.syllabus_text)}</p>
-              <p><span className="font-medium">Syllabus file:</span> {humanize(course.syllabus_file_name ?? course.syllabus_file_path)}</p>
+              {(() => {
+                const request = latestSyllabusRequestByCourseId.get(course.id);
+                const hasApproved = Boolean(course.syllabus_text || course.syllabus_file_name || course.syllabus_file_path);
+                const previewText = (value: string) => value.length > SYLLABUS_PREVIEW_LIMIT ? `${value.slice(0, SYLLABUS_PREVIEW_LIMIT)}…` : value;
+                return (
+                  <div className="rounded border border-slate-200 p-3">
+                    <p className="font-semibold text-slate-800">Course Syllabus</p>
+                    {!hasApproved && !request ? <p className="mt-1 text-xs text-slate-600">No syllabus submitted.</p> : null}
+                    {hasApproved ? <div className="mt-2 space-y-1 text-xs">
+                      <p className="font-medium text-slate-700">Approved syllabus</p>
+                      {course.syllabus_text ? <details><summary className="cursor-pointer">Text preview</summary><p className="mt-1 whitespace-pre-wrap">{previewText(course.syllabus_text)}</p></details> : <p>Text: -</p>}
+                      <p>PDF: {humanize(course.syllabus_file_name ?? course.syllabus_file_path)}</p>
+                      <p>Approved at: {formatDate(course.syllabus_approved_at)}</p>
+                    </div> : null}
+                    {request ? <div className="mt-3 space-y-1 text-xs">
+                      <p className="font-medium text-slate-700">Latest submitted request</p>
+                      <p>Status: <span className="rounded bg-slate-100 px-2 py-0.5">{request.status}</span></p>
+                      <p>Submitted: {formatDate(request.created_at)}</p>
+                      {request.proposed_syllabus_text ? <details><summary className="cursor-pointer">Proposed text preview</summary><p className="mt-1 whitespace-pre-wrap">{previewText(request.proposed_syllabus_text)}</p></details> : <p>Proposed text: -</p>}
+                      <p>Proposed PDF: {humanize(request.proposed_file_name ?? request.proposed_file_path)}</p>
+                      {request.status === "rejected" && request.rejection_reason ? <p className="text-rose-600">Rejection reason: {request.rejection_reason}</p> : null}
+                      {request.status === "pending_review" ? <div className="mt-2 space-y-2">
+                        {request.proposed_file_path ? <SyllabusRequestFileActions requestId={request.id} /> : null}
+                        <form action={moderateSyllabus} className="flex flex-wrap gap-2">
+                          <input type="hidden" name="id" value={request.id} />
+                          <button name="action" value="approve" className="rounded bg-emerald-600 px-2 py-1 text-white">Approve Syllabus</button>
+                          <input name="rejectionReason" required placeholder="Rejection reason" className="rounded border px-2 py-1" />
+                          <button name="action" value="reject" className="rounded bg-amber-600 px-2 py-1 text-white">Reject Syllabus</button>
+                        </form>
+                      </div> : null}
+                    </div> : null}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="mt-4">
@@ -195,8 +275,40 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               <p><span className="font-medium">Learning outcomes:</span> {humanize(course.learning_outcomes)}</p>
               <p><span className="font-medium">Target audience:</span> {humanize(course.target_audience)}</p>
               <p><span className="font-medium">Certificate details:</span> {humanize(course.certificate_details)}</p>
-              <p><span className="font-medium">Syllabus text:</span> {humanize(course.syllabus_text)}</p>
-              <p><span className="font-medium">Syllabus file:</span> {humanize(course.syllabus_file_name ?? course.syllabus_file_path)}</p>
+              {(() => {
+                const request = latestSyllabusRequestByCourseId.get(course.id);
+                const hasApproved = Boolean(course.syllabus_text || course.syllabus_file_name || course.syllabus_file_path);
+                const previewText = (value: string) => value.length > SYLLABUS_PREVIEW_LIMIT ? `${value.slice(0, SYLLABUS_PREVIEW_LIMIT)}…` : value;
+                return (
+                  <div className="rounded border border-slate-200 p-3">
+                    <p className="font-semibold text-slate-800">Course Syllabus</p>
+                    {!hasApproved && !request ? <p className="mt-1 text-xs text-slate-600">No syllabus submitted.</p> : null}
+                    {hasApproved ? <div className="mt-2 space-y-1 text-xs">
+                      <p className="font-medium text-slate-700">Approved syllabus</p>
+                      {course.syllabus_text ? <details><summary className="cursor-pointer">Text preview</summary><p className="mt-1 whitespace-pre-wrap">{previewText(course.syllabus_text)}</p></details> : <p>Text: -</p>}
+                      <p>PDF: {humanize(course.syllabus_file_name ?? course.syllabus_file_path)}</p>
+                      <p>Approved at: {formatDate(course.syllabus_approved_at)}</p>
+                    </div> : null}
+                    {request ? <div className="mt-3 space-y-1 text-xs">
+                      <p className="font-medium text-slate-700">Latest submitted request</p>
+                      <p>Status: <span className="rounded bg-slate-100 px-2 py-0.5">{request.status}</span></p>
+                      <p>Submitted: {formatDate(request.created_at)}</p>
+                      {request.proposed_syllabus_text ? <details><summary className="cursor-pointer">Proposed text preview</summary><p className="mt-1 whitespace-pre-wrap">{previewText(request.proposed_syllabus_text)}</p></details> : <p>Proposed text: -</p>}
+                      <p>Proposed PDF: {humanize(request.proposed_file_name ?? request.proposed_file_path)}</p>
+                      {request.status === "rejected" && request.rejection_reason ? <p className="text-rose-600">Rejection reason: {request.rejection_reason}</p> : null}
+                      {request.status === "pending_review" ? <div className="mt-2 space-y-2">
+                        {request.proposed_file_path ? <SyllabusRequestFileActions requestId={request.id} /> : null}
+                        <form action={moderateSyllabus} className="flex flex-wrap gap-2">
+                          <input type="hidden" name="id" value={request.id} />
+                          <button name="action" value="approve" className="rounded bg-emerald-600 px-2 py-1 text-white">Approve Syllabus</button>
+                          <input name="rejectionReason" required placeholder="Rejection reason" className="rounded border px-2 py-1" />
+                          <button name="action" value="reject" className="rounded bg-amber-600 px-2 py-1 text-white">Reject Syllabus</button>
+                        </form>
+                      </div> : null}
+                    </div> : null}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="mt-4">
