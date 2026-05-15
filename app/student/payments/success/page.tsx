@@ -1,9 +1,11 @@
 import Link from "next/link";
 
 import { requireUser } from "@/lib/auth/get-session";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+type ServerSupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 function first(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? "";
@@ -42,6 +44,15 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
 
   if (orderId || razorpayOrderIdParam || paymentId || razorpayPaymentIdParam) {
     const supabase = await createClient();
+    console.info("[student/payments/success] received params", {
+      order_id: orderId || null,
+      razorpay_order_id: razorpayOrderIdParam || null,
+      payment_id: paymentId || null,
+      razorpay_payment_id: razorpayPaymentIdParam || null,
+      kindRaw: kindRaw || null,
+      paymentKindRaw: paymentKindRaw || null,
+      detectedKind: resolvedKind,
+    });
     if (resolvedKind === "webinar") {
       const { data } = await supabase
         .from("webinar_orders")
@@ -113,25 +124,45 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
       let data: CourseOrderWithRelation | null = null;
       let matchedStrategy: string | null = null;
       let relationLookupError = false;
-      for (const attempt of dedupedAttempts) {
-        const { data: found, error } = await supabase
-          .from("course_orders")
-          .select("id,gross_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id,paid_at,course_id,courses(title)")
-          .eq("student_id", user.id)
-          .eq(attempt.column, attempt.value)
-          .limit(1)
-          .maybeSingle<CourseOrderWithRelation>();
-        if (error) relationLookupError = true;
-        if (found) {
-          data = found;
-          matchedStrategy = attempt.label;
-          break;
+      let lookupClient: "session" | "admin" | null = null;
+      const attemptLookup = async (client: ServerSupabaseClient) => {
+        for (const attempt of dedupedAttempts) {
+          const { data: found, error } = await client
+            .from("course_orders")
+            .select("id,gross_amount,currency,payment_status,razorpay_order_id,razorpay_payment_id,paid_at,course_id,courses(title)")
+            .eq("student_id", user.id)
+            .eq(attempt.column, attempt.value)
+            .limit(1)
+            .maybeSingle();
+          if (error) relationLookupError = true;
+          if (found) {
+            return { found: found as CourseOrderWithRelation, strategy: attempt.label };
+          }
+        }
+        return { found: null, strategy: null };
+      };
+
+      const sessionLookup = await attemptLookup(supabase);
+      data = sessionLookup.found;
+      matchedStrategy = sessionLookup.strategy;
+      if (data) lookupClient = "session";
+
+      if (!data) {
+        const admin = getSupabaseAdmin();
+        if (admin.ok) {
+          const adminLookup = await attemptLookup(admin.data as ServerSupabaseClient);
+          data = adminLookup.found;
+          matchedStrategy = adminLookup.strategy;
+          if (data) lookupClient = "admin";
         }
       }
 
+      let relationTitleFound = false;
+      let fallbackCourseTitleFound = false;
       const relatedCourseTitle = data?.courses
         ? (Array.isArray(data.courses) ? (data.courses[0]?.title ?? null) : (data.courses.title ?? null))
         : null;
+      if (relatedCourseTitle) relationTitleFound = true;
 
       if (data && (!data.courses || !relatedCourseTitle) && data.course_id) {
         const { data: courseRow } = await supabase
@@ -140,6 +171,7 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
           .eq("id", data.course_id)
           .maybeSingle<{ title: string | null }>();
         if (courseRow) {
+          fallbackCourseTitleFound = Boolean(courseRow.title);
           data = {
             ...data,
             courses: { title: courseRow.title },
@@ -153,16 +185,21 @@ export default async function PaymentSuccessPage({ searchParams }: { searchParam
           razorpay_order_id: razorpayOrderIdParam || null,
           payment_id: paymentId || null,
           razorpay_payment_id: razorpayPaymentIdParam || null,
+          detectedKind: resolvedKind,
           lookupStrategies: dedupedAttempts.map((attempt) => attempt.label),
+          lookupClientTried: ["session", "admin"],
           found: false,
           relationLookupError,
         });
       } else {
         console.info("[student/payments/success] Course order lookup success", {
           strategy: matchedStrategy,
+          lookupClient,
           order_id: orderId || null,
           razorpay_order_id: razorpayOrderIdParam || null,
           payment_id: paymentId || null,
+          relationTitleFound,
+          fallbackCourseTitleFound,
           found: true,
         });
       }
