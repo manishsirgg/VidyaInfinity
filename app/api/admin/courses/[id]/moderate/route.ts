@@ -30,6 +30,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Only pending submissions can be moderated" }, { status: 409 });
   }
 
+  if (status === "approved") {
+    const { count, error: pendingSyllabusError } = await admin.data
+      .from("course_syllabus_update_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("course_id", id)
+      .is("deleted_at", null)
+      .eq("status", "pending_review");
+
+    if (pendingSyllabusError) {
+      return NextResponse.json({ error: pendingSyllabusError.message }, { status: 500 });
+    }
+
+    if ((count ?? 0) > 0) {
+      return NextResponse.json(
+        { error: "Please approve or reject the pending syllabus request before approving this course." },
+        { status: 409 },
+      );
+    }
+  }
+
   const { data, error } = await admin.data
     .from("courses")
     .update({

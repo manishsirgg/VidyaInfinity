@@ -168,6 +168,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               <p><span className="font-medium">Certificate details:</span> {humanize(course.certificate_details)}</p>
               {(() => {
                 const request = latestSyllabusRequestByCourseId.get(course.id);
+                const hasPendingSyllabusReview = request?.status === "pending_review";
                 const hasApproved = Boolean(course.syllabus_text || course.syllabus_file_name || course.syllabus_file_path);
                 const previewText = (value: string) => value.length > SYLLABUS_PREVIEW_LIMIT ? `${value.slice(0, SYLLABUS_PREVIEW_LIMIT)}…` : value;
                 return (
@@ -184,6 +185,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                       <p className="font-medium text-slate-700">Latest submitted request</p>
                       <p>Status: <span className="rounded bg-slate-100 px-2 py-0.5">{request.status}</span></p>
                       <p>Submitted: {formatDate(request.created_at)}</p>
+                      {hasPendingSyllabusReview ? <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">Please approve or reject this syllabus before approving the course.</p> : null}
                       {request.proposed_syllabus_text ? <details><summary className="cursor-pointer">Proposed text preview</summary><p className="mt-1 whitespace-pre-wrap">{previewText(request.proposed_syllabus_text)}</p></details> : <p>Proposed text: -</p>}
                       <p>Proposed PDF: {humanize(request.proposed_file_name ?? request.proposed_file_path)}</p>
                       {request.status === "rejected" && request.rejection_reason ? <p className="text-rose-600">Rejection reason: {request.rejection_reason}</p> : null}
@@ -205,7 +207,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             </div>
 
             {course.rejection_reason && <p className="mt-3 text-xs text-rose-600">Reason: {course.rejection_reason}</p>}
-            <ModerationActions targetType="courses" targetId={course.id} currentStatus={course.status} />
+            {(() => {
+              const request = latestSyllabusRequestByCourseId.get(course.id);
+              const hasPendingSyllabusReview = request?.status === "pending_review";
+              return (
+                <>
+                  {hasPendingSyllabusReview ? <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">Course approval is locked until syllabus review is completed.</p> : null}
+                  <ModerationActions
+                    targetType="courses"
+                    targetId={course.id}
+                    currentStatus={course.status}
+                    approveDisabled={hasPendingSyllabusReview}
+                    approveDisabledReason={hasPendingSyllabusReview ? "Pending syllabus review: approve or reject the syllabus before approving this course." : undefined}
+                  />
+                </>
+              );
+            })()}
           </div>
         ))}
       </div>
@@ -254,6 +271,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               <p><span className="font-medium">Certificate details:</span> {humanize(course.certificate_details)}</p>
               {(() => {
                 const request = latestSyllabusRequestByCourseId.get(course.id);
+                const hasPendingSyllabusReview = request?.status === "pending_review";
                 const hasApproved = Boolean(course.syllabus_text || course.syllabus_file_name || course.syllabus_file_path);
                 const previewText = (value: string) => value.length > SYLLABUS_PREVIEW_LIMIT ? `${value.slice(0, SYLLABUS_PREVIEW_LIMIT)}…` : value;
                 return (
@@ -270,6 +288,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
                       <p className="font-medium text-slate-700">Latest submitted request</p>
                       <p>Status: <span className="rounded bg-slate-100 px-2 py-0.5">{request.status}</span></p>
                       <p>Submitted: {formatDate(request.created_at)}</p>
+                      {hasPendingSyllabusReview ? <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800">Please approve or reject this syllabus before approving the course.</p> : null}
                       {request.proposed_syllabus_text ? <details><summary className="cursor-pointer">Proposed text preview</summary><p className="mt-1 whitespace-pre-wrap">{previewText(request.proposed_syllabus_text)}</p></details> : <p>Proposed text: -</p>}
                       <p>Proposed PDF: {humanize(request.proposed_file_name ?? request.proposed_file_path)}</p>
                       {request.status === "rejected" && request.rejection_reason ? <p className="text-rose-600">Rejection reason: {request.rejection_reason}</p> : null}
@@ -291,7 +310,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             </div>
 
             {course.rejection_reason && <p className="mt-3 text-xs text-rose-600">Reason: {course.rejection_reason}</p>}
-            <ModerationActions targetType="courses" targetId={course.id} currentStatus={course.status} />
+            {(() => {
+              const request = latestSyllabusRequestByCourseId.get(course.id);
+              const hasPendingSyllabusReview = request?.status === "pending_review";
+              return (
+                <>
+                  {hasPendingSyllabusReview ? <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">Course approval is locked until syllabus review is completed.</p> : null}
+                  <ModerationActions
+                    targetType="courses"
+                    targetId={course.id}
+                    currentStatus={course.status}
+                    approveDisabled={hasPendingSyllabusReview}
+                    approveDisabledReason={hasPendingSyllabusReview ? "Pending syllabus review: approve or reject the syllabus before approving this course." : undefined}
+                  />
+                </>
+              );
+            })()}
           </div>
         ))}
         {!error && totalCourses === 0 ? <p className="vi-empty p-4 text-sm text-slate-600">No courses found for moderation.</p> : null}
