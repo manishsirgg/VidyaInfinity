@@ -22,6 +22,13 @@ const MAX_SYLLABUS_TEXT_LENGTH = 30000;
 const MAX_SYLLABUS_FILE_BYTES = 10 * 1024 * 1024;
 
 type FileKind = "image" | "video" | null;
+type SyllabusRequest = {
+  id: string;
+  status: string;
+  created_at: string | null;
+  proposed_file_name: string | null;
+  rejection_reason: string | null;
+};
 
 function getFileKind(file: File): FileKind {
   if (file.type.startsWith("image/")) return "image";
@@ -123,6 +130,13 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
   const [newMedia, setNewMedia] = useState<File[]>([]);
   const [syllabusText, setSyllabusText] = useState("");
   const [syllabusPdf, setSyllabusPdf] = useState<File | null>(null);
+  const [syllabusData, setSyllabusData] = useState<{
+    approvedText: string | null;
+    approvedFileName: string | null;
+    approvedAt: string | null;
+    requests: SyllabusRequest[];
+  } | null>(null);
+  const [syllabusInfoLoading, setSyllabusInfoLoading] = useState(false);
   const [removedMediaIds, setRemovedMediaIds] = useState<string[]>([]);
   const [replacementMedia, setReplacementMedia] = useState<Record<string, File>>({});
   const [savedMedia, setSavedMedia] = useState<InstituteCourseMedia[]>(
@@ -208,6 +222,43 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       active = false;
     };
   }, [initialCourse?.id, initialMedia.length, mode]);
+
+  useEffect(() => {
+    if (!initialCourse?.id) return;
+    let active = true;
+    setSyllabusInfoLoading(true);
+    fetch(`/api/institute/course-syllabus?courseId=${encodeURIComponent(initialCourse.id)}`)
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json().catch(() => null)) as
+          | {
+              course?: { syllabus_text?: string | null; syllabus_file_name?: string | null; syllabus_approved_at?: string | null };
+              requests?: Array<{ id?: string; status?: string; created_at?: string | null; proposed_file_name?: string | null; rejection_reason?: string | null }>;
+            }
+          | null;
+      })
+      .then((body) => {
+        if (!active || !body) return;
+        setSyllabusData({
+          approvedText: body.course?.syllabus_text ?? null,
+          approvedFileName: body.course?.syllabus_file_name ?? null,
+          approvedAt: body.course?.syllabus_approved_at ?? null,
+          requests: (body.requests ?? []).map((item) => ({
+            id: String(item.id ?? ""),
+            status: String(item.status ?? ""),
+            created_at: item.created_at ?? null,
+            proposed_file_name: item.proposed_file_name ?? null,
+            rejection_reason: item.rejection_reason ?? null,
+          })),
+        });
+      })
+      .finally(() => {
+        if (active) setSyllabusInfoLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialCourse?.id]);
 
   async function uploadFiles(courseId: string, files: File[]) {
     const failures: string[] = [];
@@ -418,7 +469,10 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     await removeMarkedMedia(courseId);
     const replacementFailures = await replaceMarkedMedia(courseId);
     const mediaFailures = [...replacementFailures, ...(await uploadNewMedia(courseId))];
-    if (syllabusText.trim() || syllabusPdf) {
+    const hasPendingSyllabusRequest = (syllabusData?.requests ?? []).some((request) => request.status === "pending_review");
+    if ((syllabusText.trim() || syllabusPdf) && hasPendingSyllabusRequest) {
+      mediaFailures.push("A syllabus update is already pending review.");
+    } else if (syllabusText.trim() || syllabusPdf) {
       const syllabusFormData = new FormData();
       syllabusFormData.set("courseId", courseId);
       syllabusFormData.set("syllabusText", syllabusText.trim());
@@ -451,6 +505,8 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
 
   const pageTitle = mode === "create" ? "Add a new course" : mode === "resubmit" ? "Resubmit rejected course" : "Edit course";
   const totalMediaAfterSave = currentMedia.length + newMedia.length;
+  const latestSyllabusRequest = syllabusData?.requests?.[0] ?? null;
+  const hasPendingSyllabusRequest = (syllabusData?.requests ?? []).some((request) => request.status === "pending_review");
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
@@ -584,8 +640,23 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       <section className={`space-y-3 rounded-lg border border-slate-200 p-4 ${step === 4 ? "block" : "hidden"}`}>
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Course Syllabus</h3>
         <p className="text-xs text-slate-500">Optional. Add syllabus text or upload a PDF. It will be reviewed by Vidya Infinity before becoming visible to students.</p>
-        <textarea value={syllabusText} onChange={(event) => setSyllabusText(event.target.value)} maxLength={MAX_SYLLABUS_TEXT_LENGTH} placeholder="Paste syllabus text (optional)." className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-        <input type="file" accept="application/pdf" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" onChange={(event) => setSyllabusPdf(event.target.files?.[0] ?? null)} />
+        {syllabusInfoLoading ? <p className="text-xs text-slate-500">Loading current syllabus status...</p> : null}
+        {syllabusData ? <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+          <p className="font-semibold text-slate-900">Current approved syllabus</p>
+          <p className="mt-1 whitespace-pre-wrap">{syllabusData.approvedText ? `${syllabusData.approvedText.slice(0, 220)}${syllabusData.approvedText.length > 220 ? "…" : ""}` : "No approved syllabus text yet."}</p>
+          <p className="mt-1">Approved PDF: {syllabusData.approvedFileName ?? "Not available"}</p>
+          <p>Approved at: {syllabusData.approvedAt ? new Date(syllabusData.approvedAt).toLocaleString() : "Not approved yet"}</p>
+        </div> : null}
+        {latestSyllabusRequest ? <div className="rounded border border-slate-200 p-3 text-xs">
+          <p className="font-semibold text-slate-900">Latest syllabus request</p>
+          <p className="mt-1">Status: <span className="rounded bg-slate-100 px-2 py-0.5">{latestSyllabusRequest.status}</span></p>
+          <p>Submitted: {latestSyllabusRequest.created_at ? new Date(latestSyllabusRequest.created_at).toLocaleString() : "—"}</p>
+          <p>Proposed PDF: {latestSyllabusRequest.proposed_file_name ?? "No PDF uploaded"}</p>
+          {latestSyllabusRequest.status === "rejected" && latestSyllabusRequest.rejection_reason ? <p className="text-rose-600">Rejection reason: {latestSyllabusRequest.rejection_reason}</p> : null}
+        </div> : null}
+        {hasPendingSyllabusRequest ? <p className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">A syllabus update is already pending review.</p> : null}
+        <textarea value={syllabusText} disabled={hasPendingSyllabusRequest} onChange={(event) => setSyllabusText(event.target.value)} maxLength={MAX_SYLLABUS_TEXT_LENGTH} placeholder="Paste syllabus text (optional)." className="min-h-28 w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100" />
+        <input type="file" accept="application/pdf" disabled={hasPendingSyllabusRequest} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100" onChange={(event) => setSyllabusPdf(event.target.files?.[0] ?? null)} />
       </section>
 
       <div className={`rounded border border-slate-200 p-4 ${step === 4 ? "block" : "hidden"}`}>
