@@ -258,6 +258,7 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
 
           <div>
             <label className={labelClass}>Thumbnail image</label>
+            <p className="mt-1 text-xs text-slate-500">Recommended: 1280×720 px (16:9). Minimum 640×360 px.</p>
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp,image/gif"
@@ -295,6 +296,7 @@ export function WebinarForm({ mode, webinarId, initialValues }: { mode: "create"
 
           <div>
             <label className={labelClass}>Banner image</label>
+            <p className="mt-1 text-xs text-slate-500">Recommended: 1920×1080 px (16:9). Minimum 1280×720 px.</p>
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp,image/gif"

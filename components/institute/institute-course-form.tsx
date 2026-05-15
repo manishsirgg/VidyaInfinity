@@ -670,6 +670,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
           <p className="text-sm font-semibold text-slate-900">Upload new media</p>
           <p className="text-xs text-slate-500">Up to {MAX_MEDIA_FILES} files per upload action</p>
         </div>
+        <p className="mt-2 text-xs text-slate-500">For best quality: images at 1280×720 px (16:9) or higher. Videos should also use a 16:9 frame where possible.</p>
         <input
           type="file"
           multiple
