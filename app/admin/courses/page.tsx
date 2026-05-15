@@ -64,7 +64,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const { data: courses, error } = await supabase
     .from("courses")
     .select(
-      "id,title,summary,description,category,subject,level,mode,language,fees,duration,duration_value,duration_unit,schedule,location,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,status,rejection_reason,course_media(id,type,file_url),created_at,updated_at"
+      "id,title,summary,description,category,subject,level,mode,language,fees,duration,duration_value,duration_unit,schedule,location,start_date,end_date,admission_deadline,eligibility,learning_outcomes,target_audience,certificate_status,certificate_details,batch_size,placement_support,internship_support,faculty_name,faculty_qualification,support_email,support_phone,syllabus_text,syllabus_file_name,syllabus_file_path,status,rejection_reason,course_media(id,type,file_url),created_at,updated_at"
     )
     .order("created_at", { ascending: false });
 
@@ -136,6 +136,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               <p><span className="font-medium">Learning outcomes:</span> {humanize(course.learning_outcomes)}</p>
               <p><span className="font-medium">Target audience:</span> {humanize(course.target_audience)}</p>
               <p><span className="font-medium">Certificate details:</span> {humanize(course.certificate_details)}</p>
+              <p><span className="font-medium">Syllabus text:</span> {humanize(course.syllabus_text)}</p>
+              <p><span className="font-medium">Syllabus file:</span> {humanize(course.syllabus_file_name ?? course.syllabus_file_path)}</p>
             </div>
 
             <div className="mt-4">
@@ -193,6 +195,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               <p><span className="font-medium">Learning outcomes:</span> {humanize(course.learning_outcomes)}</p>
               <p><span className="font-medium">Target audience:</span> {humanize(course.target_audience)}</p>
               <p><span className="font-medium">Certificate details:</span> {humanize(course.certificate_details)}</p>
+              <p><span className="font-medium">Syllabus text:</span> {humanize(course.syllabus_text)}</p>
+              <p><span className="font-medium">Syllabus file:</span> {humanize(course.syllabus_file_name ?? course.syllabus_file_path)}</p>
             </div>
 
             <div className="mt-4">
