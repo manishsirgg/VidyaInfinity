@@ -311,7 +311,7 @@ export async function POST(request: Request) {
         .from("coupons")
         .select("code,discount_percent,active,expiry_date,applies_to,is_deleted")
         .eq("code", normalizedCouponCode)
-        .eq("applies_to", "course")
+        .in("applies_to", ["course", "all"])
         .maybeSingle<{
           code: string;
           discount_percent: number;
