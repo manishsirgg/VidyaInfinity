@@ -165,11 +165,11 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
 
   const instituteId = "id" in institute ? institute.id : null;
   const loadInstituteCourses = async () => {
-    if (!instituteId) return { data: [] as Array<{ id: string; title: string; summary: string | null; fees: number | null; duration: string | null; slug?: string | null }>, error: null };
+    if (!instituteId) return { data: [] as Array<{ id: string; title: string; summary: string | null; fees: number | null; duration: string | null; slug?: string | null; course_media?: Array<{ file_url: string | null; type: string | null }> | null }>, error: null };
 
     const withSlug = await admin.data
       .from("courses")
-      .select("id,title,summary,fees,duration,slug")
+      .select("id,title,summary,fees,duration,slug,course_media(file_url,type)")
       .eq("institute_id", instituteId)
       .eq("status", "approved")
       .eq("is_deleted", false)
@@ -180,7 +180,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
 
     const withoutSlug = await admin.data
       .from("courses")
-      .select("id,title,summary,fees,duration")
+      .select("id,title,summary,fees,duration,course_media(file_url,type)")
       .eq("institute_id", instituteId)
       .eq("status", "approved")
       .eq("is_deleted", false)
@@ -191,7 +191,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
 
     return admin.data
       .from("courses")
-      .select("id,title,summary,fees,duration")
+      .select("id,title,summary,fees,duration,course_media(file_url,type)")
       .eq("institute_id", instituteId)
       .eq("approval_status", "approved")
       .eq("is_deleted", false)
@@ -204,7 +204,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
         loadInstituteCourses(),
         admin.data
           .from("webinars")
-          .select("id,title,description,starts_at,webinar_mode,price,currency")
+          .select("id,title,description,starts_at,webinar_mode,price,currency,thumbnail_url,banner_url")
           .eq("institute_id", instituteId)
           .eq("approval_status", "approved")
           .eq("is_deleted", false)
@@ -308,6 +308,11 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
                 href={`/courses/${"slug" in course && course.slug ? course.slug : course.id}`}
                 className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm"
               >
+                {(() => {
+                  const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
+                  const courseCoverUrl = courseCover ? (/^https?:\/\//i.test(courseCover) ? courseCover : admin.data.storage.from("course-media").getPublicUrl(courseCover.replace(/^\/+/, "")).data.publicUrl) : null;
+                  return courseCoverUrl ? <img src={courseCoverUrl} alt={`${course.title} cover`} className="mb-3 h-24 w-full rounded-md border object-cover" /> : null;
+                })()}
                 <p className="line-clamp-2 font-semibold text-slate-900">{course.title}</p>
                 <p className="mt-1 line-clamp-2 text-sm text-slate-600">{course.summary ?? "Explore this course for detailed curriculum and outcomes."}</p>
                 <p className="mt-3 text-xs text-slate-500">₹{Number(course.fees ?? 0)} · {course.duration ?? "Flexible duration"}</p>
@@ -323,6 +328,10 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {(webinars.data ?? []).map((webinar) => (
               <Link key={webinar.id} href={`/webinars/${webinar.id}`} className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm">
+                {(() => {
+                  const webinarImage = webinar.thumbnail_url ?? webinar.banner_url ?? null;
+                  return webinarImage ? <img src={webinarImage} alt={`${webinar.title} cover`} className="mb-3 h-24 w-full rounded-md border object-cover" /> : null;
+                })()}
                 <p className="line-clamp-2 font-semibold text-slate-900">{webinar.title}</p>
                 <p className="mt-1 line-clamp-2 text-sm text-slate-600">{webinar.description ?? "Join this webinar to get live expert guidance."}</p>
                 <p className="mt-3 text-xs text-slate-500">
