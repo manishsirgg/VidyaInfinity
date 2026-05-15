@@ -13,6 +13,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!req) return NextResponse.json({ error: "Request not found" }, { status: 404 });
   const now = new Date().toISOString();
+  const allowedStatuses = new Set(["pending_review", "rejected", "draft"]);
+  if (!allowedStatuses.has(String(req.status ?? ""))) {
+    return NextResponse.json({ error: `Request cannot be moderated from status: ${req.status}` }, { status: 409 });
+  }
   if (body.action === "reject") {
     const reason = String(body.rejectionReason ?? "").trim(); if (!reason) return NextResponse.json({ error: "Rejection reason is required" }, { status: 400 });
     const { error: uErr } = await admin.data.from("course_syllabus_update_requests").update({ status:"rejected", rejected_by: auth.user.id, rejected_at: now, rejection_reason: reason, approved_by: null, approved_at: null }).eq("id", id);
@@ -26,6 +30,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
   if (body.action !== "approve") return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 
+  if (!req.course_id) {
+    return NextResponse.json({ error: "Request course reference is missing" }, { status: 400 });
+  }
+
   const { error: cErr } = await admin.data.from("courses").update({
     syllabus_text: req.proposed_syllabus_text,
     syllabus_file_path: req.proposed_file_path,
@@ -38,8 +46,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     syllabus_approved_at: now,
     updated_at: now,
   }).eq("id", req.course_id);
-  if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
+  if (cErr) {
+    console.error("[syllabus-moderation] failed to update course syllabus on approval", { requestId: id, courseId: req.course_id, error: cErr.message });
+    return NextResponse.json({ error: `Failed to update course syllabus: ${cErr.message}` }, { status: 500 });
+  }
   const { error: rErr } = await admin.data.from("course_syllabus_update_requests").update({ status:"approved", approved_by: auth.user.id, approved_at: now, rejection_reason: null, rejected_by: null, rejected_at: null }).eq("id", id);
-  if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 });
+  if (rErr) {
+    console.error("[syllabus-moderation] course updated but request approval status update failed", { requestId: id, courseId: req.course_id, error: rErr.message });
+    return NextResponse.json({ error: `Course updated, but failed to mark request approved: ${rErr.message}` }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }
