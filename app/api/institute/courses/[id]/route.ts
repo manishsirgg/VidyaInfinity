@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { notificationLinks } from "@/lib/notifications/links";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type Params = {
@@ -236,6 +237,7 @@ export async function PATCH(request: Request, { params }: Params) {
         priority: "high",
         title: "Course moderation pending",
         message: `Course "${course.title}" was updated by the institute and is waiting for moderation.`,
+        targetUrl: notificationLinks.adminCourseModerationUrl(),
       })
     )
   );

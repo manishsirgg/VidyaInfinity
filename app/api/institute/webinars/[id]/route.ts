@@ -228,7 +228,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           priority: "high",
           title: "Webinar resubmission pending",
           message: `Webinar "${existing.title}" was resubmitted and is waiting for moderation.`,
-          targetUrl: "/admin/webinars?approval_status=pending",
+          targetUrl: "/admin/webinars",
           actionLabel: "Review webinars",
           entityType: "webinar",
           entityId: id,

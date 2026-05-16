@@ -195,7 +195,7 @@ export async function POST(request: Request) {
         priority: "high",
         title: "Webinar moderation pending",
         message: `A webinar "${(body.title ?? "Untitled webinar").trim()}" is waiting for admin review.`,
-        targetUrl: "/admin/webinars?approval_status=pending",
+        targetUrl: "/admin/webinars",
         actionLabel: "Review webinars",
         entityType: "webinar",
         entityId: data.id,
