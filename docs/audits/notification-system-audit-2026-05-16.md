@@ -178,3 +178,48 @@ End-to-end audit of notification persistence, API access control, UI surfaces, a
 
 ### Remaining gaps
 - Additional status/recovery and schema-guard paths can still be expanded for full parity across all manual reconciliation endpoints.
+
+## Level 2.3 moderation target_url cleanup (2026-05-16)
+
+### Issue found
+- Admin moderation notifications were present with `priority='high'`, `category='moderation'`, and blank `target_url`.
+- Observed pattern included `title='Course moderation pending'` for admin recipients.
+
+### Source fix
+- Patched institute course submission and resubmission moderation notification call-sites so admin recipients always receive `targetUrl: notificationLinks.adminCourseModerationUrl()`.
+- Standardized webinar moderation admin links to `/admin/webinars` for new moderation notifications.
+- Extended centralized link helpers with explicit admin moderation aliases used by diagnostics and migrations:
+  - `notificationLinks.adminCoursesUrl()`
+  - `notificationLinks.adminInstitutesUrl()`
+  - `notificationLinks.adminUpdatesUrl()`
+  - `notificationLinks.adminWebinarsUrl()` (already existed)
+
+### Legacy backfill
+- Added idempotent migration `supabase/migrations/20260516_000048_admin_moderation_notifications_target_url_backfill.sql`.
+- Scope guardrails:
+  - updates only `public.notifications`
+  - joins `public.profiles` and requires `p.role='admin'`
+  - updates only rows where `coalesce(target_url, '') = ''`
+  - updates only `category='moderation'`
+  - maps known moderation title/message patterns to admin moderation routes
+
+### Validation result expected
+- After migration, this query should return zero rows for known high/critical admin moderation patterns with blank links:
+
+```sql
+select
+  n.id,
+  n.title,
+  n.category,
+  n.priority,
+  n.target_url,
+  n.created_at
+from public.notifications n
+join public.profiles p on p.id = n.user_id
+where p.role = 'admin'
+  and n.category = 'moderation'
+  and n.priority in ('critical', 'high')
+  and coalesce(n.target_url, '') = ''
+order by n.created_at desc
+limit 100;
+```
