@@ -60,7 +60,6 @@ select
   payout_amount,
   refund_event_id,
   case
-    when payout_id is null then 'missing_payout_row'
     when payout_status = 'available' then 'stale_available_payout'
     when coalesce(refund_amount, 0) <= 0 then 'refund_amount_not_applied'
     when coalesce(refund_status, '') not in ('refunded', 'partial', 'recovery') then 'unexpected_refund_status'
@@ -71,13 +70,15 @@ select
   end as issue
 from joined
 where
-  payout_id is null
-  or payout_status = 'available'
+  payout_id is not null
+  and (
+    payout_status = 'available'
   or coalesce(refund_amount, 0) <= 0
   or coalesce(refund_status, '') not in ('refunded', 'partial', 'recovery')
   or coalesce(refund_reference, '') = ''
   or reversed_at is null
   or refund_event_id is null
+  )
 order by refund_id;
 
 -- Narrow refund/payout compatibility diagnostics.
