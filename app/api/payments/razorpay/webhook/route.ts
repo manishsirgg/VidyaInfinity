@@ -14,6 +14,28 @@ import { activateFeaturedSubscriptionFromPaidOrder, fetchRazorpayPaymentForOrder
 import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+async function applyPayoutRefundIfApplicable(
+  admin: SupabaseClient,
+  payload: {
+    refundId: string;
+    refundAmount: number;
+    courseOrderId: string | null;
+    webinarOrderId: string | null;
+    refundReference: string;
+  }
+) {
+  const payoutOrderKind = payload.courseOrderId ? "course_order" : payload.webinarOrderId ? "webinar_order" : null;
+  const payoutOrderId = payload.courseOrderId ?? payload.webinarOrderId;
+  if (!payoutOrderKind || !payoutOrderId) return { ok: true as const };
+
+  return applyRefundToInstitutePayout(admin, {
+    orderKind: payoutOrderKind,
+    orderId: payoutOrderId,
+    refundAmount: payload.refundAmount,
+    refundReference: payload.refundReference,
+  });
+}
+
 async function insertWebhookLogBestEffort({
   admin,
   enabled,
@@ -260,6 +282,20 @@ export async function POST(request: Request) {
       }
 
       if (["refunded", "failed", "cancelled"].includes(refundRow.refund_status)) {
+        if (localStatus === "refunded") {
+          const payoutRefundReference = String(refundEntity.id ?? refundRow.id);
+          const payoutSync = await applyPayoutRefundIfApplicable(admin.data, {
+            refundId: refundRow.id,
+            refundAmount: Number(refundRow.amount ?? (refundEntity.amount ? Number(refundEntity.amount) / 100 : 0)),
+            courseOrderId: refundRow.course_order_id ?? null,
+            webinarOrderId: refundRow.webinar_order_id ?? null,
+            refundReference: payoutRefundReference,
+          });
+          if (!payoutSync.ok) {
+            return NextResponse.json({ ok: false, code: "REFUND_WALLET_ADJUSTMENT_FAILED", error: payoutSync.error }, { status: 500 });
+          }
+        }
+
         await updateWebhookLogBestEffort({
           admin: admin.data,
           enabled: webhookLogAvailable,
@@ -316,38 +352,16 @@ export async function POST(request: Request) {
           webinar_order_id: updatedRefund.webinar_order_id,
         });
 
-        const payoutOrderKind = updatedRefund.course_order_id ? "course_order" : updatedRefund.webinar_order_id ? "webinar_order" : null;
-        const payoutOrderId = updatedRefund.course_order_id ?? updatedRefund.webinar_order_id;
         const payoutRefundReference = String(refundEntity.id ?? updatedRefund.id);
-
-        if (payoutOrderKind && payoutOrderId) {
-          const payoutRefundResult = await applyRefundToInstitutePayout(admin.data, {
-            orderKind: payoutOrderKind,
-            orderId: payoutOrderId,
-            refundAmount: Number(updatedRefundAmount),
-            refundReference: payoutRefundReference,
-          });
-
-          if (!payoutRefundResult.ok) {
-            console.error("[razorpay/webhook] refund_wallet_adjustment_failed", {
-              eventType,
-              eventId,
-              refund_id: updatedRefund.id,
-              order_kind: payoutOrderKind,
-              order_id: payoutOrderId,
-              reason: payoutRefundResult.error,
-            });
-            return NextResponse.json({ ok: false, code: "REFUND_WALLET_ADJUSTMENT_FAILED", error: payoutRefundResult.error }, { status: 500 });
-          }
-
-          console.info("[razorpay/webhook] refund_wallet_adjustment_applied", {
-            eventType,
-            eventId,
-            refund_id: updatedRefund.id,
-            order_kind: payoutOrderKind,
-            order_id: payoutOrderId,
-            refund_reference: payoutRefundReference,
-          });
+        const payoutRefundResult = await applyPayoutRefundIfApplicable(admin.data, {
+          refundId: updatedRefund.id,
+          refundAmount: Number(updatedRefundAmount),
+          courseOrderId: updatedRefund.course_order_id ?? null,
+          webinarOrderId: updatedRefund.webinar_order_id ?? null,
+          refundReference: payoutRefundReference,
+        });
+        if (!payoutRefundResult.ok) {
+          return NextResponse.json({ ok: false, code: "REFUND_WALLET_ADJUSTMENT_FAILED", error: payoutRefundResult.error }, { status: 500 });
         }
       }
 
