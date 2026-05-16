@@ -25,6 +25,7 @@ export function UnifiedRegisterForm() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [values, setValues] = useState<RegisterValues>({ role: "student" });
   const [files, setFiles] = useState<RegisterFiles>({});
 
@@ -38,6 +39,12 @@ export function UnifiedRegisterForm() {
 
   function updateValue(key: string, value: string) {
     setValues((current) => ({ ...current, [key]: value }));
+    setFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
   }
 
   function onRoleChange(nextRole: Role) {
@@ -49,6 +56,12 @@ export function UnifiedRegisterForm() {
   function onSingleFileChange(key: keyof RegisterFiles, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     setFiles((current) => ({ ...current, [key]: file }));
+    setFieldErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
   }
 
   function onMultiFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -57,66 +70,94 @@ export function UnifiedRegisterForm() {
   }
 
   function validateCurrentStep(form: HTMLFormElement) {
+    const nextErrors: Record<string, string> = {};
     const stepFields = Array.from(form.querySelectorAll<HTMLElement>(`[data-step="${step}"] input, [data-step="${step}"] select, [data-step="${step}"] textarea`));
     for (const field of stepFields) {
       if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement) {
         if (!field.checkValidity()) {
-          field.reportValidity();
-          return false;
+          nextErrors[field.name] = field.validationMessage || "This field is required";
         }
       }
     }
+
+    if (step === 1) {
+      const password = String(values.password ?? "");
+      const confirmPassword = String(values.confirmPassword ?? "");
+      if (!confirmPassword) nextErrors.confirmPassword = "Please confirm your password";
+      if (password && confirmPassword && password !== confirmPassword) nextErrors.confirmPassword = "Passwords do not match";
+    }
+
+    setFieldErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      setError("Please fix the highlighted fields to continue.");
+      return false;
+    }
     return true;
+  }
+
+  function handleNextStep(form: HTMLFormElement) {
+    setError("");
+    setMessage("");
+    if (!validateCurrentStep(form)) return;
+    setStep((current) => Math.min(maxStep, current + 1));
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setMessage("");
+    setFieldErrors({});
 
     const form = event.currentTarget;
-    if (step < maxStep) {
-      if (!validateCurrentStep(form)) return;
-      setStep((current) => Math.min(maxStep, current + 1));
-      return;
-    }
-
     if (!validateCurrentStep(form)) return;
+    try {
+      setLoading(true);
+      const formData = new FormData();
+      Object.entries(values).forEach(([key, value]) => {
+        if (key === "confirmPassword") return;
+        formData.append(key, value.trim());
+      });
 
-    const formData = new FormData();
-    Object.entries(values).forEach(([key, value]) => formData.append(key, value));
+      if (files.avatar) formData.append("avatar", files.avatar);
+      if (files.identityDocument) formData.append("identityDocument", files.identityDocument);
+      if (files.instituteApprovalDocument && role === "institute") formData.append("instituteApprovalDocument", files.instituteApprovalDocument);
+      if (files.adminAuthorizationDocument && role === "admin") formData.append("adminAuthorizationDocument", files.adminAuthorizationDocument);
+      if (role === "institute") {
+        for (const file of files.instituteMedia ?? []) formData.append("instituteMedia", file);
+      }
 
-    if (files.avatar) formData.append("avatar", files.avatar);
-    if (files.identityDocument) formData.append("identityDocument", files.identityDocument);
-    if (files.instituteApprovalDocument && role === "institute") formData.append("instituteApprovalDocument", files.instituteApprovalDocument);
-    if (files.adminAuthorizationDocument && role === "admin") formData.append("adminAuthorizationDocument", files.adminAuthorizationDocument);
-    if (role === "institute") {
-      for (const file of files.instituteMedia ?? []) formData.append("instituteMedia", file);
+      const response = await fetch("/api/auth/register", { method: "POST", body: formData });
+      const body = await response.json();
+      if (!response.ok) {
+        setError(body.error ?? "Registration failed");
+        return;
+      }
+
+      setMessage(body.message ?? "Registration submitted");
+      router.push(body.redirectPath ?? "/auth/login?status=pending_approval");
+      router.refresh();
+    } catch {
+      setError("Unable to complete registration right now. Please try again.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(true);
-    const response = await fetch("/api/auth/register", { method: "POST", body: formData });
-    const body = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(body.error ?? "Registration failed");
-      return;
-    }
-
-    setMessage(body.message ?? "Registration submitted");
-    router.push(body.redirectPath ?? "/auth/login?status=pending_approval");
-    router.refresh();
   }
 
   const showStudentBase = role === "student" || role === "institute";
 
   return (
-    <form onSubmit={onSubmit} className="mt-6 grid gap-3 rounded-xl border bg-white p-4">
+    <form onSubmit={onSubmit} noValidate className="mt-6 grid gap-3 rounded-xl border bg-white p-4">
       <div className="flex items-center justify-between rounded border bg-slate-50 px-3 py-2 text-xs text-slate-700">
         <p>Step {step} of {maxStep}</p>
         <p>{roleLabel}</p>
       </div>
+      {Object.keys(fieldErrors).length > 0 ? (
+        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {Object.entries(fieldErrors).map(([fieldName, fieldError]) => (
+            <p key={fieldName}>{fieldError}</p>
+          ))}
+        </div>
+      ) : null}
 
       <div data-step={1} className={step === 1 ? "grid gap-3" : "hidden"}>
         <label className="text-sm font-medium text-slate-700">Register as</label>
@@ -129,6 +170,8 @@ export function UnifiedRegisterForm() {
         <input required name="fullName" value={values.fullName ?? ""} onChange={(event) => updateValue("fullName", event.target.value)} placeholder="Full name" className="rounded border px-3 py-2" />
         <input required type="email" name="email" value={values.email ?? ""} onChange={(event) => updateValue("email", event.target.value)} placeholder="Email" className="rounded border px-3 py-2" />
         <input required type="password" name="password" minLength={8} value={values.password ?? ""} onChange={(event) => updateValue("password", event.target.value)} placeholder="Password (min 8 chars)" className="rounded border px-3 py-2" />
+        <input required type="password" name="confirmPassword" minLength={8} value={values.confirmPassword ?? ""} onChange={(event) => updateValue("confirmPassword", event.target.value)} placeholder="Confirm password" className="rounded border px-3 py-2" />
+        {fieldErrors.confirmPassword ? <p className="text-xs text-red-600">{fieldErrors.confirmPassword}</p> : null}
         <input required name="phone" value={values.phone ?? ""} onChange={(event) => updateValue("phone", event.target.value)} placeholder="Phone number" className="rounded border px-3 py-2" />
         <label className="text-sm font-medium text-slate-700" htmlFor="registerAvatar">Profile avatar image</label>
         <input id="registerAvatar" type="file" name="avatar" accept="image/png,image/jpeg,image/webp" onChange={(event) => onSingleFileChange("avatar", event)} className="rounded border px-3 py-2" />
@@ -245,9 +288,13 @@ export function UnifiedRegisterForm() {
 
       <div className="mt-2 flex gap-2">
         <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={loading || step === 1} className="rounded border px-4 py-2 text-slate-700 disabled:opacity-50">Back</button>
-        <button disabled={loading} className="rounded bg-brand-600 px-4 py-2 text-white" type="submit">
-          {loading ? "Submitting..." : step < maxStep ? "Next step" : `Register as ${roleLabel}`}
-        </button>
+        {step < maxStep ? (
+          <button type="button" disabled={loading} onClick={(event) => handleNextStep(event.currentTarget.form as HTMLFormElement)} className="rounded bg-brand-600 px-4 py-2 text-white disabled:opacity-60">Next step</button>
+        ) : (
+          <button disabled={loading} className="rounded bg-brand-600 px-4 py-2 text-white" type="submit">
+            {loading ? "Submitting..." : `Register as ${roleLabel}`}
+          </button>
+        )}
       </div>
 
       {message && <p className="text-sm text-emerald-700">{message}</p>}
