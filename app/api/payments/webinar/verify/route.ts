@@ -5,6 +5,8 @@ import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-sch
 import { isSuccessfulPaymentStatus, normalizePaymentStatus } from "@/lib/payments/payment-status";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { finalizeWebinarPaymentFromRazorpay } from "@/lib/payments/finalize";
+import { notifyReconciliationCritical } from "@/lib/notifications/admin-critical-events";
+import { notificationLinks } from "@/lib/notifications/links";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
@@ -89,6 +91,7 @@ export async function POST(request: Request) {
       });
 
       if (finalized.error) {
+    await notifyReconciliationCritical({ title: "Webinar verify finalization failed", message: "Webinar verify accepted captured payment but local finalization failed.", category: "payment_reconciliation", priority: "critical", targetUrl: notificationLinks.adminWebinarsUrl(), dedupeKey: `admin:webinar-verify-finalize-failed:${order.id}`, metadata: { routeName: "payments/webinar/verify", orderId: order.id, razorpayOrderId: orderId, razorpayPaymentId: paymentId, webinarId: order.webinar_id, studentId: order.student_id, instituteId: order.institute_id, failureReason: finalized.error } });
         console.error("[payments/webinar/verify] paid_transaction_registration_self_heal_failed", {
           event: "paid_transaction_registration_self_heal_failed",
           order_id: order.id,
@@ -167,6 +170,7 @@ export async function POST(request: Request) {
     Number(payment.amount ?? 0) !== expectedAmountInPaise ||
     (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase()
   ) {
+    await notifyReconciliationCritical({ title: "Webinar payment validation mismatch", message: "Webinar payment verification failed due to Razorpay payload mismatch.", category: "payment_reconciliation", priority: "high", targetUrl: notificationLinks.adminWebinarsUrl(), dedupeKey: `admin:webinar-amount-mismatch:${order.id}`, metadata: { routeName: "payments/webinar/verify", orderId: order.id, razorpayOrderId: orderId, razorpayPaymentId: paymentId, webinarId: order.webinar_id, studentId: order.student_id, instituteId: order.institute_id, failureReason: "payment_validation_failed" } });
     console.warn("[payments/webinar/verify] payment_validation_failed", {
       webinar_order_id: order.id,
       webinar_id: order.webinar_id,
@@ -197,6 +201,7 @@ export async function POST(request: Request) {
   });
 
   if (finalized.error) {
+    await notifyReconciliationCritical({ title: "Webinar verify finalization failed", message: "Webinar verify accepted captured payment but local finalization failed.", category: "payment_reconciliation", priority: "critical", targetUrl: notificationLinks.adminWebinarsUrl(), dedupeKey: `admin:webinar-verify-finalize-failed:${order.id}`, metadata: { routeName: "payments/webinar/verify", orderId: order.id, razorpayOrderId: orderId, razorpayPaymentId: paymentId, webinarId: order.webinar_id, studentId: order.student_id, instituteId: order.institute_id, failureReason: finalized.error } });
     console.error("[payments/webinar/verify] finalization_failed", {
       webinar_order_id: order.id,
       webinar_id: order.webinar_id,

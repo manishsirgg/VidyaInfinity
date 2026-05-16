@@ -5,6 +5,8 @@ import { buildCoursePaymentRedirect, resolveCourseVerifyState } from "@/lib/paym
 import { getPaymentSchemaErrorResponse } from "@/lib/payments/ensure-payment-schema";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { finalizeCoursePaymentFromRazorpay } from "@/lib/payments/finalize";
+import { notifyReconciliationCritical } from "@/lib/notifications/admin-critical-events";
+import { notificationLinks } from "@/lib/notifications/links";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 type StudentProfileRow = {
@@ -123,6 +125,7 @@ export async function POST(request: Request) {
           });
 
           if (finalized.error) {
+      await notifyReconciliationCritical({ title: "Course verify finalization failed", message: "Course verify accepted captured payment but local finalization failed.", category: "payment_reconciliation", priority: "critical", targetUrl: notificationLinks.adminCourseModerationUrl(), dedupeKey: `admin:course-verify-finalize-failed:${order.id}`, metadata: { routeName: "payments/course/verify", orderId: order.id, razorpayOrderId: orderId, razorpayPaymentId: paymentId, courseId: order.course_id, studentId: order.student_id, instituteId: order.institute_id, failureReason: finalized.error } });
             console.error("[course/verify] paid marker self-heal failed", {
               orderId,
               paymentId: reconcilePaymentId,
@@ -196,6 +199,7 @@ export async function POST(request: Request) {
       (payment.currency ?? "").toUpperCase() !== order.currency.toUpperCase();
 
     if (payloadMismatch) {
+      await notifyReconciliationCritical({ title: "Course payment validation mismatch", message: "Course payment verification failed due to Razorpay payload mismatch.", category: "payment_reconciliation", priority: "high", targetUrl: notificationLinks.adminCourseModerationUrl(), dedupeKey: `admin:course-amount-mismatch:${order.id}`, metadata: { routeName: "payments/course/verify", orderId: order.id, razorpayOrderId: orderId, razorpayPaymentId: paymentId, courseId: order.course_id, studentId: order.student_id, instituteId: order.institute_id, failureReason: "payload_mismatch" } });
       await admin.data.from("course_orders").update({ payment_status: "failed" }).eq("id", order.id).neq("payment_status", "paid");
       const redirectTo = buildCoursePaymentRedirect({ state: "failed", orderId, paymentId, reason: "amount_or_order_mismatch" });
       return NextResponse.json({ ok: false, state: "failed", redirectTo, error: "Payment validation failed." }, { status: 400 });
@@ -221,6 +225,7 @@ export async function POST(request: Request) {
     });
 
     if (finalized.error) {
+      await notifyReconciliationCritical({ title: "Course verify finalization failed", message: "Course verify accepted captured payment but local finalization failed.", category: "payment_reconciliation", priority: "critical", targetUrl: notificationLinks.adminCourseModerationUrl(), dedupeKey: `admin:course-verify-finalize-failed:${order.id}`, metadata: { routeName: "payments/course/verify", orderId: order.id, razorpayOrderId: orderId, razorpayPaymentId: paymentId, courseId: order.course_id, studentId: order.student_id, instituteId: order.institute_id, failureReason: finalized.error } });
       console.error("[course/verify] finalization failed", { orderId, paymentId, error: finalized.error });
       return NextResponse.json({ error: finalized.error }, { status: 500 });
     }

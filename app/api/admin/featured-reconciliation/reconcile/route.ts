@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { activateFeaturedSubscriptionFromPaidOrder, fetchRazorpayPaymentForOrder, type FeaturedOrderType } from "@/lib/featured-reconciliation";
+import { notifyReconciliationCritical } from "@/lib/notifications/admin-critical-events";
+import { notificationLinks } from "@/lib/notifications/links";
 
 export async function POST(request: Request) {
   let debugStage = "route_hit";
@@ -74,6 +76,7 @@ export async function POST(request: Request) {
     const act = await activateFeaturedSubscriptionFromPaidOrder({ supabase: admin.data, orderType, orderId, razorpayOrderId: razorpayOrderId ?? undefined, razorpayPaymentId: paymentIdForActivation, source: "admin_reconciliation", actorUserId, reason: "Paid confirmed local order missing subscription" });
 
     if (!act.ok) {
+      await notifyReconciliationCritical({ title: "Manual featured reconciliation failed", message: "Admin featured reconciliation failed and requires manual follow-up.", category: "featured_reconciliation", priority: "high", targetUrl: notificationLinks.adminFeaturedReconciliationUrl(), dedupeKey: `admin:featured-manual-reconcile-failed:${orderId}`, metadata: { routeName: "admin/featured-reconciliation/reconcile", orderId, featuredOrderId: orderId, razorpayOrderId, razorpayPaymentId: paymentIdForActivation ?? null, failureReason: act.error ?? "activation_failed" } });
       const activationDebugStage = act.debugStage ?? debugStage;
       return NextResponse.json({ success: false, message: "Activation failed", action_taken: "activation_failed", orderType, orderId, error: act.error, debug_stage: activationDebugStage }, { status: 500 });
     }

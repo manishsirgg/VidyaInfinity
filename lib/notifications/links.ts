@@ -9,6 +9,7 @@ export const notificationLinks = {
   instituteFeaturedUrl: () => "/institute/featured",
   instituteCrmContactUrl: () => "/institute/crm",
   adminCourseModerationUrl: () => "/admin/courses",
+  adminWebinarsUrl: () => "/admin/webinars",
   adminInstituteModerationUrl: () => "/admin/institutes",
   adminPayoutUrl: () => "/admin/payout-requests",
   adminRefundUrl: () => "/admin/refunds",
