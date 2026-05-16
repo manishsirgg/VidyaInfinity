@@ -4,6 +4,9 @@ import { requireApiUser } from "@/lib/auth/api-auth";
 import { isApprovedAndActiveAccount, normalizePayoutAccountStatus, resolvePayoutAccountBlockingReason } from "@/lib/institute/payout-account";
 import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
 import { getInstituteIdForUser, jsonError, loadInstituteWalletSnapshot, parseAmount, runRpcWithFallback } from "@/lib/institute/payouts";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { notifyAdminCritical } from "@/lib/notifications/admin-critical";
+import { notificationLinks } from "@/lib/notifications/links";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const MIN_PAYOUT_AMOUNT = 500;
@@ -104,6 +107,36 @@ export async function POST(request: Request) {
     },
     admin.data
   );
+
+
+  const payoutRequestId = String(payoutRequest.id ?? "");
+  const payoutStatus = String(payoutRequest.status ?? "requested");
+
+  void createAccountNotification({
+    userId: auth.profile.id,
+    type: "payout",
+    title: "Payout request submitted",
+    message: `Your payout request of ₹${amount.toFixed(2)} is now ${payoutStatus.replace("_", " ")}.`,
+    category: "payout",
+    priority: "normal",
+    targetUrl: notificationLinks.institutePayoutUrl(),
+    entityType: "payout_request",
+    entityId: payoutRequestId,
+    dedupeKey: `payout-request-submitted:${payoutRequestId}`,
+    metadata: { amount, status: payoutStatus },
+  });
+
+  void notifyAdminCritical({
+    title: "New payout request submitted",
+    message: `A new institute payout request requires review.`,
+    category: "payout_review",
+    priority: "high",
+    targetUrl: notificationLinks.adminPayoutUrl(),
+    entityType: "payout_request",
+    entityId: payoutRequestId,
+    dedupeKey: `admin:payout-request-submitted:${payoutRequestId}`,
+    metadata: { payoutRequestId, instituteId, status: payoutStatus, amount },
+  });
 
   return NextResponse.json({ ok: true, payout_request: rpcResult.data });
 }

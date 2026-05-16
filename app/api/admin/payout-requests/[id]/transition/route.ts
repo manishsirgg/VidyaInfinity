@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { calculatePayoutHolds, jsonError, loadInstituteWalletSnapshot, parseAmount, runRpcWithFallback } from "@/lib/institute/payouts";
 import { logInstituteWalletEvent } from "@/lib/institute/wallet-audit";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { notifyAdminCritical } from "@/lib/notifications/admin-critical";
+import { notificationLinks } from "@/lib/notifications/links";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 const VALID_STATUSES = ["under_review", "approved", "processing", "paid", "failed", "rejected", "cancelled"] as const;
@@ -53,10 +56,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const approvedAmount = payload.approved_amount === null || typeof payload.approved_amount === "undefined" ? null : parseAmount(payload.approved_amount);
 
   if (nextStatus === "paid" && !paymentReference) {
+    void notifyAdminCritical({
+      title: "Payout transition blocked: missing payment reference",
+      message: "A payout was attempted to be marked paid without payment_reference.",
+      category: "payout_failure",
+      targetUrl: notificationLinks.adminPayoutUrl(),
+      entityType: "payout_request",
+      entityId: id,
+      dedupeKey: `admin:payout-transition-failed:${id}:paid`,
+      metadata: { payoutRequestId: id, targetStatus: "paid" },
+    });
     return jsonError("payment_reference (UTR) is required when marking payout as paid.");
   }
 
   if (nextStatus === "failed" && !failureReason) {
+    void notifyAdminCritical({
+      title: "Payout transition blocked: missing failure reason",
+      message: "A payout was attempted to be marked failed without failure_reason.",
+      category: "payout_failure",
+      targetUrl: notificationLinks.adminPayoutUrl(),
+      entityType: "payout_request",
+      entityId: id,
+      dedupeKey: `admin:payout-transition-failed:${id}:failed`,
+      metadata: { payoutRequestId: id, targetStatus: "failed" },
+    });
     return jsonError("failure_reason is required when marking payout as failed.");
   }
 
@@ -164,7 +187,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     },
   ]);
 
-  if (rpcResult.error) return jsonError(rpcResult.error, 400);
+  if (rpcResult.error) {
+    void notifyAdminCritical({
+      title: "Payout transition failed",
+      message: "Admin payout state transition failed and requires review.",
+      category: "payout_failure",
+      targetUrl: notificationLinks.adminPayoutUrl(),
+      entityType: "payout_request",
+      entityId: id,
+      dedupeKey: `admin:payout-transition-failed:${id}:${nextStatus}`,
+      metadata: { payoutRequestId: id, targetStatus: nextStatus, error: rpcResult.error },
+    });
+    return jsonError(rpcResult.error, 400);
+  }
 
   const updatePayload: Record<string, unknown> = {};
   if (nextStatus === "approved") {
@@ -217,6 +252,40 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       },
       admin.data,
     );
+  }
+
+  if (payoutRequest?.institute_id) {
+    const statusLabel = String(payoutRequest.status ?? nextStatus);
+    const dedupeByStatus: Record<string, string> = {
+      approved: `payout-request-approved:${id}`,
+      processing: `payout-request-processing:${id}`,
+      paid: `payout-request-paid:${id}`,
+      failed: `payout-request-failed:${id}`,
+      rejected: `payout-request-rejected:${id}`,
+      cancelled: `payout-request-cancelled:${id}`,
+    };
+    const messageByStatus: Record<string, string> = {
+      approved: "Your payout request has been approved.",
+      processing: "Your payout request is now being processed.",
+      paid: "Your payout request has been marked as paid.",
+      failed: `Your payout request failed${failureReason ? `: ${failureReason}` : "."}`,
+      rejected: "Your payout request has been rejected.",
+      cancelled: "Your payout request has been cancelled.",
+    };
+    if (dedupeByStatus[statusLabel]) {
+      void createAccountNotification({
+        userId: payoutRequest.institute_id,
+        type: "payout",
+        title: `Payout request ${statusLabel.replace("_", " ")}`,
+        message: messageByStatus[statusLabel] ?? `Your payout request status changed to ${statusLabel}.`,
+        category: "payout",
+        targetUrl: notificationLinks.institutePayoutUrl(),
+        entityType: "payout_request",
+        entityId: id,
+        dedupeKey: dedupeByStatus[statusLabel],
+        metadata: { payoutRequestId: id, status: statusLabel, failureReason },
+      });
+    }
   }
 
   return NextResponse.json({ ok: true, payout_request: rpcResult.data });

@@ -1,3 +1,6 @@
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { notifyAdminCritical } from "@/lib/notifications/admin-critical";
+import { notificationLinks } from "@/lib/notifications/links";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type FinalizeSource = "verify_api" | "webhook" | "status_api" | "recovery";
@@ -89,7 +92,19 @@ export async function finalizePaidPsychometricOrder({
     }
   }
 
-  if (!attemptId) return { error: "Unable to resolve psychometric attempt", attemptId: null as string | null, skipped: false };
+  if (!attemptId) {
+    void notifyAdminCritical({
+      title: "Psychometric finalization failed",
+      message: "Paid psychometric order could not be linked to an attempt.",
+      category: "psychometric_finalization",
+      targetUrl: notificationLinks.adminPsychometricUrl(),
+      entityType: "psychometric_order",
+      entityId: order.id,
+      dedupeKey: `admin:psychometric-finalize-failed:${order.id}`,
+      metadata: { psychometricOrderId: order.id, source },
+    });
+    return { error: "Unable to resolve psychometric attempt", attemptId: null as string | null, skipped: false };
+  }
 
   const nextMetadata = {
     ...(order.metadata ?? {}),
@@ -107,6 +122,19 @@ export async function finalizePaidPsychometricOrder({
     .update({ attempt_id: attemptId, metadata: nextMetadata, updated_at: now })
     .eq("id", order.id);
   if (linkError) return { error: linkError.message, attemptId: null as string | null, skipped: false };
+
+  void createAccountNotification({
+    userId: order.user_id,
+    type: "payment",
+    title: "Psychometric test unlocked",
+    message: "Your payment is confirmed and your psychometric test is now unlocked.",
+    category: "psychometric",
+    targetUrl: notificationLinks.studentPsychometricUrl(),
+    entityType: "psychometric_order",
+    entityId: order.id,
+    dedupeKey: `psychometric-test-unlocked:${order.id}`,
+    metadata: { psychometricOrderId: order.id, attemptId, source },
+  });
 
   console.info("[payments/psychometric/finalize] finalized", {
     psychometric_order_id: order.id,

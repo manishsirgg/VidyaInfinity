@@ -1,0 +1,16 @@
+export const notificationLinks = {
+  studentCourseEnrollmentUrl: () => "/student/purchases?kind=course",
+  studentWebinarUrl: () => "/student/purchases?kind=webinar",
+  studentPsychometricUrl: () => "/dashboard/psychometric",
+  instituteCourseUrl: () => "/institute/courses",
+  instituteWebinarUrl: () => "/institute/webinars",
+  institutePayoutUrl: () => "/institute/payouts",
+  instituteCrmContactUrl: () => "/institute/crm",
+  adminCourseModerationUrl: () => "/admin/courses",
+  adminInstituteModerationUrl: () => "/admin/institutes",
+  adminPayoutUrl: () => "/admin/payout-requests",
+  adminRefundUrl: () => "/admin/refunds",
+  adminFeaturedReconciliationUrl: () => "/admin/featured-reconciliation",
+  adminPsychometricUrl: () => "/admin/psychometric-diagnostics",
+  adminDashboardUrl: () => "/admin",
+};
