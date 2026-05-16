@@ -79,3 +79,67 @@ where
   or reversed_at is null
   or refund_event_id is null
 order by refund_id;
+
+-- Narrow refund/payout compatibility diagnostics.
+
+-- 1) Refunded refund rows where linked order is still paid.
+select
+  r.id as refund_id,
+  r.order_kind,
+  r.course_order_id,
+  co.payment_status as course_payment_status,
+  r.webinar_order_id,
+  wo.payment_status as webinar_payment_status
+from public.refunds r
+left join public.course_orders co on co.id = r.course_order_id
+left join public.webinar_orders wo on wo.id = r.webinar_order_id
+where r.refund_status = 'refunded'
+  and (
+    (r.course_order_id is not null and lower(coalesce(co.payment_status, '')) = 'paid')
+    or (r.webinar_order_id is not null and lower(coalesce(wo.payment_status, '')) = 'paid')
+  )
+order by r.created_at desc;
+
+-- 2) Refunded refund rows where linked payout is still available.
+select
+  r.id as refund_id,
+  r.order_kind,
+  p.id as payout_id,
+  p.payout_status,
+  p.refund_amount,
+  p.refund_reference,
+  p.reversed_at
+from public.refunds r
+join public.institute_payouts p
+  on (r.course_order_id is not null and p.course_order_id = r.course_order_id)
+  or (r.webinar_order_id is not null and p.webinar_order_id = r.webinar_order_id)
+where r.refund_status = 'refunded'
+  and lower(coalesce(p.payout_status, '')) = 'available'
+order by r.created_at desc;
+
+-- 3) Refunded refund rows with missing payout refund event.
+select
+  r.id as refund_id,
+  r.order_kind,
+  coalesce(r.course_order_id, r.webinar_order_id) as order_id,
+  coalesce(nullif(trim(r.razorpay_refund_id), ''), r.id::text) as expected_refund_reference
+from public.refunds r
+left join public.institute_payout_refund_events e
+  on e.refund_reference = coalesce(nullif(trim(r.razorpay_refund_id), ''), r.id::text)
+where r.refund_status = 'refunded'
+  and (r.course_order_id is not null or r.webinar_order_id is not null)
+  and e.id is null
+order by r.created_at desc;
+
+-- 4) Refunded refund rows still on legacy alias order kinds.
+select
+  r.id as refund_id,
+  r.order_kind,
+  r.course_order_id,
+  r.webinar_order_id,
+  r.amount,
+  r.processed_at
+from public.refunds r
+where r.refund_status = 'refunded'
+  and lower(coalesce(r.order_kind, '')) in ('course_enrollment', 'webinar_registration')
+order by r.created_at desc;
