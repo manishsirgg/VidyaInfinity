@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { computePsychometricReportData, PsychometricScoringError } from "@/lib/psychometric/scoring";
+import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { notifyAdminCritical } from "@/lib/notifications/admin-critical";
+import { notificationLinks } from "@/lib/notifications/links";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { repairPendingPaidAttempt } from "@/lib/psychometric/attempt-status";
 
@@ -103,7 +106,19 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
     report_json: { disclaimer: scoring.content.recommendations[2], percentage: scoring.percentageScore, resultBand: scoring.resultBand }, generated_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   };
   const { data: report, error: reportError } = await admin.data.from("psychometric_reports").upsert(reportUpsert, { onConflict: "attempt_id" }).select("id").single();
-  if (reportError) return NextResponse.json({ error: reportError.message }, { status: 500 });
+  if (reportError) {
+    void notifyAdminCritical({
+      title: "Psychometric report generation failed",
+      message: "Report generation failed after paid psychometric submission.",
+      category: "psychometric_finalization",
+      targetUrl: notificationLinks.adminPsychometricUrl(),
+      entityType: "test_attempt",
+      entityId: attemptAfterRepair.id,
+      dedupeKey: `admin:psychometric-report-failed:${attemptAfterRepair.id}`,
+      metadata: { attemptId: attemptAfterRepair.id, orderId: order.id, reportError: reportError.message },
+    });
+    return NextResponse.json({ error: reportError.message }, { status: 500 });
+  }
   if (answers.length > 0 && scoring.totalScore <= 0) return NextResponse.json({ error: "Report total score could not be calculated." }, { status: 500 });
   if (scoring.totalScore > 0 && scoring.maxScore <= 0) return NextResponse.json({ error: "Report max score could not be calculated." }, { status: 500 });
   if (answers.length > 0 && scoring.answersSnapshot.length === 0) return NextResponse.json({ error: "Report answer snapshot could not be generated." }, { status: 500 });
@@ -113,6 +128,20 @@ export async function POST(_: Request, { params }: { params: Promise<{ attemptId
   if (Object.prototype.hasOwnProperty.call(attempt, "score")) attemptUpdate.score = scoring.totalScore;
   const { error: updateError } = await admin.data.from("test_attempts").update(attemptUpdate).eq("id", attemptAfterRepair.id);
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+
+  void createAccountNotification({
+    userId: profileId,
+    type: "system",
+    title: "Psychometric report ready",
+    message: "Your psychometric report is ready to view and download.",
+    category: "psychometric",
+    priority: "high",
+    targetUrl: `/dashboard/psychometric/reports/${report.id}` ,
+    entityType: "psychometric_report",
+    entityId: report.id,
+    dedupeKey: `psychometric-report-ready:${report.id}`,
+    metadata: { reportId: report.id, attemptId: attemptAfterRepair.id },
+  });
 
   return NextResponse.json({ ok: true, reportId: report.id, redirectTo: `/dashboard/psychometric/reports/${report.id}` });
 }

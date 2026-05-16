@@ -56,3 +56,59 @@ End-to-end audit of notification persistence, API access control, UI surfaces, a
 2. Standardize deep-link map by role and entity.
 3. Add lightweight integration tests for `/api/notifications` user scoping and dedupe conflict behavior.
 4. Optionally add `updated_at` trigger column for auditability.
+
+## Level 2 hardening update (2026-05-16)
+
+### Admin critical wrapper
+- Added `notifyAdminCritical()` server-only helper at `lib/notifications/admin-critical.ts`.
+- Resolves active admin profiles (`profiles.role='admin' and is_active=true`).
+- Non-blocking, structured logs on recipient resolution and insert failures.
+- Supports category, priority, deep-link target, metadata, entity, and dedupe key.
+
+### Deep-link standardization
+- Added centralized role-safe helper `lib/notifications/links.ts`.
+- Replaced new payout and psychometric call-sites to use standardized routes.
+
+### Psychometric notification hardening
+- Added deduped student unlock notification in paid finalization flow:
+  - `psychometric-test-unlocked:{orderId}`
+- Added deduped report-ready student notification in submit/report flow:
+  - `psychometric-report-ready:{reportId}`
+- Added admin-critical alerts for psychometric finalization/report generation failure paths.
+
+### Payout lifecycle notification hardening
+- Added institute payout-request-submitted notification:
+  - `payout-request-submitted:{requestId}`
+- Added admin new payout request alert:
+  - `admin:payout-request-submitted:{requestId}`
+- Added institute status notifications in transition route for approved/processing/paid/failed/rejected/cancelled.
+- Added admin-critical alerts for transition failure and consistency guard failures:
+  - `admin:payout-transition-failed:{requestId}:{targetStatus}`
+
+### Dedupe coverage updates
+- Already deduped: centralized notification service supports `(user_id, dedupe_key)` conflict-safe inserts.
+- Newly deduped:
+  - Psychometric unlock/report-ready.
+  - Institute payout request lifecycle statuses.
+  - Admin payout request submission and transition failure alerts.
+- Intentionally not deduped:
+  - One-off admin/manual notifications where duplicate risk is not from retried background/webhook flows.
+
+### Files changed
+- `lib/notifications/admin-critical.ts`
+- `lib/notifications/links.ts`
+- `lib/payments/psychometric-finalize.ts`
+- `app/api/psychometric/attempts/[attemptId]/submit/route.ts`
+- `app/api/institute/payout-request/route.ts`
+- `app/api/admin/payout-requests/[id]/transition/route.ts`
+- `docs/audits/notification_integrity_diagnostics.sql`
+- `docs/audits/notification-system-audit-2026-05-16.md`
+
+### Tests run
+- `npm run -s lint`
+- `npm run -s typecheck`
+- `npm run -s build`
+
+### Remaining recommendations
+- Expand admin-critical wiring into all course/webinar/refund/featured reconciliation failure paths.
+- Add lightweight automated tests once notification/unit test harness is available in the project.
