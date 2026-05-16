@@ -1,5 +1,7 @@
 import Script from "next/script";
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import "./globals.css";
 
@@ -45,6 +47,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="min-h-[calc(100vh-200px)] pb-8">{children}</main>
         <SiteFooter />
         <WhatsAppFloat />
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
