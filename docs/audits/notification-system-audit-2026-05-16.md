@@ -144,3 +144,37 @@ End-to-end audit of notification persistence, API access control, UI surfaces, a
 - Dedupe integrity: no issues found.
 - Expiry integrity: no issues found.
 - Featured target_url legacy gap: fixed for future creation and covered by migration for historical rows.
+
+## Level 2.2 admin-critical reconciliation expansion (2026-05-16)
+
+### Coverage added
+- Course: verify/finalization and payload mismatch failure paths now emit admin-critical payment reconciliation alerts.
+- Webinar: verify/finalization and payload mismatch failure paths now emit admin-critical payment reconciliation alerts.
+- Refunds: webhook unmatched refund, refund update failure, and payout reversal failure now emit admin-critical refund reconciliation alerts.
+- Featured: course/webinar featured verify activation failures and admin manual reconcile activation failures now emit admin-critical featured reconciliation alerts.
+
+### Dedupe key families added
+- `admin:course-verify-finalize-failed:{orderId}`
+- `admin:course-amount-mismatch:{orderId}`
+- `admin:webinar-verify-finalize-failed:{orderId}`
+- `admin:webinar-amount-mismatch:{orderId}`
+- `admin:refund-webhook-unmatched:{razorpayRefundId}`
+- `admin:refund-order-update-failed:{refundId}`
+- `admin:refund-payout-reversal-failed:{refundId}`
+- `admin:featured-verify-activation-failed:{orderId}`
+- `admin:featured-manual-reconcile-failed:{orderId}`
+
+### Files changed
+- `lib/notifications/admin-critical-events.ts`
+- `lib/notifications/links.ts`
+- `lib/payments/finalize.ts`
+- `app/api/payments/course/verify/route.ts`
+- `app/api/payments/webinar/verify/route.ts`
+- `app/api/payments/razorpay/webhook/route.ts`
+- `app/api/institute/course-featured/verify/route.ts`
+- `app/api/institute/webinar-featured/verify/route.ts`
+- `app/api/admin/featured-reconciliation/reconcile/route.ts`
+- `docs/audits/notification_admin_critical_diagnostics.sql`
+
+### Remaining gaps
+- Additional status/recovery and schema-guard paths can still be expanded for full parity across all manual reconciliation endpoints.

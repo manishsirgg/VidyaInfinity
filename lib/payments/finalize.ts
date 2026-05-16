@@ -1,6 +1,8 @@
 import { normalizePaymentStatus } from "@/lib/payments/payment-status";
 import { reconcileCourseOrderPaid, reconcileWebinarOrderPaid } from "@/lib/payments/reconcile";
 import { markCourseOrderConvertedInCrm, markWebinarOrderConvertedInCrm, safeRunCrmAutomation } from "@/lib/institute/crm-automation";
+import { notifyReconciliationCritical } from "@/lib/notifications/admin-critical-events";
+import { notificationLinks } from "@/lib/notifications/links";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type FinalizeSource = "verify_api" | "webhook";
@@ -110,6 +112,15 @@ export async function finalizeCoursePaymentFromRazorpay({
   });
 
   if (reconciled.error) {
+    await notifyReconciliationCritical({
+      title: "Course payment finalization failed",
+      message: "Razorpay-captured course payment could not be finalized locally.",
+      category: "payment_reconciliation",
+      priority: "critical",
+      targetUrl: notificationLinks.adminCourseModerationUrl(),
+      dedupeKey: `admin:course-verify-finalize-failed:${order.id}`,
+      metadata: { routeName: `payments/finalize-course:${source}`, orderId: order.id, razorpayOrderId, razorpayPaymentId, courseId: order.course_id, studentId: order.student_id, instituteId: order.institute_id, failureReason: reconciled.error },
+    });
     console.error("[payments/finalize-course] finalization failure", {
       orderId: order.id,
       razorpayOrderId,
@@ -214,6 +225,15 @@ export async function finalizeWebinarPaymentFromRazorpay({
   });
 
   if (reconciled.error) {
+    await notifyReconciliationCritical({
+      title: "Webinar payment finalization failed",
+      message: "Razorpay-captured webinar payment could not be finalized locally.",
+      category: "payment_reconciliation",
+      priority: "critical",
+      targetUrl: notificationLinks.adminWebinarsUrl ? notificationLinks.adminWebinarsUrl() : notificationLinks.adminDashboardUrl(),
+      dedupeKey: `admin:webinar-verify-finalize-failed:${order.id}`,
+      metadata: { routeName: `payments/finalize-webinar:${source}`, orderId: order.id, razorpayOrderId, razorpayPaymentId, webinarId: order.webinar_id, studentId: order.student_id, instituteId: order.institute_id, failureReason: reconciled.error },
+    });
     console.error("[payments/finalize-webinar] finalization failure", {
       orderId: order.id,
       razorpayOrderId,

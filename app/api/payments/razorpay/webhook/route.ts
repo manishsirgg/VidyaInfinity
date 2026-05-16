@@ -12,6 +12,8 @@ import { finalizeCoursePaymentFromRazorpay, finalizeWebinarPaymentFromRazorpay }
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { activateFeaturedSubscriptionFromPaidOrder, fetchRazorpayPaymentForOrder } from "@/lib/featured-reconciliation";
 import { REFUND_ORDER_TYPE_TO_CANONICAL_KIND } from "@/lib/payments/order-kinds";
+import { notifyReconciliationCritical } from "@/lib/notifications/admin-critical-events";
+import { notificationLinks } from "@/lib/notifications/links";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 async function applyPayoutRefundIfApplicable(
@@ -270,6 +272,7 @@ export async function POST(request: Request) {
       }
 
       if (!refundRow) {
+        await notifyReconciliationCritical({ title: "Refund webhook unmatched", message: "Razorpay refund webhook could not be matched to local refund.", category: "refund_reconciliation", priority: "high", targetUrl: notificationLinks.adminRefundUrl(), dedupeKey: `admin:refund-webhook-unmatched:${refundEntity.id}`, metadata: { routeName: "payments/razorpay/webhook", razorpayRefundId: refundEntity.id ?? null, razorpayPaymentId: refundEntity.payment_id ?? null, failureReason: "refund_not_mapped" } });
         await updateWebhookLogBestEffort({
           admin: admin.data,
           enabled: webhookLogAvailable,
@@ -326,6 +329,7 @@ export async function POST(request: Request) {
         .single();
 
       if (refundUpdateError || !updatedRefund) {
+        await notifyReconciliationCritical({ title: "Refund webhook update failed", message: "Refund webhook matched a local record but local refund update failed.", category: "refund_reconciliation", priority: "critical", targetUrl: notificationLinks.adminRefundUrl(), dedupeKey: `admin:refund-order-update-failed:${refundRow.id}`, metadata: { routeName: "payments/razorpay/webhook", refundId: refundRow.id, razorpayRefundId: refundEntity.id ?? null, razorpayPaymentId: refundEntity.payment_id ?? null, failureReason: refundUpdateError?.message ?? "update_failed" } });
         return NextResponse.json({ ok: false, code: "REFUND_UPDATE_FAILED", error: refundUpdateError?.message ?? "Failed to update refund" }, { status: 500 });
       }
 
@@ -361,6 +365,7 @@ export async function POST(request: Request) {
           refundReference: payoutRefundReference,
         });
         if (!payoutRefundResult.ok) {
+          await notifyReconciliationCritical({ title: "Refund payout reversal failed", message: "Refund reconciliation completed but institute payout reversal failed.", category: "refund_reconciliation", priority: "critical", targetUrl: notificationLinks.adminRefundUrl(), dedupeKey: `admin:refund-payout-reversal-failed:${updatedRefund.id}`, metadata: { routeName: "payments/razorpay/webhook", refundId: updatedRefund.id, courseOrderId: updatedRefund.course_order_id ?? null, webinarOrderId: updatedRefund.webinar_order_id ?? null, razorpayRefundId: refundEntity.id ?? null, failureReason: payoutRefundResult.error } });
           return NextResponse.json({ ok: false, code: "REFUND_WALLET_ADJUSTMENT_FAILED", error: payoutRefundResult.error }, { status: 500 });
         }
       }

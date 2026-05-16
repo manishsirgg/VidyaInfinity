@@ -8,6 +8,8 @@ import { isSuccessfulPaymentStatus } from "@/lib/payments/payment-status";
 import { getRazorpayClient, verifyRazorpaySignature } from "@/lib/payments/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { activateFeaturedSubscriptionFromPaidOrder } from "@/lib/featured-reconciliation";
+import { notifyReconciliationCritical } from "@/lib/notifications/admin-critical-events";
+import { notificationLinks } from "@/lib/notifications/links";
 
 type VerifyBody = {
   orderId?: string;
@@ -220,6 +222,7 @@ export async function POST(request: Request) {
     actorUserId: auth.user.id,
   });
   if (!activation.ok) {
+    await notifyReconciliationCritical({ title: "Featured activation reconcile failed", message: "Featured payment was captured but subscription activation did not complete.", category: "featured_reconciliation", priority: "critical", targetUrl: notificationLinks.adminFeaturedReconciliationUrl(), dedupeKey: `admin:featured-verify-activation-failed:${existingOrder.id}`, metadata: { routeName: "institute/course-featured/verify", orderId: existingOrder.id, featuredOrderId: existingOrder.id, courseId: existingOrder.course_id, instituteId: instituteId, razorpayOrderId: orderId, razorpayPaymentId: paymentId, failureReason: activation.error ?? "activation_failed" } });
     return NextResponse.json({ payment_received: true, activation_status: "needs_reconciliation", message: "Payment received. Activation is being reconciled.", orderId: existingOrder.id }, { status: 202 });
   }
   return NextResponse.json({ ok: true, orderId: existingOrder.id, activation_status: activation.activationStatus ?? (activation.idempotent ? "active" : "active"), subscriptionId: activation.subscriptionId });
