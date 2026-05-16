@@ -56,8 +56,21 @@ export async function createInAppNotification(payload: CreateInAppNotificationIn
     : await query;
 
   if (error) {
-    if (isMissingNotificationsTableError(error)) return { ok: true, skipped: true } as const;
+    if (isMissingNotificationsTableError(error)) {
+      console.warn("[notifications.createInAppNotification] notifications table missing; skipping", {
+        code: error.code,
+      });
+      return { ok: true, skipped: true } as const;
+    }
     if (payload.dedupeKey && error.code === "23505") return { ok: true, deduped: true } as const;
+    console.error("[notifications.createInAppNotification] failed to insert", {
+      code: error.code,
+      message: error.message,
+      userId: payload.userId,
+      type: payload.type,
+      category: payload.category,
+      dedupeKey: payload.dedupeKey ?? null,
+    });
     return { ok: false, error: error.message } as const;
   }
 
