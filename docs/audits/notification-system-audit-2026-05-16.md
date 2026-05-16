@@ -112,3 +112,35 @@ End-to-end audit of notification persistence, API access control, UI surfaces, a
 ### Remaining recommendations
 - Expand admin-critical wiring into all course/webinar/refund/featured reconciliation failure paths.
 - Add lightweight automated tests once notification/unit test harness is available in the project.
+
+## Level 2.1 featured payment notification target_url patch (2026-05-16)
+
+### Issue found
+- Legacy featured payment notifications for course/webinar promotion lifecycle had `target_url = null` for admin and institute recipients.
+- Affected patterns included:
+  - `Course featuring payment initiated`
+  - `Course featuring activated`
+  - `Course featuring scheduled`
+  - `Webinar promotion payment initiated`
+  - `Webinar promotion activated`
+  - `Webinar promotion scheduled`
+
+### Source fix (future notifications)
+- Updated featured notification emitter to always set target URLs:
+  - Admin recipients → `/admin/featured-reconciliation`
+  - Institute recipients → `/institute/featured`
+- Fix is additive and preserves existing recipient, title/message, and dedupe behavior.
+
+### Legacy backfill
+- Added idempotent migration to backfill null/blank target URLs for legacy featured payment notifications only.
+- Scope is restricted to `public.notifications` joined with `public.profiles` for roles `admin` and `institute`, with `category='payment'` and `type='payment'`.
+- Backfill sets:
+  - Admin → `/admin/featured-reconciliation`
+  - Institute → `/institute/dashboard`
+- No changes for student recipients, non-payment notifications, or rows that already had `target_url`.
+
+### Integrity status
+- Recipient integrity: no issues found.
+- Dedupe integrity: no issues found.
+- Expiry integrity: no issues found.
+- Featured target_url legacy gap: fixed for future creation and covered by migration for historical rows.

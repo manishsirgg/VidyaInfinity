@@ -1,4 +1,5 @@
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { notificationLinks } from "@/lib/notifications/links";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function notifyInstituteAndAdmins(params: {
@@ -20,6 +21,10 @@ export async function notifyInstituteAndAdmins(params: {
         type: params.type ?? "payment",
         title: params.title,
         message: params.message,
+        targetUrl:
+          userId === params.instituteUserId
+            ? notificationLinks.instituteFeaturedUrl()
+            : notificationLinks.adminFeaturedReconciliationUrl(),
         metadata: params.metadata,
       }).catch(() => undefined),
     ),
