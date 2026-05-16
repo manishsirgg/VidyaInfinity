@@ -15,8 +15,10 @@ type RpcClient = Pick<SupabaseClient, "rpc" | "from">;
 const ORDER_KIND_ALIASES: Record<string, string> = {
   course: "course",
   course_order: "course",
+  course_enrollment: "course",
   webinar: "webinar",
   webinar_order: "webinar",
+  webinar_registration: "webinar",
 };
 
 function normalizeOrderKind(raw: string | null | undefined) {
