@@ -11,6 +11,16 @@ const fmt = (v?: string | null) => (v ? new Date(v).toLocaleString() : "—");
 const badge = (text?: string | null) => <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{crmLabel(text)}</span>;
 const relTitle = (value: unknown) => Array.isArray(value) ? value[0]?.title : (value as { title?: string } | null)?.title;
 const refText = (value: unknown) => typeof value === "string" ? value : "—";
+const digitsOnly = (value?: string | null) => (value ?? "").replace(/[^\d+]/g, "");
+const whatsappLink = (value?: string | null) => {
+  const cleaned = digitsOnly(value).replace(/^\+/, "");
+  return cleaned ? `https://wa.me/${cleaned}` : null;
+};
+const callLink = (value?: string | null) => {
+  const cleaned = digitsOnly(value);
+  return cleaned ? `tel:${cleaned}` : null;
+};
+const emailLink = (value?: string | null) => value?.trim() ? `mailto:${value.trim()}` : null;
 
 type CrmMetadata = Record<string, unknown> | null;
 
@@ -42,7 +52,7 @@ export default async function ContactDetail({ params }: { params: Promise<{ cont
 
   return <div className="mx-auto max-w-7xl space-y-6 p-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-semibold">{contact.full_name || "Unnamed"}</h1><p className="text-sm text-slate-600">{contact.email || "—"} · {contact.phone || contact.whatsapp_number || "—"}</p></div>
+      <div><h1 className="text-2xl font-semibold">{contact.full_name || "Unnamed"}</h1><p className="text-sm text-slate-600">{contact.email || "—"} · {contact.phone || contact.whatsapp_number || "—"}</p><div className="mt-2 flex flex-wrap gap-2 text-xs">{emailLink(contact.email) ? <a href={emailLink(contact.email) ?? "#"} className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50">Email</a> : null}{callLink(contact.phone || contact.whatsapp_number) ? <a href={callLink(contact.phone || contact.whatsapp_number) ?? "#"} className="rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50">Call</a> : null}{whatsappLink(contact.whatsapp_number || contact.phone) ? <a href={whatsappLink(contact.whatsapp_number || contact.phone) ?? "#"} target="_blank" rel="noreferrer" className="rounded border border-emerald-300 px-2 py-1 text-emerald-700 hover:bg-emerald-50">WhatsApp</a> : null}</div></div>
       <div className="flex items-center gap-2">{badge(contact.lifecycle_stage)}{badge(contact.priority)}<Link className="text-sm text-blue-600" href="/institute/crm/contacts">Back to contacts</Link></div>
     </div>
 
