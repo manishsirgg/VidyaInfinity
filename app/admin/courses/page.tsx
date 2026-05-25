@@ -4,6 +4,7 @@ import { SyllabusModerationActions } from "@/components/admin/syllabus-moderatio
 import { SyllabusRequestFileActions } from "@/components/admin/syllabus-request-file-actions";
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import Image from "next/image";
 
 type CourseMediaItem = {
   id: string;
@@ -32,7 +33,11 @@ function renderMediaPreview(media: CourseMediaItem) {
   return (
     <div key={media.id} className="rounded border bg-slate-50 p-2">
       <p className="mb-2 text-xs text-slate-600">{media.type ?? "media"}</p>
-      {isImage ? <img src={media.file_url} alt="Course media" className="h-40 w-full rounded object-cover" /> : null}
+      {isImage ? (
+        <div className="relative h-40 w-full">
+          <Image src={media.file_url} alt="Course media" fill unoptimized className="rounded object-cover" />
+        </div>
+      ) : null}
       {isVideo ? <video src={media.file_url} controls className="h-40 w-full rounded bg-black" /> : null}
       {isAudio ? <audio src={media.file_url} controls className="w-full" /> : null}
       {!isImage && !isVideo && !isAudio ? (

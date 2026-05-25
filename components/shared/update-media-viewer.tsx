@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 
 type UpdateMediaViewerProps = {
   mediaType: "image" | "video";
@@ -32,7 +33,7 @@ export function UpdateMediaViewer({ mediaType, src, alt = "Update media", classN
         aria-label={`Open ${mediaType} in full view`}
       >
         {mediaType === "image" ? (
-          <img src={src} alt={alt} className="h-full w-full object-cover" loading="lazy" />
+          <Image src={src} alt={alt} fill unoptimized className="object-cover" sizes="(max-width: 640px) 100vw, 33vw" />
         ) : (
           <video src={src} muted playsInline preload="metadata" className="h-full w-full object-cover" aria-label={alt} />
         )}
@@ -52,7 +53,14 @@ export function UpdateMediaViewer({ mediaType, src, alt = "Update media", classN
             </button>
             <div className="max-h-[90vh] max-w-[95vw]" onClick={(event) => event.stopPropagation()}>
               {mediaType === "image" ? (
-                <img src={src} alt={alt} className="max-h-[85vh] max-w-[95vw] object-contain" />
+                <Image
+                  src={src}
+                  alt={alt}
+                  width={1600}
+                  height={1600}
+                  unoptimized
+                  className="max-h-[85vh] max-w-[95vw] object-contain"
+                />
               ) : (
                 <video src={src} controls playsInline className="max-h-[85vh] max-w-[95vw] object-contain" />
               )}
