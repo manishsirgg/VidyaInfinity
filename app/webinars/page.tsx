@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -120,7 +121,7 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
               href={`/webinars/${item.id}`}
               className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
             >
-              {imageUrl ? <img src={imageUrl} alt={item.title} className="h-40 w-full object-cover" /> : null}
+              {imageUrl ? <Image src={imageUrl} alt={item.title} width={1200} height={160} className="h-40 w-full object-cover" /> : null}
               <div className="p-4">
                 <div className="flex items-center gap-2">
                   <p className="font-semibold">{item.title}</p>

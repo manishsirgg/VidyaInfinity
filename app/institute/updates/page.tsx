@@ -1,6 +1,5 @@
 import { requireUser } from "@/lib/auth/get-session";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { StatusBadge } from "@/components/shared/status-badge";
 import { InstituteUpdatesClient } from "@/components/institute/institute-updates-client";
 
 export default async function InstituteUpdatesPage() {

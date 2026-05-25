@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { notFound } from "next/navigation";
 
 import { LeadForm } from "@/components/forms/lead-form";
@@ -123,7 +124,7 @@ export default async function WebinarDetailPublicPage({ params }: { params: Prom
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
-      {webinar.banner_url ? <img src={webinar.banner_url} alt={webinar.title} className="h-56 w-full rounded-xl object-cover" /> : null}
+      {webinar.banner_url ? <Image src={webinar.banner_url} alt={webinar.title} width={1200} height={224} className="h-56 w-full rounded-xl object-cover" /> : null}
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_320px]">
         <section className="rounded-xl border bg-white p-5">
           <div className="flex items-center gap-2">
