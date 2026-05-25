@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 
 import { InstituteMediaGallery } from "@/components/institutes/institute-media-gallery";
@@ -311,7 +312,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
                 {(() => {
                   const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
                   const courseCoverUrl = courseCover ? (/^https?:\/\//i.test(courseCover) ? courseCover : admin.data.storage.from("course-media").getPublicUrl(courseCover.replace(/^\/+/, "")).data.publicUrl) : null;
-                  return courseCoverUrl ? <img src={courseCoverUrl} alt={`${course.title} cover`} className="mb-3 h-24 w-full rounded-md border object-cover" /> : null;
+                  return courseCoverUrl ? <Image src={courseCoverUrl} alt={`${course.title} cover`} width={800} height={96} className="mb-3 h-24 w-full rounded-md border object-cover" /> : null;
                 })()}
                 <p className="line-clamp-2 font-semibold text-slate-900">{course.title}</p>
                 <p className="mt-1 line-clamp-2 text-sm text-slate-600">{course.summary ?? "Explore this course for detailed curriculum and outcomes."}</p>
@@ -330,7 +331,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
               <Link key={webinar.id} href={`/webinars/${webinar.id}`} className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm">
                 {(() => {
                   const webinarImage = webinar.thumbnail_url ?? webinar.banner_url ?? null;
-                  return webinarImage ? <img src={webinarImage} alt={`${webinar.title} cover`} className="mb-3 h-24 w-full rounded-md border object-cover" /> : null;
+                  return webinarImage ? <Image src={webinarImage} alt={`${webinar.title} cover`} width={800} height={96} className="mb-3 h-24 w-full rounded-md border object-cover" /> : null;
                 })()}
                 <p className="line-clamp-2 font-semibold text-slate-900">{webinar.title}</p>
                 <p className="mt-1 line-clamp-2 text-sm text-slate-600">{webinar.description ?? "Join this webinar to get live expert guidance."}</p>

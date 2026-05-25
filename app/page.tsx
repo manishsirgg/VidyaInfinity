@@ -343,7 +343,7 @@ export default async function HomePage() {
                     <article>
                       {courseCoverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                        <img src={courseCoverUrl} alt={`${course.title} preview`} className="mb-3 h-40 w-full rounded-md border object-cover" />
+                        <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1200} height={160} className="mb-3 h-40 w-full rounded-md border object-cover" />
                       ) : null}
                       <p className="text-xs text-brand-700">{course.category ?? "General"}</p>
                       <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{course.title}</h3>
@@ -391,7 +391,7 @@ export default async function HomePage() {
                         <article>
                           {courseCoverUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                            <img src={courseCoverUrl} alt={`${course.title} preview`} className="mb-3 h-32 w-full rounded-md border object-cover" />
+                            <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1200} height={128} className="mb-3 h-32 w-full rounded-md border object-cover" />
                           ) : null}
                           <h4 className="line-clamp-2 text-base font-medium">{course.title}</h4>
                           <p className="mt-2 line-clamp-4 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
@@ -427,7 +427,7 @@ export default async function HomePage() {
                 href={`/webinars/${webinar.id}`}
                 className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
               >
-                {webinar.thumbnail_url ? <img src={webinar.thumbnail_url} alt={webinar.title} className="h-40 w-full object-cover" /> : null}
+                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1200} height={160} className="h-40 w-full object-cover" /> : null}
                 <div className="p-4">
                   <h3 className="font-semibold">{webinar.title}</h3>
                   <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
@@ -458,7 +458,7 @@ export default async function HomePage() {
                 href={`/webinars/${webinar.id}`}
                 className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
               >
-                {webinar.thumbnail_url ? <img src={webinar.thumbnail_url} alt={webinar.title} className="h-40 w-full object-cover" /> : null}
+                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1200} height={160} className="h-40 w-full object-cover" /> : null}
                 <div className="p-4">
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold">{webinar.title}</h3>
@@ -497,9 +497,11 @@ export default async function HomePage() {
                 <article>
                   {instituteImageById.get(institute.id) ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       src={instituteImageById.get(institute.id) ?? ""}
                       alt={`${institute.name ?? "Institute"} cover`}
+                      width={1200}
+                      height={160}
                       className="mb-3 h-40 w-full rounded-md border object-cover"
                     />
                   ) : null}
@@ -547,9 +549,11 @@ export default async function HomePage() {
                     <article>
                       {instituteImageById.get(institute.id) ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image
                           src={instituteImageById.get(institute.id) ?? ""}
                           alt={`${institute.name ?? "Institute"} cover`}
+                          width={1200}
+                          height={128}
                           className="mb-3 h-32 w-full rounded-md border object-cover"
                         />
                       ) : null}

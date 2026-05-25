@@ -1,4 +1,5 @@
 import type { Route } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
 import { calculateReadingTime } from "@/lib/blog/content";
@@ -95,7 +96,7 @@ export default async function BlogsPage({
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             {featuredBlogs.map((blog) => (
               <Link key={blog.id} href={`/blogs/${blog.slug}` as Route} className="rounded-xl border bg-white p-4 hover:border-brand-300">
-                {blog.cover_image_url ? <img src={blog.cover_image_url} alt={blog.title} className="h-36 w-full rounded object-cover" /> : null}
+                {blog.cover_image_url ? <Image src={blog.cover_image_url} alt={blog.title} width={1200} height={144} className="h-36 w-full rounded object-cover" /> : null}
                 <h3 className="mt-3 text-lg font-medium">{blog.title}</h3>
                 <p className="mt-1 text-sm text-slate-600 line-clamp-3">{blog.excerpt}</p>
               </Link>
@@ -112,7 +113,7 @@ export default async function BlogsPage({
           return (
             <Link href={`/blogs/${blog.slug}` as Route} key={blog.id} className="group block rounded-xl border bg-white p-5 transition hover:border-brand-300">
               <article>
-                {blog.cover_image_url ? <img src={blog.cover_image_url} alt={blog.title} className="h-44 w-full rounded object-cover" /> : null}
+                {blog.cover_image_url ? <Image src={blog.cover_image_url} alt={blog.title} width={1200} height={176} className="h-44 w-full rounded object-cover" /> : null}
                 <h2 className="mt-4 text-xl font-medium">{blog.title}</h2>
                 <p className="mt-2 text-sm text-slate-600">{blog.excerpt}</p>
                 <p className="mt-2 text-xs text-slate-500">

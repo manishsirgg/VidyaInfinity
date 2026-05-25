@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -82,7 +83,7 @@ export default async function BlogDetailsPage({ params }: { params: Promise<{ sl
 
   return (
     <article className="mx-auto max-w-4xl px-4 py-12">
-      {blog.cover_image_url ? <img src={blog.cover_image_url} alt={blog.title} className="h-72 w-full rounded-xl object-cover" /> : null}
+      {blog.cover_image_url ? <Image src={blog.cover_image_url} alt={blog.title} width={1200} height={288} className="h-72 w-full rounded-xl object-cover" /> : null}
       <h1 className="mt-6 text-4xl font-semibold">{blog.title}</h1>
       {blog.excerpt ? <p className="mt-3 text-lg text-slate-600">{blog.excerpt}</p> : null}
       <p className="mt-2 text-sm text-slate-500">
