@@ -296,8 +296,8 @@ export function ProfileSettingsForm({ role }: Props) {
             <select name="organizationType" defaultValue={selectedOrganizationType} className="rounded border px-3 py-2">
               <option value="">Select organization type</option>
               {ORGANIZATION_TYPE_OPTIONS.map((organizationType) => (
-                <option key={organizationType} value={organizationType}>
-                  {organizationType}
+                <option key={organizationType.value} value={organizationType.value}>
+                  {organizationType.label}
                 </option>
               ))}
             </select>

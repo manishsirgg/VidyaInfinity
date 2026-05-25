@@ -33,8 +33,8 @@ export function CommissionForm({ initialEntityCommissions, initialWebinarCommiss
     try {
       const formData = new FormData(event.currentTarget);
       const entityCommissions = ORGANIZATION_TYPE_OPTIONS.map((entityType) => ({
-        entityType,
-        commissionPercent: Number(formData.get(entityType)),
+        entityType: entityType.value,
+        commissionPercent: Number(formData.get(entityType.value)),
       }));
 
       const response = await fetch("/api/admin/commission", {
@@ -85,16 +85,16 @@ export function CommissionForm({ initialEntityCommissions, initialWebinarCommiss
         <form onSubmit={onSaveEntityCommissions} className="mt-4 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {ORGANIZATION_TYPE_OPTIONS.map((entityType) => (
-              <div key={entityType}>
-                <label className="mb-1 block text-sm font-medium text-slate-700">{entityType}</label>
+              <div key={entityType.value}>
+                <label className="mb-1 block text-sm font-medium text-slate-700">{entityType.label}</label>
                 <input
                   type="number"
                   step="0.01"
                   min={0}
                   max={100}
-                  name={entityType}
+                  name={entityType.value}
                   required
-                  defaultValue={initialEntityMap[entityType] ?? 12}
+                  defaultValue={initialEntityMap[entityType.value] ?? 12}
                   className="w-full rounded border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
                 />
               </div>

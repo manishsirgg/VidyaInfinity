@@ -218,7 +218,7 @@ export function UnifiedRegisterForm() {
             <select required name="organizationType" value={values.organizationType ?? ""} onChange={(event) => updateValue("organizationType", event.target.value)} className="rounded border px-3 py-2">
               <option value="">Select organization type</option>
               {ORGANIZATION_TYPE_OPTIONS.map((organizationType) => (
-                <option key={organizationType} value={organizationType}>{organizationType}</option>
+                <option key={organizationType.value} value={organizationType.value}>{organizationType.label}</option>
               ))}
             </select>
             <input required name="designation" value={values.designation ?? ""} onChange={(event) => updateValue("designation", event.target.value)} placeholder="Your designation" className="rounded border px-3 py-2" />

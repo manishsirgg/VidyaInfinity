@@ -20,8 +20,8 @@ export default async function Page() {
   }
 
   const initialEntityCommissions = ORGANIZATION_TYPE_OPTIONS.map((entityType) => ({
-    entityType,
-    commissionPercent: entityMap.get(entityType) ?? defaultCommission,
+    entityType: entityType.value,
+    commissionPercent: entityMap.get(entityType.value) ?? defaultCommission,
   }));
 
   const { data: webinarSetting } = await supabase
