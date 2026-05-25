@@ -44,9 +44,9 @@ export async function GET() {
   ]);
 
   const entityCommissions = ORGANIZATION_TYPE_OPTIONS.map((entityType) => {
-    const matched = entityRows?.find((row) => row.entity_type === entityType);
+    const matched = entityRows?.find((row) => row.entity_type === entityType.value);
     return {
-      entityType,
+      entityType: entityType.value,
       commissionPercent: sanitizeCommissionPercentage(matched?.commission_percent) ?? defaultCommission,
     };
   });
