@@ -16,6 +16,62 @@ import { notifyReconciliationCritical } from "@/lib/notifications/admin-critical
 import { notificationLinks } from "@/lib/notifications/links";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+function getStringRecordValue(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" ? value : null;
+}
+
+function pickNotesSummary(notes: unknown) {
+  if (!notes || typeof notes !== "object") return null;
+
+  const record = notes as Record<string, unknown>;
+  return {
+    order_id: getStringRecordValue(record, "order_id"),
+    course_order_id: getStringRecordValue(record, "course_order_id"),
+    webinar_order_id: getStringRecordValue(record, "webinar_order_id"),
+    psychometric_order_id: getStringRecordValue(record, "psychometric_order_id"),
+    local_order_id: getStringRecordValue(record, "local_order_id"),
+    localOrderId: getStringRecordValue(record, "localOrderId"),
+  };
+}
+
+function pickEntitySummary(entity: Record<string, unknown> | null) {
+  if (!entity) return null;
+
+  return {
+    id: typeof entity.id === "string" ? entity.id : null,
+    order_id: typeof entity.order_id === "string" ? entity.order_id : null,
+    payment_id: typeof entity.payment_id === "string" ? entity.payment_id : null,
+    status: typeof entity.status === "string" ? entity.status : null,
+    amount: typeof entity.amount === "number" ? entity.amount : null,
+    currency: typeof entity.currency === "string" ? entity.currency : null,
+    notes: pickNotesSummary(entity.notes),
+  };
+}
+
+function sanitizeWebhookPayloadForLog(payload: unknown) {
+  if (!payload || typeof payload !== "object") return {};
+
+  const event = payload as {
+    event?: unknown;
+    account_id?: unknown;
+    payload?: {
+      payment?: { entity?: Record<string, unknown> };
+      refund?: { entity?: Record<string, unknown> };
+      order?: { entity?: Record<string, unknown> };
+    };
+  };
+
+  return {
+    event: typeof event.event === "string" ? event.event : "unknown",
+    account_id_present: typeof event.account_id === "string" && event.account_id.length > 0,
+    payment: pickEntitySummary(event.payload?.payment?.entity ?? null),
+    refund: pickEntitySummary(event.payload?.refund?.entity ?? null),
+    order: pickEntitySummary(event.payload?.order?.entity ?? null),
+    redacted: true,
+  };
+}
+
 async function applyPayoutRefundIfApplicable(
   admin: SupabaseClient,
   payload: {
@@ -62,12 +118,12 @@ async function insertWebhookLogBestEffort({
   const primaryPayload = {
     event_id: eventId,
     event_type: eventType,
-    signature: signature || null,
+    signature: null,
     signature_valid: signatureValid,
     processed: false,
-    payload,
+    payload: sanitizeWebhookPayloadForLog(payload),
     headers: {
-      "x-razorpay-signature": signature,
+      signature_present: Boolean(signature),
       "user-agent": headerMap.get("user-agent") ?? null,
     },
   };
@@ -78,7 +134,7 @@ async function insertWebhookLogBestEffort({
   console.error("[razorpay/webhook] rich log insert failed; trying fallback", { eventType, eventId, error: primary.error.message });
   const fallback = await admin
     .from("razorpay_webhook_logs")
-    .insert({ event_id: eventId, event_type: eventType, signature_valid: signatureValid, payload })
+    .insert({ event_id: eventId, event_type: eventType, signature_valid: signatureValid, payload: sanitizeWebhookPayloadForLog(payload) })
     .select("id")
     .maybeSingle<{ id: string }>();
 

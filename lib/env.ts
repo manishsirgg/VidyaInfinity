@@ -27,7 +27,7 @@ export function getPublicEnv(): EnvResult<PublicEnv> {
   };
 
   const missingKeys = Object.entries(values)
-     .filter(([key, value]) => key !== "NEXT_PUBLIC_RAZORPAY_KEY_ID" && !value)
+    .filter(([key, value]) => key !== "NEXT_PUBLIC_RAZORPAY_KEY_ID" && !value)
     .map(([key]) => key);
 
   if (missingKeys.length) return { ok: false, error: missing(missingKeys) };
@@ -53,7 +53,7 @@ export function getServerEnv(): EnvResult<ServerEnv> {
   const serverValues = {
     ...publicEnv.data,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    RAZORPAY_KEY_ID: privateRazorpayKeyId ?? publicRazorpayKeyId,
+    RAZORPAY_KEY_ID: privateRazorpayKeyId,
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
     RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
   };
