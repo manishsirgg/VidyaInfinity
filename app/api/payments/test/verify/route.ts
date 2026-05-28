@@ -21,8 +21,8 @@ export async function POST(request: Request) {
     const paymentId = typeof body?.razorpay_payment_id === "string" ? body.razorpay_payment_id : body?.paymentId;
     const signature = typeof body?.razorpay_signature === "string" ? body.razorpay_signature : body?.signature;
 
-    if (!orderId || !paymentId) {
-      return NextResponse.json({ error: "razorpay_order_id and razorpay_payment_id are required" }, { status: 400 });
+    if (!orderId || !paymentId || !signature) {
+      return NextResponse.json({ error: "razorpay_order_id, razorpay_payment_id, and razorpay_signature are required" }, { status: 400 });
     }
 
     const admin = getSupabaseAdmin();
@@ -68,13 +68,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Order not found for this user" }, { status: 404 });
     }
 
-    if (signature) {
-      const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
-      if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
-      if (!signatureResult.valid) {
-        await admin.data.from("psychometric_orders").update({ payment_status: "failed" }).eq("id", order.id);
-        return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
-      }
+    const signatureResult = verifyRazorpaySignature({ orderId, paymentId, signature });
+    if (!signatureResult.ok) return NextResponse.json({ error: signatureResult.error }, { status: 500 });
+    if (!signatureResult.valid) {
+      await admin.data.from("psychometric_orders").update({ payment_status: "failed" }).eq("id", order.id);
+      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
 
     const razorpay = getRazorpayClient();

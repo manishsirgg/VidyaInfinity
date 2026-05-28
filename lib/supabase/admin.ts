@@ -4,9 +4,14 @@ import { createClient } from "@supabase/supabase-js";
 
 import { getServerEnv } from "@/lib/env";
 
+const SERVER_CONFIG_ERROR = "Server configuration is unavailable. Please contact support.";
+
 export function getSupabaseAdmin() {
   const env = getServerEnv();
-  if (!env.ok) return env;
+  if (!env.ok) {
+    console.error("[supabase/admin] configuration error", { error: env.error });
+    return { ok: false as const, error: SERVER_CONFIG_ERROR };
+  }
 
   return {
     ok: true as const,
