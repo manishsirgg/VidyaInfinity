@@ -281,7 +281,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       order,
       localOrderId,
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? process.env.RAZORPAY_KEY_ID ?? null,
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? null,
       pricing: { baseAmount, discountPercent, discountAmount, finalAmount, finalAmountPaise: toPaise(finalAmount) },
     });
   } catch (error) {

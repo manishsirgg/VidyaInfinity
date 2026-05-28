@@ -3,9 +3,19 @@ import Razorpay from "razorpay";
 
 import { getServerEnv } from "@/lib/env";
 
+const PAYMENT_GATEWAY_CONFIG_ERROR = "Payment gateway is not configured. Please contact support.";
+const WEBHOOK_CONFIG_ERROR = "Webhook verification is not configured.";
+
+function logRazorpayConfigError(scope: string, error: string) {
+  console.error(`[razorpay] ${scope} configuration error`, { error });
+}
+
 export function getRazorpayClient() {
   const env = getServerEnv();
-  if (!env.ok) return env;
+  if (!env.ok) {
+    logRazorpayConfigError("client", env.error);
+    return { ok: false as const, error: PAYMENT_GATEWAY_CONFIG_ERROR };
+  }
 
   return {
     ok: true as const,
@@ -26,7 +36,10 @@ export function verifyRazorpaySignature({
   signature: string;
 }) {
   const env = getServerEnv();
-  if (!env.ok) return { ok: false as const, error: env.error };
+  if (!env.ok) {
+    logRazorpayConfigError("signature", env.error);
+    return { ok: false as const, error: PAYMENT_GATEWAY_CONFIG_ERROR };
+  }
 
   const expectedSignature = crypto
     .createHmac("sha256", env.data.RAZORPAY_KEY_SECRET)
@@ -38,9 +51,13 @@ export function verifyRazorpaySignature({
 
 export function verifyRazorpayWebhookSignature(payload: string, signature: string) {
   const env = getServerEnv();
-  if (!env.ok) return { ok: false as const, error: env.error };
+  if (!env.ok) {
+    logRazorpayConfigError("webhook", env.error);
+    return { ok: false as const, error: WEBHOOK_CONFIG_ERROR };
+  }
   if (!env.data.RAZORPAY_WEBHOOK_SECRET) {
-    return { ok: false as const, error: "Missing required environment variables: RAZORPAY_WEBHOOK_SECRET" };
+    logRazorpayConfigError("webhook", "Missing required environment variables: RAZORPAY_WEBHOOK_SECRET");
+    return { ok: false as const, error: WEBHOOK_CONFIG_ERROR };
   }
 
   const expected = crypto
