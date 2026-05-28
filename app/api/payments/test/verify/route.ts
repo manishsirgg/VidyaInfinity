@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     const signature = typeof body?.razorpay_signature === "string" ? body.razorpay_signature : body?.signature;
 
     if (!orderId || !paymentId || !signature) {
-      return NextResponse.json({ error: "razorpay_order_id, razorpay_payment_id and razorpay_signature are required" }, { status: 400 });
+      return NextResponse.json({ error: "razorpay_order_id, razorpay_payment_id, and razorpay_signature are required" }, { status: 400 });
     }
 
     const admin = getSupabaseAdmin();
