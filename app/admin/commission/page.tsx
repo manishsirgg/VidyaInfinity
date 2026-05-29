@@ -2,12 +2,12 @@ import { CommissionForm } from "@/components/admin/commission-form";
 import { requireUser } from "@/lib/auth/get-session";
 import { ORGANIZATION_TYPE_OPTIONS, normalizeOrganizationType } from "@/lib/constants/organization-types";
 import { sanitizeCommissionPercentage } from "@/lib/payments/commission";
+import { DEFAULT_WEBINAR_COMMISSION_PERCENT, getDefaultEntityCommissionPercent } from "@/lib/payments/commission-settings";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const DEFAULT_COMMISSION_PERCENT = 12;
 
 type EntityCommissionRow = {
   entity_type: string;
@@ -40,7 +40,7 @@ export default async function Page() {
 
   const initialEntityCommissions = ORGANIZATION_TYPE_OPTIONS.map((entityType) => ({
     entityType: entityType.value,
-    commissionPercent: entityMap.get(entityType.value) ?? DEFAULT_COMMISSION_PERCENT,
+    commissionPercent: entityMap.get(entityType.value) ?? getDefaultEntityCommissionPercent(entityType.value),
   }));
 
   const { data: webinarSetting } = await supabase
@@ -53,7 +53,7 @@ export default async function Page() {
     .maybeSingle<{ commission_percent: number | string | null }>();
 
   const initialWebinarCommissionPercent =
-    sanitizeCommissionPercentage(webinarSetting?.commission_percent) ?? DEFAULT_COMMISSION_PERCENT;
+    sanitizeCommissionPercentage(webinarSetting?.commission_percent) ?? DEFAULT_WEBINAR_COMMISSION_PERCENT;
 
   console.info("[admin/commission] loaded commission settings", {
     entityRows: (entityRows ?? []).map((row) => ({

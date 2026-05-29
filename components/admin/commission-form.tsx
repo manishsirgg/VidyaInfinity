@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ORGANIZATION_TYPE_OPTIONS, type OrganizationType } from "@/lib/constants/organization-types";
+import { getDefaultEntityCommissionPercent } from "@/lib/payments/commission-settings";
 
 type EntityCommission = {
   entityType: OrganizationType;
@@ -133,7 +134,7 @@ export function CommissionForm({ initialEntityCommissions, initialWebinarCommiss
                   max={100}
                   name={entityType.value}
                   required
-                  value={entityValues[entityType.value] ?? 12}
+                  value={entityValues[entityType.value] ?? getDefaultEntityCommissionPercent(entityType.value)}
                   onChange={(event) =>
                     setEntityValues((current) => ({
                       ...current,

@@ -5,11 +5,11 @@ import { writeAdminAuditLog } from "@/lib/admin/audit-log";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { ORGANIZATION_TYPE_OPTIONS, normalizeOrganizationType, type OrganizationType } from "@/lib/constants/organization-types";
 import { sanitizeCommissionPercentage } from "@/lib/payments/commission";
+import { DEFAULT_WEBINAR_COMMISSION_PERCENT, getDefaultEntityCommissionPercent } from "@/lib/payments/commission-settings";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_COMMISSION_PERCENT = 12;
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
 };
@@ -89,9 +89,9 @@ async function loadCommissionSettings(admin: AdminSupabaseClient) {
 
   const entityCommissions = ORGANIZATION_TYPE_OPTIONS.map((entityType) => ({
     entityType: entityType.value,
-    commissionPercent: entityMap.get(entityType.value) ?? DEFAULT_COMMISSION_PERCENT,
+    commissionPercent: entityMap.get(entityType.value) ?? getDefaultEntityCommissionPercent(entityType.value),
   }));
-  const webinarCommissionPercent = sanitizeCommissionPercentage(webinarRow?.commission_percent) ?? DEFAULT_COMMISSION_PERCENT;
+  const webinarCommissionPercent = sanitizeCommissionPercentage(webinarRow?.commission_percent) ?? DEFAULT_WEBINAR_COMMISSION_PERCENT;
 
   return {
     entityRows: entityRows ?? [],
