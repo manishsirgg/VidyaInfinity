@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import path from "node:path";
+
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -38,18 +41,17 @@ const ctaRoutes = {
   contact: "/contact",
 } as const;
 
-const aboutImageSlots: Record<
-  | "heroImage"
-  | "studentGuidanceImage"
-  | "instituteGrowthImage"
-  | "careerCounsellingImage",
-  string | null
-> = {
-  heroImage: null,
-  studentGuidanceImage: null,
-  instituteGrowthImage: null,
-  careerCounsellingImage: null,
-};
+const heroImage = "/heroImage.png";
+const studentGuidanceImage = "/studentGuidanceImage.png";
+const instituteGrowthImage = "/instituteGrowthImage.png";
+const careerCounsellingImage = "/careerCounsellingImage.png";
+
+const aboutImageSlots = {
+  heroImage,
+  studentGuidanceImage,
+  instituteGrowthImage,
+  careerCounsellingImage,
+} as const;
 
 const trustBadges = [
   { title: "Career Guidance", Icon: Compass },
@@ -175,46 +177,59 @@ function SectionHeader({
   );
 }
 
+function publicImageExists(src: string | null) {
+  if (!src?.startsWith("/")) {
+    return false;
+  }
+
+  return existsSync(path.join(process.cwd(), "public", src));
+}
+
 function ImageSlot({
   src,
   alt,
   className,
+  aspectClass = "aspect-[4/3]",
 }: {
   src: string | null;
   alt: string;
   className?: string;
+  aspectClass?: string;
 }) {
-  if (!src) {
-    return (
-      <div
-        className={`relative overflow-hidden rounded-[2rem] border border-white/70 bg-gradient-to-br from-brand-600 via-brand-500 to-amber-400 p-6 shadow-2xl shadow-brand-900/20 ${className ?? ""}`}
-      >
-        <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/20 blur-2xl" />
-        <div className="absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-amber-200/30 blur-3xl" />
-        <div className="relative grid min-h-64 place-items-center rounded-[1.5rem] border border-white/20 bg-white/10 p-8 text-center text-white backdrop-blur">
-          <div>
-            <Network className="mx-auto h-14 w-14" aria-hidden="true" />
-            <p className="mt-4 text-lg font-semibold">
-              Vidya Infinity course discovery and enrollment support
-            </p>
-            <p className="mt-2 text-sm text-white/80">
-              Future image-ready visual slot
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const hasImage = publicImageExists(src);
 
   return (
-    <Image
-      src={src}
-      alt={alt}
-      width={720}
-      height={540}
-      className={`h-full w-full rounded-[2rem] object-cover shadow-2xl shadow-brand-900/15 ${className ?? ""}`}
-      sizes="(min-width: 1024px) 45vw, 100vw"
-    />
+    <div
+      className={`relative overflow-hidden rounded-[2rem] border border-white/20 bg-white/10 shadow-2xl shadow-brand-950/20 ${className ?? ""}`}
+    >
+      <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-amber-300/25 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-brand-300/25 blur-3xl" />
+      <div className={`relative w-full ${aspectClass}`}>
+        {hasImage && src ? (
+          <Image
+            src={src}
+            alt={alt}
+            width={900}
+            height={675}
+            className="h-full w-full object-cover"
+            sizes="(min-width: 1024px) 45vw, 100vw"
+          />
+        ) : (
+          <div className="grid h-full w-full place-items-center bg-gradient-to-br from-brand-700 via-brand-600 to-amber-400 p-8 text-center text-white">
+            <div>
+              <Network className="mx-auto h-12 w-12" aria-hidden="true" />
+              <p className="mt-4 text-base font-semibold">
+                Vidya Infinity visual coming soon
+              </p>
+              <p className="mt-2 text-sm text-white/80">
+                Add this image in the configured public image slot.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="pointer-events-none absolute inset-0 rounded-[2rem] bg-gradient-to-tr from-brand-950/20 via-transparent to-amber-300/15" />
+    </div>
   );
 }
 
