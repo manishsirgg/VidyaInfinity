@@ -40,7 +40,7 @@ export function normalizeOrganizationType(value: string): OrganizationType | nul
   if (!trimmed) return null;
   if (isOrganizationType(trimmed)) return trimmed;
 
-  const normalizedKey = trimmed.toLowerCase().replace(/[\s-]+/g, "_");
+  const normalizedKey = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   return LEGACY_ORGANIZATION_TYPE_MAP[normalizedKey] ?? null;
 }
 
