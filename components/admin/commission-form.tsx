@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { ORGANIZATION_TYPE_OPTIONS, type OrganizationType } from "@/lib/constants/organization-types";
 
@@ -14,16 +15,38 @@ type CommissionFormProps = {
   initialWebinarCommissionPercent: number;
 };
 
+type CommissionSettingsResponse = {
+  entityCommissions?: EntityCommission[];
+  webinarCommissionPercent?: number;
+  error?: string;
+};
+
+function buildEntityValueMap(entityCommissions: EntityCommission[]) {
+  return Object.fromEntries(entityCommissions.map((item) => [item.entityType, item.commissionPercent])) as Record<
+    OrganizationType,
+    number
+  >;
+}
+
 export function CommissionForm({ initialEntityCommissions, initialWebinarCommissionPercent }: CommissionFormProps) {
+  const router = useRouter();
   const [entityMsg, setEntityMsg] = useState("");
   const [webinarMsg, setWebinarMsg] = useState("");
   const [isSavingEntity, setIsSavingEntity] = useState(false);
   const [isSavingWebinar, setIsSavingWebinar] = useState(false);
 
-  const initialEntityMap = useMemo(
-    () => Object.fromEntries(initialEntityCommissions.map((item) => [item.entityType, item.commissionPercent])),
-    [initialEntityCommissions]
-  );
+  const initialEntityMap = useMemo(() => buildEntityValueMap(initialEntityCommissions), [initialEntityCommissions]);
+
+  const [entityValues, setEntityValues] = useState<Record<OrganizationType, number>>(initialEntityMap);
+  const [webinarValue, setWebinarValue] = useState(initialWebinarCommissionPercent);
+
+  useEffect(() => {
+    setEntityValues(initialEntityMap);
+  }, [initialEntityMap]);
+
+  useEffect(() => {
+    setWebinarValue(initialWebinarCommissionPercent);
+  }, [initialWebinarCommissionPercent]);
 
   async function onSaveEntityCommissions(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,12 +62,20 @@ export function CommissionForm({ initialEntityCommissions, initialWebinarCommiss
 
       const response = await fetch("/api/admin/commission", {
         method: "PATCH",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entityCommissions }),
       });
 
-      const body = await response.json();
-      setEntityMsg(response.ok ? "Course commissions updated." : body.error ?? "Failed to update commissions.");
+      const body = (await response.json()) as CommissionSettingsResponse;
+      if (response.ok) {
+        setEntityValues(buildEntityValueMap(body.entityCommissions ?? entityCommissions));
+        if (typeof body.webinarCommissionPercent === "number") setWebinarValue(body.webinarCommissionPercent);
+        setEntityMsg("Course commissions updated.");
+        router.refresh();
+      } else {
+        setEntityMsg(body.error ?? "Failed to update commissions.");
+      }
     } catch {
       setEntityMsg("Unexpected error while updating commissions.");
     } finally {
@@ -63,12 +94,20 @@ export function CommissionForm({ initialEntityCommissions, initialWebinarCommiss
 
       const response = await fetch("/api/admin/commission", {
         method: "PATCH",
+        cache: "no-store",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ webinarCommissionPercent }),
       });
 
-      const body = await response.json();
-      setWebinarMsg(response.ok ? "Webinar commission updated." : body.error ?? "Failed to update commission.");
+      const body = (await response.json()) as CommissionSettingsResponse;
+      if (response.ok) {
+        if (body.entityCommissions) setEntityValues(buildEntityValueMap(body.entityCommissions));
+        setWebinarValue(body.webinarCommissionPercent ?? webinarCommissionPercent);
+        setWebinarMsg("Webinar commission updated.");
+        router.refresh();
+      } else {
+        setWebinarMsg(body.error ?? "Failed to update commission.");
+      }
     } catch {
       setWebinarMsg("Unexpected error while updating webinar commission.");
     } finally {
@@ -94,7 +133,13 @@ export function CommissionForm({ initialEntityCommissions, initialWebinarCommiss
                   max={100}
                   name={entityType.value}
                   required
-                  defaultValue={initialEntityMap[entityType.value] ?? 12}
+                  value={entityValues[entityType.value] ?? 12}
+                  onChange={(event) =>
+                    setEntityValues((current) => ({
+                      ...current,
+                      [entityType.value]: Number(event.target.value),
+                    }))
+                  }
                   className="w-full rounded border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
                 />
               </div>
@@ -128,7 +173,8 @@ export function CommissionForm({ initialEntityCommissions, initialWebinarCommiss
               max={100}
               name="webinarCommissionPercent"
               required
-              defaultValue={initialWebinarCommissionPercent}
+              value={webinarValue}
+              onChange={(event) => setWebinarValue(Number(event.target.value))}
               className="w-full rounded border border-slate-300 px-3 py-2 text-sm outline-none ring-brand-500 focus:ring-2"
             />
           </div>
