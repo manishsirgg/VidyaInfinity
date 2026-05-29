@@ -7,10 +7,8 @@ import Link from "next/link";
 import {
   ArrowRight,
   BadgeCheck,
-  BookOpenCheck,
   Building2,
   CheckCircle2,
-  ClipboardList,
   Compass,
   CreditCard,
   GraduationCap,
@@ -60,13 +58,35 @@ const trustBadges = [
   { title: "Enrollment Support", Icon: Handshake },
 ] as const;
 
-const dashboardMetrics = [
-  { label: "Students", value: "Guided", Icon: Users },
-  { label: "Institutes", value: "Visible", Icon: Building2 },
-  { label: "Courses", value: "Discovered", Icon: BookOpenCheck },
-  { label: "Leads", value: "Tracked", Icon: LineChart },
-  { label: "CRM", value: "Organized", Icon: ClipboardList },
-  { label: "Pay & Enroll", value: "Supported", Icon: CreditCard },
+const heroFloatingBadges = [
+  {
+    eyebrow: "Career",
+    label: "Guidance",
+    status: "Active",
+    Icon: Compass,
+    position: "left-3 top-3 sm:left-4 sm:top-4",
+  },
+  {
+    eyebrow: "Courses",
+    label: "Discovery",
+    status: "Guided",
+    Icon: Search,
+    position: "right-3 top-3 sm:right-4 sm:top-4",
+  },
+  {
+    eyebrow: "Leads",
+    label: "Student Leads",
+    status: "Tracked",
+    Icon: Users,
+    position: "bottom-3 left-3 sm:bottom-4 sm:left-4",
+  },
+  {
+    eyebrow: "Enroll",
+    label: "Pay & Enroll",
+    status: "Supported",
+    Icon: CreditCard,
+    position: "bottom-3 right-3 sm:bottom-4 sm:right-4",
+  },
 ] as const;
 
 const problemCards = [
@@ -233,6 +253,56 @@ function ImageSlot({
   );
 }
 
+function HeroVisual() {
+  return (
+    <div className="relative mx-auto w-full max-w-2xl lg:mx-0 lg:ml-auto">
+      <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-brand-600/20 via-transparent to-amber-400/25 blur-2xl" />
+      <div className="absolute -inset-px rounded-[2rem] bg-gradient-to-tr from-brand-500/30 via-white/20 to-amber-300/40" />
+
+      <div className="relative overflow-hidden rounded-[2rem] border border-brand-100/70 bg-white shadow-2xl shadow-brand-950/20">
+        <div className="aspect-[4/3] w-full sm:aspect-[16/10]">
+          <Image
+            src={heroImage}
+            alt="Vidya Infinity career guidance, course discovery, and enrollment support platform"
+            width={1672}
+            height={941}
+            priority
+            className="h-full w-full object-cover"
+            sizes="(min-width: 1024px) 45vw, 100vw"
+          />
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-brand-950/25 via-transparent to-amber-400/10" />
+      </div>
+
+      {heroFloatingBadges.map(
+        ({ eyebrow, label, status, Icon, position }, index) => (
+          <div
+            key={`${eyebrow}-${label}`}
+            className={`pointer-events-none absolute ${position} ${
+              index > 1 ? "hidden sm:flex" : "flex"
+            } max-w-[9.5rem] items-center gap-2 rounded-2xl border border-white/60 bg-white/85 px-3 py-2 shadow-xl backdrop-blur-md sm:max-w-none sm:px-4 sm:py-3`}
+          >
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700 shadow-sm sm:h-9 sm:w-9">
+              <Icon className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-brand-700 sm:text-xs sm:tracking-[0.18em]">
+                {eyebrow}
+              </span>
+              <span className="block text-xs font-bold leading-tight text-slate-950 sm:text-sm">
+                {label}
+              </span>
+              <span className="hidden text-[0.68rem] font-semibold text-amber-600 sm:block">
+                {status}
+              </span>
+            </span>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
 function CtaLink({
   href,
   children,
@@ -267,13 +337,13 @@ export default function AboutPage() {
     <main className="overflow-hidden bg-slate-50">
       <section className="relative border-b border-brand-100 bg-[radial-gradient(circle_at_top_left,#d9eeff,transparent_32%),linear-gradient(135deg,#ffffff_0%,#f8fbff_45%,#fff7ed_100%)]">
         <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-brand-50/80 to-transparent" />
-        <div className="relative mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-24">
-          <div>
+        <div className="relative mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-x-12 lg:gap-y-8 lg:py-24">
+          <div className="max-w-3xl lg:col-start-1 lg:row-start-1">
             <div className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-white/80 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm">
               <Sparkles className="h-4 w-4 text-amber-500" aria-hidden="true" />{" "}
               Global Education Architects
             </div>
-            <h1 className="mt-6 text-4xl font-black leading-tight text-slate-950 sm:text-5xl lg:text-6xl">
+            <h1 className="mt-6 max-w-3xl text-4xl font-black tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
               Connecting Students with Trusted Institutes Through Career
               Guidance, Course Discovery & Enrollment Support
             </h1>
@@ -288,40 +358,24 @@ export default function AboutPage() {
                 Register Your Institute Free
               </CtaLink>
             </div>
-            <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {trustBadges.map(({ title, Icon }) => (
-                <div
-                  key={title}
-                  className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm transition hover:-translate-y-1 hover:border-brand-100 hover:shadow-md"
-                >
-                  <Icon className="h-5 w-5 text-brand-600" aria-hidden="true" />
-                  <p className="mt-3 text-sm font-semibold text-slate-800">
-                    {title}
-                  </p>
-                </div>
-              ))}
-            </div>
           </div>
 
-          <div className="relative">
-            <ImageSlot
-              src={aboutImageSlots.heroImage}
-              alt="Students receiving career guidance through Vidya Infinity"
-            />
-            <div className="absolute inset-6 grid grid-cols-2 gap-3 sm:inset-8">
-              {dashboardMetrics.map(({ label, value, Icon }) => (
-                <div
-                  key={label}
-                  className="rounded-2xl border border-white/40 bg-white/90 p-4 shadow-lg backdrop-blur transition hover:-translate-y-1"
-                >
-                  <Icon className="h-5 w-5 text-brand-600" aria-hidden="true" />
-                  <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
-                    {label}
-                  </p>
-                  <p className="text-sm font-bold text-slate-950">{value}</p>
-                </div>
-              ))}
-            </div>
+          <div className="lg:col-start-2 lg:row-span-2 lg:row-start-1">
+            <HeroVisual />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:col-start-1 lg:row-start-2">
+            {trustBadges.map(({ title, Icon }) => (
+              <div
+                key={title}
+                className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm transition hover:-translate-y-1 hover:border-brand-100 hover:shadow-md"
+              >
+                <Icon className="h-5 w-5 text-brand-600" aria-hidden="true" />
+                <p className="mt-3 text-sm font-semibold text-slate-800">
+                  {title}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
