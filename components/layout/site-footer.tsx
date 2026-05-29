@@ -5,15 +5,28 @@ import Link from "next/link";
 import { siteConfig } from "@/lib/constants/site";
 
 const quickLinks = [
+  { href: "/about", label: "About" },
   { href: "/blogs", label: "Blogs" },
   { href: "/contact", label: "Contact" },
 ] as const;
 
 export function SiteFooter() {
   const socialLinks = [
-    { href: siteConfig.socialLinks.facebook, label: "Facebook", Icon: Facebook },
-    { href: siteConfig.socialLinks.instagram, label: "Instagram", Icon: Instagram },
-    { href: siteConfig.socialLinks.linkedin, label: "LinkedIn", Icon: Linkedin },
+    {
+      href: siteConfig.socialLinks.facebook,
+      label: "Facebook",
+      Icon: Facebook,
+    },
+    {
+      href: siteConfig.socialLinks.instagram,
+      label: "Instagram",
+      Icon: Instagram,
+    },
+    {
+      href: siteConfig.socialLinks.linkedin,
+      label: "LinkedIn",
+      Icon: Linkedin,
+    },
     { href: siteConfig.socialLinks.youtube, label: "YouTube", Icon: Youtube },
   ] as const;
 
@@ -21,7 +34,13 @@ export function SiteFooter() {
     <footer className="mt-16 border-t border-slate-200 bg-white/95">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <Image src="/logo.svg" alt={`${siteConfig.name} logo`} width={240} height={60} className="h-10 w-auto sm:h-12" />
+          <Image
+            src="/logo.svg"
+            alt={`${siteConfig.name} logo`}
+            width={240}
+            height={60}
+            className="h-10 w-auto sm:h-12"
+          />
           <p className="mt-2 text-sm text-slate-600">{siteConfig.tagline}</p>
           <div className="mt-3 flex items-center gap-2">
             {socialLinks.map(({ href, label, Icon }) => (
@@ -40,17 +59,25 @@ export function SiteFooter() {
         </div>
 
         <div className="text-sm text-slate-600">
-          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-800">Contact</h3>
+          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-800">
+            Contact
+          </h3>
           <p className="break-all sm:break-normal">Email: {siteConfig.email}</p>
           <p>Phone/WhatsApp: {siteConfig.phone}</p>
           <p className="mt-1">{siteConfig.address}</p>
         </div>
 
         <div className="text-sm text-slate-600">
-          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-800">Quick Links</h3>
+          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-800">
+            Quick Links
+          </h3>
           <div className="flex flex-col gap-2">
             {quickLinks.map((link) => (
-              <Link key={link.href} href={link.href} className="transition hover:text-brand-700">
+              <Link
+                key={link.href}
+                href={link.href}
+                className="transition hover:text-brand-700"
+              >
                 {link.label}
               </Link>
             ))}
@@ -58,19 +85,34 @@ export function SiteFooter() {
         </div>
 
         <div className="flex flex-wrap content-start gap-4 text-sm">
-          <Link href="/privacy-policy" className="transition hover:text-brand-700">
+          <Link
+            href="/privacy-policy"
+            className="transition hover:text-brand-700"
+          >
             Privacy
           </Link>
-          <Link href="/terms-of-service" className="transition hover:text-brand-700">
+          <Link
+            href="/terms-of-service"
+            className="transition hover:text-brand-700"
+          >
             Terms
           </Link>
-          <Link href="/refund-cancellation-policy" className="transition hover:text-brand-700">
+          <Link
+            href="/refund-cancellation-policy"
+            className="transition hover:text-brand-700"
+          >
             Refund & Cancellation
           </Link>
-          <Link href="/shipping-delivery-policy" className="transition hover:text-brand-700">
+          <Link
+            href="/shipping-delivery-policy"
+            className="transition hover:text-brand-700"
+          >
             Shipping & Delivery
           </Link>
-          <Link href="/cookie-policy" className="transition hover:text-brand-700">
+          <Link
+            href="/cookie-policy"
+            className="transition hover:text-brand-700"
+          >
             Cookie Policy
           </Link>
           <Link href="/disclaimer" className="transition hover:text-brand-700">
