@@ -255,23 +255,22 @@ function ImageSlot({
 
 function HeroVisual() {
   return (
-    <div className="relative mx-auto w-full max-w-2xl lg:mx-0 lg:ml-auto">
-      <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-brand-600/20 via-transparent to-amber-400/25 blur-2xl" />
-      <div className="absolute -inset-px rounded-[2rem] bg-gradient-to-tr from-brand-500/30 via-white/20 to-amber-300/40" />
+    <div className="relative mx-auto w-full max-w-xl lg:max-w-2xl">
+      <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-blue-600/20 via-transparent to-yellow-400/25 blur-2xl" />
 
-      <div className="relative overflow-hidden rounded-[2rem] border border-brand-100/70 bg-white shadow-2xl shadow-brand-950/20">
-        <div className="aspect-[4/3] w-full sm:aspect-[16/10]">
+      <div className="relative overflow-hidden rounded-[2rem] border border-blue-100/70 bg-white shadow-2xl">
+        <div className="aspect-[4/3] w-full sm:aspect-[5/4]">
           <Image
-            src={heroImage}
+            src="/heroImage.png"
             alt="Vidya Infinity career guidance, course discovery, and enrollment support platform"
-            width={1672}
-            height={941}
+            width={1600}
+            height={1280}
             priority
             className="h-full w-full object-cover"
             sizes="(min-width: 1024px) 45vw, 100vw"
           />
         </div>
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-brand-950/25 via-transparent to-amber-400/10" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-blue-950/25 via-transparent to-yellow-400/10" />
       </div>
 
       {heroFloatingBadges.map(
@@ -337,7 +336,7 @@ export default function AboutPage() {
     <main className="overflow-hidden bg-slate-50">
       <section className="relative border-b border-brand-100 bg-[radial-gradient(circle_at_top_left,#d9eeff,transparent_32%),linear-gradient(135deg,#ffffff_0%,#f8fbff_45%,#fff7ed_100%)]">
         <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-brand-50/80 to-transparent" />
-        <div className="relative mx-auto grid max-w-7xl grid-cols-1 items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:gap-x-12 lg:gap-y-8 lg:py-24">
+        <div className="relative mx-auto grid max-w-7xl grid-cols-1 items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1fr_0.95fr] lg:py-24">
           <div className="max-w-3xl lg:col-start-1 lg:row-start-1">
             <div className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-white/80 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm">
               <Sparkles className="h-4 w-4 text-amber-500" aria-hidden="true" />{" "}
