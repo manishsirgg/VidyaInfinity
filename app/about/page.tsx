@@ -39,10 +39,10 @@ const ctaRoutes = {
   contact: "/contact",
 } as const;
 
-const heroImage = "/heroImage.png";
-const studentGuidanceImage = "/studentGuidanceImage.png";
-const instituteGrowthImage = "/instituteGrowthImage.png";
-const careerCounsellingImage = "/careerCounsellingImage.png";
+const heroImage = "/images/about/heroImage.png";
+const studentGuidanceImage = "/images/about/studentGuidanceImage.png";
+const instituteGrowthImage = "/images/about/instituteGrowthImage.png";
+const careerCounsellingImage = "/images/about/careerCounsellingImage.png";
 
 const aboutImageSlots = {
   heroImage,
@@ -261,7 +261,7 @@ function HeroVisual() {
       <div className="relative overflow-hidden rounded-[2rem] border border-blue-100/70 bg-white shadow-2xl">
         <div className="aspect-[4/3] w-full sm:aspect-[5/4]">
           <Image
-            src="/heroImage.png"
+            src={aboutImageSlots.heroImage}
             alt="Vidya Infinity career guidance, course discovery, and enrollment support platform"
             width={1600}
             height={1280}
