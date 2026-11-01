@@ -92,6 +92,24 @@ export async function POST(request: Request) {
   if (instituteError) return NextResponse.json({ error: instituteError.message }, { status: 500 });
   if (!institute) return NextResponse.json({ error: "Institute record not found" }, { status: 404 });
 
+  // A course edit must use PATCH /api/institute/courses/:id. Never silently
+  // create a second active course with the same title for the same institute.
+  const { data: existingCourses, error: duplicateCheckError } = await admin.data
+    .from("courses")
+    .select("id,title")
+    .eq("institute_id", institute.id)
+    .eq("is_deleted", false)
+    .ilike("title", title);
+
+  if (duplicateCheckError) return NextResponse.json({ error: duplicateCheckError.message }, { status: 500 });
+  const duplicate = (existingCourses ?? []).find((course) => course.title.trim().toLocaleLowerCase() === title.toLocaleLowerCase());
+  if (duplicate) {
+    return NextResponse.json({
+      error: "A course with this title already exists. Open that course and use Edit to update its details or banner.",
+      existingCourseId: duplicate.id,
+    }, { status: 409 });
+  }
+
   const { data: course, error } = await admin.data
     .from("courses")
     .insert({
