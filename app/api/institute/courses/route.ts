@@ -151,6 +151,11 @@ export async function POST(request: Request) {
     .select("id")
     .single<{ id: string }>();
 
+  if (error?.code === "23505") {
+    return NextResponse.json({
+      error: "A course with this title already exists. Edit the existing course instead of creating another.",
+    }, { status: 409 });
+  }
   if (error || !course) return NextResponse.json({ error: error?.message ?? "Failed to create course" }, { status: 500 });
 
 
