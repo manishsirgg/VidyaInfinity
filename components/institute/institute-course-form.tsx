@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { FormFeedback } from "@/components/shared/form-feedback";
@@ -119,6 +119,8 @@ function Field({
 
 export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, successMessage, submitLabel, initialCourse, initialMedia = [] }: Props) {
   const router = useRouter();
+  const submissionInFlight = useRef(false);
+  const completedCreateId = useRef<string | null>(null);
   const supabase = createClient();
 
   const [state, setState] = useState<SubmitState>("idle");
@@ -328,6 +330,14 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         continue;
       }
 
+      // Upload and register the new image BEFORE deleting the old one.
+      // Failed uploads must not leave an approved course without its banner.
+      const uploadFailures = await uploadFiles(courseId, [file]);
+      if (uploadFailures.length > 0) {
+        failures.push(...uploadFailures.map((item) => `Replacement failed for ${file.name}: ${item}`));
+        continue;
+      }
+
       const removeResponse = await fetch(`/api/institute/courses/${courseId}/media`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -335,12 +345,8 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
       });
       if (!removeResponse.ok) {
         const removeBody = (await removeResponse.json().catch(() => null)) as { error?: string } | null;
-        failures.push(removeBody?.error ?? `Failed to remove media for replacement (${file.name}).`);
-        continue;
+        failures.push(removeBody?.error ?? `New banner was uploaded, but the old media could not be removed (${file.name}).`);
       }
-
-      const uploadFailures = await uploadFiles(courseId, [file]);
-      failures.push(...uploadFailures.map((item) => `Replacement failed for ${file.name}: ${item}`));
     }
 
     return failures;
@@ -348,6 +354,11 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Ref lock is synchronous: two click/submit events cannot race React state updates.
+    // A successful POST must never be repeated, even if a later media upload fails.
+    if (submissionInFlight.current || completedCreateId.current) return;
+    submissionInFlight.current = true;
+    try {
     setState("submitting");
     setError("");
     setMessage("");
@@ -460,6 +471,7 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
     }
 
     const courseId = initialCourse?.id ?? responseBody?.courseId;
+    if (mode === "create" && courseId) completedCreateId.current = courseId;
     if (!courseId) {
       setState("error");
       setError("Could not resolve course id for media operations.");
@@ -501,6 +513,12 @@ export function InstituteCourseForm({ mode, submitEndpoint, submitMethod, succes
         }
       }, 800);
     }, 350);
+    } catch (cause) {
+      setState("error");
+      setError(cause instanceof Error ? cause.message : "An unexpected error occurred while saving the course.");
+    } finally {
+      submissionInFlight.current = false;
+    }
   }
 
   const pageTitle = mode === "create" ? "Add a new course" : mode === "resubmit" ? "Resubmit rejected course" : "Edit course";
