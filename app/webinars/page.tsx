@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { FilterableListings } from "@/components/marketplace/filterable-listings";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { expireWebinarFeaturedSubscriptionsSafe } from "@/lib/webinar-featured";
@@ -112,8 +113,22 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {rankedWebinars.map((item) => {
+      <FilterableListings
+        columns={2}
+        priceLabel="Webinar price"
+        facets={[
+          { key: "mode", label: "Registration" },
+          { key: "institute", label: "Institute" },
+          { key: "timezone", label: "Time zone" },
+        ]}
+        items={rankedWebinars.map((item) => ({
+          id: item.id,
+          search: [item.title, item.description, item.faculty_name, instituteName(item.institutes)].filter(Boolean).join(" "),
+          price: item.webinar_mode === "free" ? 0 : Number(item.price ?? 0),
+          featured: featuredWebinarIds.has(item.id),
+          facets: { mode: item.webinar_mode, institute: instituteName(item.institutes), timezone: item.timezone ?? "Asia/Kolkata" },
+        }))}
+        cards={rankedWebinars.map((item) => {
           const imageUrl = item.thumbnail_url ?? item.banner_url;
           return (
             <Link
@@ -139,7 +154,7 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
             </Link>
           );
         })}
-      </div>
+      />
     </div>
   );
 }
