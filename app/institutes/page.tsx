@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 
+import { FilterableListings } from "@/components/marketplace/filterable-listings";
 import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -223,8 +224,21 @@ export default async function InstitutesPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
       <h1 className="text-3xl font-semibold">Institutes</h1>
-      <div className="mt-8 grid gap-4 md:grid-cols-2">
-        {instituteCards.map((institute) => (
+      <FilterableListings
+        facets={[
+          { key: "organizationType", label: "Institution type" },
+          { key: "city", label: "City" },
+          { key: "state", label: "State" },
+          { key: "country", label: "Country" },
+        ]}
+        items={instituteCards.map((institute) => ({
+          id: institute.id,
+          search: [institute.name, institute.description, institute.organizationType, institute.city, institute.state, institute.country].filter(Boolean).join(" "),
+          featured: institute.isFeatured,
+          verified: institute.verified === true,
+          facets: { organizationType: institute.organizationType, city: institute.city, state: institute.state, country: institute.country },
+        }))}
+        cards={instituteCards.map((institute) => (
           <Link href={`/institutes/${institute.slug ?? institute.id}` as Route} key={institute.id} className="group rounded-xl border bg-white p-5 transition hover:border-brand-300">
           <article>
             <div className="flex items-center gap-2">
@@ -277,7 +291,7 @@ export default async function InstitutesPage() {
           </article>
         </Link>
         ))}
-      </div>
+      />
       {instituteCards.length === 0 ? <p className="mt-6 text-sm text-slate-600">No institutes available yet.</p> : null}
     </div>
   );

@@ -2,6 +2,7 @@ import type { Route } from "next";
 import Link from "next/link";
 
 import { CourseCompareBar } from "@/components/courses/course-compare-bar";
+import { FilterableListings } from "@/components/marketplace/filterable-listings";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -47,8 +48,22 @@ export default async function CoursesPage() {
         </div>
       ) : null}
 
-      <div className="mt-8 grid gap-5 md:grid-cols-2">
-        {sortedCourses.map((course) => {
+      <FilterableListings
+        facets={[
+          { key: "category", label: "Category" },
+          { key: "subject", label: "Subject" },
+          { key: "level", label: "Learning level" },
+          { key: "mode", label: "Delivery mode" },
+          { key: "language", label: "Language" },
+        ]}
+        items={sortedCourses.map((course) => ({
+          id: course.id,
+          search: [course.title, course.summary, course.category, course.subject].filter(Boolean).join(" "),
+          price: Number(course.fees),
+          featured: featuredCourseIds.has(course.id),
+          facets: { category: course.category, subject: course.subject, level: course.level, mode: course.mode, language: course.language },
+        }))}
+        cards={sortedCourses.map((course) => {
           const previewImage = course.course_media?.find((media) => media.type === "image")?.file_url;
           const imageCount = course.course_media?.filter((media) => media.type === "image").length ?? 0;
           const videoCount = course.course_media?.filter((media) => media.type === "video").length ?? 0;
@@ -94,7 +109,7 @@ export default async function CoursesPage() {
             </Link>
           );
         })}
-      </div>
+      />
     </div>
   );
 }
