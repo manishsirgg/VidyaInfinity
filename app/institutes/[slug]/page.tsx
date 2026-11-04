@@ -32,12 +32,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     path: `/institutes/${encodeURIComponent(slug)}`,
   });
   const admin = getSupabaseAdmin();
-  if (!admin.ok) return fallback;
+  if (!admin.ok || !admin.data) return fallback;
+  const db = admin.data;
 
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
   const select = "id,user_id,name,description";
   async function lookup(approvalColumn: "status" | "approval_status", bySlug: boolean) {
-    const query = admin.data.from("institutes").select(select);
+    const query = db.from("institutes").select(select);
     const locator = bySlug ? query.eq("slug", slug) : query.eq("id", slug);
     return locator.eq(approvalColumn, "approved").maybeSingle();
   }
@@ -49,7 +50,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // Previous deployments allow profile-based institute pages by user ID.
   let profile: { organization_name?: string | null; full_name?: string | null; avatar_url?: string | null } | null = null;
   if (!institute && uuid) {
-    const { data } = await admin.data.from("profiles")
+    const { data } = await db.from("profiles")
       .select("organization_name,full_name,avatar_url")
       .eq("id", slug)
       .eq("role", "institute")
@@ -62,7 +63,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const name = institute?.name || profile?.organization_name || profile?.full_name || "Institute";
   const description = institute?.description || `Explore ${name}, courses, admissions and university information on Vidya Infinity.`;
   const instituteId = institute?.id ?? slug;
-  const { data: media } = await admin.data.from("institute_media")
+  const { data: media } = await db.from("institute_media")
     .select("file_url,media_type")
     .eq("institute_id", instituteId)
     .eq("media_type", "image")
