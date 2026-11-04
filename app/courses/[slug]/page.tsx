@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { makeShareMetadata, resolveShareImage } from "@/lib/seo/share-metadata";
 import { notFound } from "next/navigation";
 
 import { CourseMediaGallery } from "@/components/courses/course-media-gallery";
@@ -29,6 +31,48 @@ function resolveAccessEndAt(startAtIso: string | null, durationValue: number | n
   return resolved.toISOString();
 }
 
+
+// Fetch metadata separately from the interactive course page, with no auth/session dependency.
+// Only published courses should expose course-specific previews to social crawlers.
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const fallback = makeShareMetadata({
+    title: "Courses | Vidya Infinity",
+    description: "Explore courses and professional training at Vidya Infinity.",
+    path: `/courses/${encodeURIComponent(slug)}`,
+  });
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return fallback;
+
+  const courseSelect = "id,title,summary,description,course_media(file_url,type)";
+  const { data: byId } = await admin.data
+    .from("courses")
+    .select(courseSelect)
+    .eq("id", slug)
+    .eq("status", "approved")
+    .eq("is_deleted", false)
+    .eq("is_active", true)
+    .maybeSingle();
+  // Legacy slug links are still supported where the optional slug column exists.
+  const bySlug = byId ? null : await admin.data
+    .from("courses")
+    .select(courseSelect)
+    .eq("slug", slug)
+    .eq("status", "approved")
+    .eq("is_deleted", false)
+    .eq("is_active", true)
+    .maybeSingle();
+  const course = byId ?? bySlug?.data;
+  if (!course) return fallback;
+
+  const cover = course.course_media?.find((item) => item.type === "image" && item.file_url)?.file_url ?? null;
+  return makeShareMetadata({
+    title: `${course.title} | Vidya Infinity`,
+    description: course.summary || course.description || "View course details and admission information on Vidya Infinity.",
+    path: `/courses/${encodeURIComponent(slug)}`,
+    image: resolveShareImage(cover, "course-media"),
+  });
+}
 
 export default async function CourseDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
