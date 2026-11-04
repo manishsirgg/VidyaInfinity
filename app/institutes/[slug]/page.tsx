@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+import { makeShareMetadata, resolveShareImage } from "@/lib/seo/share-metadata";
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -19,6 +21,68 @@ function toPublicMediaUrl(
   const instituteMediaUrl = adminClient.storage.from("institute-media").getPublicUrl(normalized).data.publicUrl;
   const blogMediaUrl = adminClient.storage.from("blog-media").getPublicUrl(normalized).data.publicUrl;
   return instituteMediaUrl || blogMediaUrl || null;
+}
+
+// University/institute pages use their uploaded public image in shared link previews.
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const fallback = makeShareMetadata({
+    title: "Institutes & Universities | Vidya Infinity",
+    description: "Explore verified institutes and universities on Vidya Infinity.",
+    path: `/institutes/${encodeURIComponent(slug)}`,
+  });
+  const admin = getSupabaseAdmin();
+  if (!admin.ok) return fallback;
+
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+  const select = "id,user_id,name,description";
+  async function lookup(approvalColumn: "status" | "approval_status", bySlug: boolean) {
+    const query = admin.data.from("institutes").select(select);
+    const locator = bySlug ? query.eq("slug", slug) : query.eq("id", slug);
+    return locator.eq(approvalColumn, "approved").maybeSingle();
+  }
+
+  const attempts = uuid
+    ? [await lookup("status", false), await lookup("approval_status", false)]
+    : [await lookup("status", true), await lookup("approval_status", true)];
+  let institute = attempts.find((result) => result.data)?.data;
+  // Previous deployments allow profile-based institute pages by user ID.
+  let profile: { organization_name?: string | null; full_name?: string | null; avatar_url?: string | null } | null = null;
+  if (!institute && uuid) {
+    const { data } = await admin.data.from("profiles")
+      .select("organization_name,full_name,avatar_url")
+      .eq("id", slug)
+      .eq("role", "institute")
+      .eq("approval_status", "approved")
+      .maybeSingle();
+    profile = data;
+  }
+  if (!institute && !profile) return fallback;
+
+  const name = institute?.name || profile?.organization_name || profile?.full_name || "Institute";
+  const description = institute?.description || `Explore ${name}, courses, admissions and university information on Vidya Infinity.`;
+  const instituteId = institute?.id ?? slug;
+  const { data: media } = await admin.data.from("institute_media")
+    .select("file_url,media_type")
+    .eq("institute_id", instituteId)
+    .eq("media_type", "image")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  let image = resolveShareImage(media?.[0]?.file_url, "institute-media");
+  if (!image && profile?.avatar_url) {
+    const avatar = profile.avatar_url;
+    image = /^https:\/\//i.test(avatar)
+      ? avatar
+      : process.env.NEXT_PUBLIC_SUPABASE_URL
+        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/avatars/${avatar.replace(/^\/+/, "")}`
+        : null;
+  }
+  return makeShareMetadata({
+    title: `${name} | Vidya Infinity`,
+    description,
+    path: `/institutes/${encodeURIComponent(slug)}`,
+    image,
+  });
 }
 
 export default async function InstituteDetailsPage({ params }: { params: Promise<{ slug: string }> }) {
