@@ -45,7 +45,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const attempts = uuid
     ? [await lookup("status", false), await lookup("approval_status", false)]
     : [await lookup("status", true), await lookup("approval_status", true)];
-  let institute = attempts.find((result) => result.data)?.data;
+  const institute = attempts.find((result) => result.data)?.data;
   // Previous deployments allow profile-based institute pages by user ID.
   let profile: { organization_name?: string | null; full_name?: string | null; avatar_url?: string | null } | null = null;
   if (!institute && uuid) {
