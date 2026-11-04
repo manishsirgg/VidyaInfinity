@@ -30,6 +30,8 @@ export function FilterableListings({ items, cards, facets, columns = 2, priceLab
   const [featuredOnly, setFeaturedOnly] = useState(false);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [sort, setSort] = useState("recommended");
+  const [page, setPage] = useState(1);
+  const pageSize = 12;
 
   const facetValues = useMemo(() => facets.map((facet) => ({
     ...facet,
@@ -50,7 +52,11 @@ export function FilterableListings({ items, cards, facets, columns = 2, priceLab
     return a.index - b.index;
   }), [items, cards, facets, search, featuredOnly, verifiedOnly, minPrice, maxPrice, selected, sort]);
 
+  const totalPages = Math.max(1, Math.ceil(results.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = results.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const reset = () => {
+    setPage(1);
     setSearch("");
     setSelected({});
     setMinPrice("");
@@ -61,6 +67,7 @@ export function FilterableListings({ items, cards, facets, columns = 2, priceLab
   };
 
   function toggle(key: string, value: string) {
+    setPage(1);
     setSelected((previous) => {
       const current = previous[key] ?? [];
       return { ...previous, [key]: current.includes(value) ? current.filter((x) => x !== value) : [...current, value] };
@@ -78,7 +85,7 @@ export function FilterableListings({ items, cards, facets, columns = 2, priceLab
       </div>
       <label className="block">
         <span className="mb-2 block text-sm font-semibold text-slate-800">Search</span>
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search listings" aria-label="Search listings" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-600 focus:outline-none" />
+        <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search listings" aria-label="Search listings" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-600 focus:outline-none" />
       </label>
       {facetValues.map(({ key, label, values }) => values.length > 1 ? (
         <fieldset key={key} className="border-t border-slate-200 pt-4">
@@ -97,13 +104,13 @@ export function FilterableListings({ items, cards, facets, columns = 2, priceLab
         <fieldset className="border-t border-slate-200 pt-4">
           <legend className="mb-2 text-sm font-semibold text-slate-900">{priceLabel}</legend>
           <div className="grid grid-cols-2 gap-2">
-            <input value={minPrice} onChange={(e) => setMinPrice(e.target.value)} type="number" min="0" aria-label="Minimum price" placeholder="Min" className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-2 text-sm" />
-            <input value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} type="number" min="0" aria-label="Maximum price" placeholder="Max" className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-2 text-sm" />
+            <input value={minPrice} onChange={(e) => { setMinPrice(e.target.value); setPage(1); }} type="number" min="0" aria-label="Minimum price" placeholder="Min" className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-2 text-sm" />
+            <input value={maxPrice} onChange={(e) => { setMaxPrice(e.target.value); setPage(1); }} type="number" min="0" aria-label="Maximum price" placeholder="Max" className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-2 text-sm" />
           </div>
         </fieldset>
       ) : null}
-      {hasFeatured ? <label className="flex items-center gap-2 border-t border-slate-200 pt-4 text-sm text-slate-700"><input type="checkbox" checked={featuredOnly} onChange={(e) => setFeaturedOnly(e.target.checked)} className="accent-blue-700" />Featured only</label> : null}
-      {hasVerified ? <label className="flex items-center gap-2 border-t border-slate-200 pt-4 text-sm text-slate-700"><input type="checkbox" checked={verifiedOnly} onChange={(e) => setVerifiedOnly(e.target.checked)} className="accent-blue-700" />Verified only</label> : null}
+      {hasFeatured ? <label className="flex items-center gap-2 border-t border-slate-200 pt-4 text-sm text-slate-700"><input type="checkbox" checked={featuredOnly} onChange={(e) => { setFeaturedOnly(e.target.checked); setPage(1); }} className="accent-blue-700" />Featured only</label> : null}
+      {hasVerified ? <label className="flex items-center gap-2 border-t border-slate-200 pt-4 text-sm text-slate-700"><input type="checkbox" checked={verifiedOnly} onChange={(e) => { setVerifiedOnly(e.target.checked); setPage(1); }} className="accent-blue-700" />Verified only</label> : null}
     </div>
   );
 
@@ -117,10 +124,10 @@ export function FilterableListings({ items, cards, facets, columns = 2, priceLab
       </aside>
       <section aria-label="Filtered listings" className="min-w-0">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <p aria-live="polite" className="text-sm text-slate-600">{results.length} of {items.length} results</p>
+          <p aria-live="polite" className="text-sm text-slate-600">{results.length} of {items.length} results{results.length > 0 ? ` · Showing ${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, results.length)}` : ""}</p>
           <label className="flex items-center gap-2 text-sm text-slate-700">
             Sort by
-            <select value={sort} onChange={(e) => setSort(e.target.value)} className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm">
+            <select value={sort} onChange={(e) => { setSort(e.target.value); setPage(1); }} className="rounded-md border border-slate-300 bg-white px-2 py-2 text-sm">
               <option value="recommended">Recommended</option>
               <option value="az">Name A–Z</option>
               {hasPrices ? <option value="price-asc">Price: Low to high</option> : null}
@@ -128,7 +135,21 @@ export function FilterableListings({ items, cards, facets, columns = 2, priceLab
             </select>
           </label>
         </div>
-        {results.length ? <div className={`grid gap-4 ${columns === 3 ? "sm:grid-cols-2 xl:grid-cols-3" : "md:grid-cols-2"}`}>{results.map(({ item, card }) => <div className="min-w-0" key={item.id}>{card}</div>)}</div> : <div className="rounded-xl border border-slate-200 bg-white p-8 text-sm text-slate-600">{emptyLabel} <button className="ml-2 font-medium text-brand-700 underline" type="button" onClick={reset}>Clear filters</button></div>}
+        {results.length ? <div className={`grid gap-4 ${columns === 3 ? "sm:grid-cols-2 xl:grid-cols-3" : "md:grid-cols-2"}`}>{pageItems.map(({ item, card }) => <div className="min-w-0" key={item.id}>{card}</div>)}</div> : <div className="rounded-xl border border-slate-200 bg-white p-8 text-sm text-slate-600">{emptyLabel} <button className="ml-2 font-medium text-brand-700 underline" type="button" onClick={reset}>Clear filters</button></div>}
+        {totalPages > 1 && (
+          <nav aria-label="Listing pagination" className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <button type="button" disabled={currentPage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+            {Array.from({ length: totalPages }, (_, index) => index + 1)
+              .filter((number) => number === 1 || number === totalPages || Math.abs(number - currentPage) <= 2)
+              .map((number, index, numbers) => (
+                <span key={number} className="inline-flex items-center gap-2">
+                  {index > 0 && number - numbers[index - 1] > 1 ? <span aria-hidden="true" className="px-1 text-slate-400">…</span> : null}
+                  <button type="button" aria-label={`Page ${number}`} aria-current={number === currentPage ? "page" : undefined} onClick={() => setPage(number)} className={`min-w-9 rounded-md border px-3 py-2 text-sm font-medium ${number === currentPage ? "border-brand-700 bg-brand-700 text-white" : "border-slate-300 text-slate-700 hover:border-brand-600"}`}>{number}</button>
+                </span>
+              ))}
+            <button type="button" disabled={currentPage === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+          </nav>
+        )}
       </section>
     </div>
   );
