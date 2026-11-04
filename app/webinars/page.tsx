@@ -134,10 +134,10 @@ export default async function PublicWebinarsPage({ searchParams }: { searchParam
             <Link
               key={item.id}
               href={`/webinars/${item.id}`}
-              className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
+              className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
             >
-              {imageUrl ? <Image src={imageUrl} alt={item.title} width={1200} height={160} className="h-40 w-full object-cover" /> : null}
-              <div className="p-4">
+              {imageUrl ? <Image src={imageUrl} alt={item.title} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" /> : null}
+              <div className="flex-1 p-4">
                 <div className="flex items-center gap-2">
                   <p className="font-semibold">{item.title}</p>
                   {featuredWebinarIds.has(item.id) ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Featured</span> : null}
