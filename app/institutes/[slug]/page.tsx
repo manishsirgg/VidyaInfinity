@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { InstituteMediaGallery } from "@/components/institutes/institute-media-gallery";
+import { InstituteCoursesCarousel } from "@/components/institutes/institute-courses-carousel";
 import { ShareActions } from "@/components/shared/share-actions";
 import { UpdateMediaViewer } from "@/components/shared/update-media-viewer";
 import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
@@ -240,7 +241,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
       .eq("status", "approved")
       .eq("is_deleted", false)
       .order("created_at", { ascending: false })
-      .limit(6);
+      .limit(100);
 
     if (!withSlug.error) return withSlug;
 
@@ -251,7 +252,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
       .eq("status", "approved")
       .eq("is_deleted", false)
       .order("created_at", { ascending: false })
-      .limit(6);
+      .limit(100);
 
     if (!withoutSlug.error) return withoutSlug;
 
@@ -262,7 +263,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
       .eq("approval_status", "approved")
       .eq("is_deleted", false)
       .order("created_at", { ascending: false })
-      .limit(6);
+      .limit(100);
   };
 
   const [courses, webinars, instituteUpdates] = instituteId
@@ -367,12 +368,12 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-900">Courses</h2>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <InstituteCoursesCarousel courseCount={(courses.data ?? []).length}>
             {(courses.data ?? []).map((course) => (
               <Link
                 key={course.id}
                 href={`/courses/${"slug" in course && course.slug ? course.slug : course.id}`}
-                className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm"
+                className="flex h-full min-w-0 snap-start flex-col rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm"
               >
                 {(() => {
                   const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
@@ -385,7 +386,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
               </Link>
             ))}
             {(courses.data ?? []).length === 0 ? <p className="text-sm text-slate-500">No published courses yet.</p> : null}
-          </div>
+          </InstituteCoursesCarousel>
         </section>
         <section className="mt-8">
           <div className="mb-3 flex items-center justify-between">
