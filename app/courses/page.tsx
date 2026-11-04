@@ -69,13 +69,13 @@ export default async function CoursesPage() {
           const videoCount = course.course_media?.filter((media) => media.type === "video").length ?? 0;
 
           return (
-            <Link href={`/courses/${course.id}` as Route} key={course.id} className="vi-card vi-card-hover group overflow-hidden p-4 sm:p-5">
+            <Link href={`/courses/${course.id}` as Route} key={course.id} className="vi-card vi-card-hover group flex h-full min-w-0 flex-col overflow-hidden p-3 sm:p-4">
               <article>
                 {previewImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={previewImage} alt={course.title} className="mb-4 h-44 w-full rounded-lg object-cover" />
+                  <img src={previewImage} alt={course.title} className="mb-4 aspect-video w-full rounded-lg bg-slate-50 object-contain" />
                 ) : (
-                  <div className="mb-4 grid h-44 w-full place-items-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-xs text-slate-500">No preview image</div>
+                  <div className="mb-4 grid aspect-video w-full place-items-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-xs text-slate-500">No preview image</div>
                 )}
 
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -86,7 +86,7 @@ export default async function CoursesPage() {
                 <p className="mt-2 text-xs text-slate-500">
                   {course.category ?? "General"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.language ?? "-"}
                 </p>
-                <p className="mt-3 text-sm text-slate-600">{course.summary}</p>
+                <p className="mt-3 line-clamp-3 text-sm text-slate-600">{course.summary}</p>
 
                 <div className="mt-4 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
                   <p>
