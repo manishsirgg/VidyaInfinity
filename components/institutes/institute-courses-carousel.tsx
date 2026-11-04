@@ -10,7 +10,8 @@ type Props = {
 
 export function InstituteCoursesCarousel({ children, courseCount }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
-  const canScroll = courseCount > 6;
+  // Even two or three courses may overflow at mobile widths.
+  const canScroll = courseCount > 2;
 
   function move(direction: -1 | 1) {
     const element = scroller.current;
