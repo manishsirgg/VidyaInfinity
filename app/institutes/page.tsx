@@ -239,7 +239,7 @@ export default async function InstitutesPage() {
           facets: { organizationType: institute.organizationType, city: institute.city, state: institute.state, country: institute.country },
         }))}
         cards={instituteCards.map((institute) => (
-          <Link href={`/institutes/${institute.slug ?? institute.id}` as Route} key={institute.id} className="group rounded-xl border bg-white p-5 transition hover:border-brand-300">
+          <Link href={`/institutes/${institute.slug ?? institute.id}` as Route} key={institute.id} className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300">
           <article>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-medium">{institute.name}</h2>
@@ -255,11 +255,11 @@ export default async function InstitutesPage() {
               return (
                 <div className="mt-3">
                   {coverMedia.mediaType === "video" ? (
-                    <video className="h-44 w-full rounded-md border object-cover" src={coverMedia.url ?? undefined} muted preload="metadata" />
+                    <video className="aspect-video w-full rounded-md border bg-slate-50 object-contain" src={coverMedia.url ?? undefined} muted preload="metadata" />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      className="h-44 w-full rounded-md border object-cover"
+                      className="aspect-video w-full rounded-md border bg-slate-50 object-contain"
                       src={coverMedia.url ?? ""}
                       alt={coverMedia.fileName ?? `${institute.name} cover image`}
                     />
@@ -270,7 +270,7 @@ export default async function InstitutesPage() {
                 </div>
               );
             })()}
-            <p className="mt-2 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
+            <p className="mt-2 line-clamp-3 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
             <div className="mt-3 space-y-1 text-xs text-slate-600">
               <p>Type: {institute.organizationType ?? "-"}</p>
               <p>
