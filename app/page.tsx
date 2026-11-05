@@ -522,60 +522,40 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      <section className="mt-10">
-        <div className="flex items-end justify-between gap-3">
+      <section id="institutes-by-category" className="mt-12 scroll-mt-24">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold">Institutes by Category</h2>
-            <p className="mt-1 text-sm text-slate-600">Explore institutes grouped by organization type.</p>
+            <h2 className="text-2xl font-semibold text-slate-900">Institutes by Category</h2>
+            <p className="mt-1 text-sm text-slate-600">Find an institution by the kind of education it offers.</p>
           </div>
-
-          <Link href="/institutes" className="shrink-0 rounded-md border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50">View all institutions</Link>
+          <Link href="/institutes" className="shrink-0 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-700 transition hover:border-brand-400 hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">View all institutions →</Link>
         </div>
-        <div className="mt-6 space-y-8">
-          {instituteCategoryGroups.map(([category, institutes]) => (
-            <div key={category}>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{category}</h3>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {institutes.slice(0, 4).map((institute) => (
-                  <Link
-                    key={institute.id}
-                  href={`/institutes/${institute.slug ?? institute.id}` as Route}
-                  className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
-                >
-                    <article>
-                      {instituteImageById.get(institute.id) ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <Image
-                          src={instituteImageById.get(institute.id) ?? ""}
-                          alt={`${institute.name ?? "Institute"} cover`}
-                          width={1280}
-                          height={720}
-                          className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain"
-                        />
-                      ) : null}
-                      <h4 className="line-clamp-2 text-base font-medium">{institute.name ?? "Institute"}</h4>
-                      <p className="mt-2 line-clamp-3 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
-                      <p className="mt-3 text-xs text-slate-600">
-                        {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
-                          institute.email ||
-                          institute.phone ||
-                          "Details not shared yet."}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
-                      </p>
-                      <p className="mt-4 text-xs text-brand-700">View details</p>
-                    </article>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        {instituteCategoryGroups.length === 0 ? <p className="mt-4 text-sm text-slate-600">No institute categories available yet.</p> : null}
+        <HomeCategoryBrowser
+          label="institutions"
+          emptyMessage="No institutes are available yet."
+          groups={instituteCategoryGroups.map(([category, categoryInstitutes]) => ({
+            name: category,
+            cards: categoryInstitutes.slice(0, 4).map((institute) => {
+              const imageUrl = instituteImageById.get(institute.id);
+              return (
+                <Link key={institute.id} href={`/institutes/${institute.slug ?? institute.id}` as Route} className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-3 transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 sm:p-4">
+                  {imageUrl ? (
+                    <Image src={imageUrl} alt={`${institute.name ?? "Institute"} banner`} width={1280} height={720} className="aspect-video w-full rounded-lg bg-slate-50 object-contain" />
+                  ) : (
+                    <div className="grid aspect-video w-full place-items-center rounded-lg bg-slate-100 text-xs text-slate-500">Institute banner unavailable</div>
+                  )}
+                  <div className="mt-3 flex flex-1 flex-col">
+                    <h3 className="line-clamp-2 font-semibold text-slate-900">{institute.name ?? "Institute"}</h3>
+                    <p className="mt-2 line-clamp-2 text-sm text-slate-600">{institute.description ?? "Explore institution details and available courses."}</p>
+                    <p className="mt-auto pt-3 text-xs text-slate-500">
+                      {[institute.city, institute.state, institute.country].filter(Boolean).join(", ") || institute.organization_type || "Institute profile"}
+                    </p>
+                  </div>
+                </Link>
+              );
+            }),
+          }))}
+        />
       </section>
 
       <section className="mt-14 rounded-xl border bg-white p-5 sm:p-8">
