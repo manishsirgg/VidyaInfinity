@@ -26,26 +26,24 @@ export function HomeCategoryBrowser({ groups, emptyMessage, label }: Props) {
 
   return (
     <div className="mt-5">
-      <div aria-label={`Browse ${label} categories`} className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          aria-pressed={selected === "all"}
-          onClick={() => setSelected("all")}
-          className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${selected === "all" ? "border-brand-700 bg-brand-700 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-brand-300 hover:bg-brand-50"}`}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <label htmlFor={`home-category-${label}`} className="text-sm font-semibold text-slate-700">
+          Select category
+        </label>
+        <select
+          id={`home-category-${label}`}
+          aria-label={`Filter ${label} by category`}
+          value={selected}
+          onChange={(event) => setSelected(event.target.value)}
+          className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-800 shadow-sm transition focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-200 sm:max-w-md"
         >
-          All {label}
-        </button>
-        {groups.map((group) => (
-          <button
-            key={group.name}
-            type="button"
-            aria-pressed={selected === group.name}
-            onClick={() => setSelected(group.name)}
-            className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 ${selected === group.name ? "border-brand-700 bg-brand-700 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-brand-300 hover:bg-brand-50"}`}
-          >
-            {group.name} <span className="ml-1 opacity-75">({group.cards.length})</span>
-          </button>
-        ))}
+          <option value="all">All {label}</option>
+          {groups.map((group) => (
+            <option key={group.name} value={group.name}>
+              {group.name} ({group.cards.length})
+            </option>
+          ))}
+        </select>
       </div>
       <div aria-live="polite" className="mt-3 text-xs text-slate-500">
         {selected === "all" ? `Showing ${displayedCards.length} ${label.toLowerCase()} across categories` : `Showing ${displayedCards.length} in ${selected}`}
