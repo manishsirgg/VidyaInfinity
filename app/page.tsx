@@ -439,6 +439,37 @@ export default async function HomePage() {
         </section>
       ) : null}
 
+      <section id="webinars-by-category" className="mt-12 scroll-mt-24">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-900">Webinars by Category</h2>
+            <p className="mt-1 text-sm text-slate-600">Explore upcoming sessions by free or paid registration.</p>
+          </div>
+          <Link href="/webinars" className="shrink-0 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-700 transition hover:border-brand-400 hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">View all webinars →</Link>
+        </div>
+        <HomeCategoryBrowser
+          label="webinars"
+          emptyMessage="No public upcoming webinars are available right now."
+          groups={webinarCategoryGroups.map(([category, categoryWebinars]) => ({
+            name: category,
+            cards: categoryWebinars.slice(0, 4).map((webinar) => (
+              <Link key={webinar.id} href={`/webinars/${webinar.id}`} className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
+                {webinar.thumbnail_url ? (
+                  <Image src={webinar.thumbnail_url} alt={`${webinar.title} banner`} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" />
+                ) : (
+                  <div className="grid aspect-video w-full place-items-center bg-slate-100 text-xs text-slate-500">Webinar banner unavailable</div>
+                )}
+                <div className="flex flex-1 flex-col p-4">
+                  <h3 className="line-clamp-2 font-semibold text-slate-900">{webinar.title}</h3>
+                  <p className="mt-2 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
+                  <p className="mt-auto pt-3 text-sm font-semibold text-slate-900">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
+                </div>
+              </Link>
+            )),
+          }))}
+        />
+      </section>
+
       {featuredInstitutes.length > 0 ? (
         <section className="mt-14">
           <div className="flex items-end justify-between gap-3">
