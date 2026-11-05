@@ -3,6 +3,7 @@ import type { Route } from "next";
 import Link from "next/link";
 
 import { NewsletterForm } from "@/components/shared/newsletter-form";
+import { HomeCategoryBrowser } from "@/components/home/home-category-browser";
 import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { getPublicFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -246,7 +247,15 @@ export default async function HomePage() {
     (left, right) => Number(featuredWebinarIdSet.has(right.id)) - Number(featuredWebinarIdSet.has(left.id)),
   );
   const featuredWebinars = rankedWebinars.filter((webinar) => featuredWebinarIdSet.has(webinar.id)).slice(0, 3);
-  const homeWebinars = rankedWebinars.slice(0, 3);
+  // The webinar records currently have registration type (free/paid), not a topic category.
+  // Use the existing real classification rather than introducing unsupported labels.
+  const webinarCategoryGroups = Object.entries(
+    rankedWebinars.reduce<Record<string, typeof rankedWebinars>>((acc, webinar) => {
+      const category = webinar.webinar_mode === "paid" ? "Paid Webinars" : "Free Webinars";
+      acc[category] = [...(acc[category] ?? []), webinar];
+      return acc;
+    }, {}),
+  ).sort(([a], [b]) => a.localeCompare(b));
   const courseCategoryGroups = Object.entries(
     rankedCourses.reduce<Record<string, typeof rankedCourses>>((acc, course) => {
       const key = course.category || "General";
@@ -316,14 +325,12 @@ export default async function HomePage() {
 
       {featuredCourses.length > 0 ? (
         <section className="mt-14">
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl font-semibold">Featured Courses</h2>
               <p className="mt-1 text-sm text-slate-600">Handpicked approved courses available now.</p>
             </div>
-            <Link href="/courses" className="text-sm text-brand-600">
-              View all courses
-            </Link>
+
           </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {featuredCourses.map((course) => (
@@ -338,16 +345,16 @@ export default async function HomePage() {
                   <Link
                     key={course.id}
                     href={`/courses/${course.id}` as Route}
-                    className="group rounded-xl border bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
+                    className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
                   >
                     <article>
                       {courseCoverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                        <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1200} height={160} className="mb-3 h-40 w-full rounded-md border object-cover" />
+                        <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1280} height={720} className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain" />
                       ) : null}
                       <p className="text-xs text-brand-700">{course.category ?? "General"}</p>
                       <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{course.title}</h3>
-                      <p className="mt-2 line-clamp-4 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
+                      <p className="mt-2 line-clamp-3 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
                       <p className="mt-3 text-xs text-slate-600">
                         {course.duration ?? "-"} · {course.mode ?? "-"} · {course.language ?? "-"}
                       </p>
@@ -362,72 +369,60 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      <section className="mt-10">
-        <div className="flex items-end justify-between gap-3">
+      <section id="courses-by-category" className="mt-12 scroll-mt-24">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold">Courses by Category</h2>
-            <p className="mt-1 text-sm text-slate-600">Browse courses grouped by category.</p>
+            <h2 className="text-2xl font-semibold text-slate-900">Courses by Category</h2>
+            <p className="mt-1 text-sm text-slate-600">Choose a category to discover relevant learning opportunities.</p>
           </div>
+          <Link href="/courses" className="shrink-0 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-700 transition hover:border-brand-400 hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">View all courses →</Link>
         </div>
-        <div className="mt-6 space-y-8">
-          {courseCategoryGroups.map(([category, categoryCourses]) => (
-            <div key={category}>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{category}</h3>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {categoryCourses.slice(0, 4).map((course) => (
-                  (() => {
-                    const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
-                    const courseCoverUrl = courseCover
-                      ? /^https?:\/\//i.test(courseCover)
-                        ? courseCover
-                        : getPublicFileUrl({ bucket: "course-media", path: courseCover })
-                      : null;
-                    return (
-                      <Link
-                        key={course.id}
-                        href={`/courses/${course.id}` as Route}
-                        className="group rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
-                      >
-                        <article>
-                          {courseCoverUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                            <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1200} height={128} className="mb-3 h-32 w-full rounded-md border object-cover" />
-                          ) : null}
-                          <h4 className="line-clamp-2 text-base font-medium">{course.title}</h4>
-                          <p className="mt-2 line-clamp-4 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
-                          <p className="mt-3 text-xs text-slate-500">{course.subject ?? "-"} · {course.level ?? "-"}</p>
-                          <p className="mt-4 text-sm font-semibold">₹{course.fees ?? "-"}</p>
-                        </article>
-                      </Link>
-                    );
-                  })()
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        {courseCategoryGroups.length === 0 ? <p className="mt-4 text-sm text-slate-600">No course categories available yet.</p> : null}
+        <HomeCategoryBrowser
+          label="courses"
+          emptyMessage="No course categories available yet."
+          groups={courseCategoryGroups.map(([category, categoryCourses]) => ({
+            name: category,
+            cards: categoryCourses.slice(0, 4).map((course) => {
+              const cover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
+              const url = cover
+                ? /^https?:\/\//i.test(cover) ? cover : getPublicFileUrl({ bucket: "course-media", path: cover })
+                : null;
+              return (
+                <Link key={course.id} href={`/courses/${course.id}` as Route} className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-3 transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 sm:p-4">
+                  {url ? (
+                    <Image src={url} alt={`${course.title} banner`} width={1280} height={720} className="aspect-video w-full rounded-lg bg-slate-50 object-contain" />
+                  ) : (
+                    <div className="grid aspect-video w-full place-items-center rounded-lg bg-slate-100 text-xs text-slate-500">Course banner unavailable</div>
+                  )}
+                  <div className="mt-3 flex flex-1 flex-col">
+                    <h3 className="line-clamp-2 font-semibold text-slate-900">{course.title}</h3>
+                    <p className="mt-2 line-clamp-2 text-sm text-slate-600">{course.summary ?? "Explore course details and learning outcomes."}</p>
+                    <p className="mt-auto pt-3 text-sm font-semibold text-slate-900">₹{Number(course.fees ?? 0).toLocaleString("en-IN")}</p>
+                  </div>
+                </Link>
+              );
+            }),
+          }))}
+        />
       </section>
 
       {featuredWebinars.length > 0 ? (
         <section className="mt-14">
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl font-semibold">Featured Webinars</h2>
               <p className="text-sm text-slate-600">Promoted live and upcoming sessions from approved institutes.</p>
             </div>
-            <Link href="/webinars" className="text-sm text-brand-700">
-              Browse webinars
-            </Link>
+
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             {featuredWebinars.map((webinar) => (
               <Link
                 key={webinar.id}
                 href={`/webinars/${webinar.id}`}
-                className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
+                className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
               >
-                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1200} height={160} className="h-40 w-full object-cover" /> : null}
+                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" /> : null}
                 <div className="p-4">
                   <h3 className="font-semibold">{webinar.title}</h3>
                   <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
@@ -440,59 +435,52 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      {homeWebinars.length > 0 ? (
-        <section className="mt-14">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-2xl font-semibold">Upcoming Webinars</h2>
-              <p className="text-sm text-slate-600">Scheduled and live sessions from approved institutes.</p>
-            </div>
-            <Link href="/webinars" className="text-sm text-brand-700">
-              Browse webinars
-            </Link>
+      <section id="webinars-by-category" className="mt-12 scroll-mt-24">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold text-slate-900">Webinars by Category</h2>
+            <p className="mt-1 text-sm text-slate-600">Explore upcoming sessions by free or paid registration.</p>
           </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {homeWebinars.map((webinar) => (
-              <Link
-                key={webinar.id}
-                href={`/webinars/${webinar.id}`}
-                className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
-              >
-                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1200} height={160} className="h-40 w-full object-cover" /> : null}
-                <div className="p-4">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">{webinar.title}</h3>
-                    {featuredWebinarIdSet.has(webinar.id) ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Featured</span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
-                  <p className="mt-1 text-sm text-slate-600">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
-                  <p className="mt-3 text-sm text-brand-700 group-hover:underline">View webinar</p>
+          <Link href="/webinars" className="shrink-0 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-700 transition hover:border-brand-400 hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">View all webinars →</Link>
+        </div>
+        <HomeCategoryBrowser
+          label="webinars"
+          emptyMessage="No public upcoming webinars are available right now."
+          groups={webinarCategoryGroups.map(([category, categoryWebinars]) => ({
+            name: category,
+            cards: categoryWebinars.slice(0, 4).map((webinar) => (
+              <Link key={webinar.id} href={`/webinars/${webinar.id}`} className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
+                {webinar.thumbnail_url ? (
+                  <Image src={webinar.thumbnail_url} alt={`${webinar.title} banner`} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" />
+                ) : (
+                  <div className="grid aspect-video w-full place-items-center bg-slate-100 text-xs text-slate-500">Webinar banner unavailable</div>
+                )}
+                <div className="flex flex-1 flex-col p-4">
+                  <h3 className="line-clamp-2 font-semibold text-slate-900">{webinar.title}</h3>
+                  <p className="mt-2 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
+                  <p className="mt-auto pt-3 text-sm font-semibold text-slate-900">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
                 </div>
               </Link>
-            ))}
-          </div>
-        </section>
-      ) : null}
+            )),
+          }))}
+        />
+      </section>
 
       {featuredInstitutes.length > 0 ? (
         <section className="mt-14">
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl font-semibold">Featured Institutes</h2>
               <p className="mt-1 text-sm text-slate-600">Top approved institutes currently open for students.</p>
             </div>
-            <Link href="/institutes" className="text-sm text-brand-600">
-              View all institutes
-            </Link>
+
           </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {featuredInstitutes.map((institute) => (
               <Link
                 key={institute.id}
                 href={`/institutes/${institute.slug ?? institute.id}` as Route}
-                className="group rounded-xl border bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
+                className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
               >
                 <article>
                   {instituteImageById.get(institute.id) ? (
@@ -500,22 +488,19 @@ export default async function HomePage() {
                     <Image
                       src={instituteImageById.get(institute.id) ?? ""}
                       alt={`${institute.name ?? "Institute"} cover`}
-                      width={1200}
-                      height={160}
-                      className="mb-3 h-40 w-full rounded-md border object-cover"
+                      width={1280}
+                      height={720}
+                      className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain"
                     />
                   ) : null}
                   <p className="text-xs text-brand-700">{institute.organization_type ?? "General"}</p>
                   <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{institute.name ?? "Institute"}</h3>
-                  <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
+                  <p className="mt-2 line-clamp-3 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
                   <p className="mt-3 text-xs text-slate-600">
                     {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
                       institute.email ||
                       institute.phone ||
                       "Details not shared yet."}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
                     {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
@@ -528,58 +513,40 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      <section className="mt-10">
-        <div className="flex items-end justify-between gap-3">
+      <section id="institutes-by-category" className="mt-12 scroll-mt-24">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold">Institutes by Category</h2>
-            <p className="mt-1 text-sm text-slate-600">Explore institutes grouped by organization type.</p>
+            <h2 className="text-2xl font-semibold text-slate-900">Institutes by Category</h2>
+            <p className="mt-1 text-sm text-slate-600">Find an institution by the kind of education it offers.</p>
           </div>
+          <Link href="/institutes" className="shrink-0 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-700 transition hover:border-brand-400 hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">View all institutions →</Link>
         </div>
-        <div className="mt-6 space-y-8">
-          {instituteCategoryGroups.map(([category, institutes]) => (
-            <div key={category}>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{category}</h3>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {institutes.slice(0, 4).map((institute) => (
-                  <Link
-                    key={institute.id}
-                  href={`/institutes/${institute.slug ?? institute.id}` as Route}
-                  className="group rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
-                >
-                    <article>
-                      {instituteImageById.get(institute.id) ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <Image
-                          src={instituteImageById.get(institute.id) ?? ""}
-                          alt={`${institute.name ?? "Institute"} cover`}
-                          width={1200}
-                          height={128}
-                          className="mb-3 h-32 w-full rounded-md border object-cover"
-                        />
-                      ) : null}
-                      <h4 className="line-clamp-2 text-base font-medium">{institute.name ?? "Institute"}</h4>
-                      <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
-                      <p className="mt-3 text-xs text-slate-600">
-                        {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
-                          institute.email ||
-                          institute.phone ||
-                          "Details not shared yet."}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {institute.website_url ?? institute.phone ?? institute.email ?? (institute.verified ? "Verified institute" : "Profile details available")}
-                      </p>
-                      <p className="mt-4 text-xs text-brand-700">View details</p>
-                    </article>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        {instituteCategoryGroups.length === 0 ? <p className="mt-4 text-sm text-slate-600">No institute categories available yet.</p> : null}
+        <HomeCategoryBrowser
+          label="institutions"
+          emptyMessage="No institutes are available yet."
+          groups={instituteCategoryGroups.map(([category, categoryInstitutes]) => ({
+            name: category,
+            cards: categoryInstitutes.slice(0, 4).map((institute) => {
+              const imageUrl = instituteImageById.get(institute.id);
+              return (
+                <Link key={institute.id} href={`/institutes/${institute.slug ?? institute.id}` as Route} className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-3 transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 sm:p-4">
+                  {imageUrl ? (
+                    <Image src={imageUrl} alt={`${institute.name ?? "Institute"} banner`} width={1280} height={720} className="aspect-video w-full rounded-lg bg-slate-50 object-contain" />
+                  ) : (
+                    <div className="grid aspect-video w-full place-items-center rounded-lg bg-slate-100 text-xs text-slate-500">Institute banner unavailable</div>
+                  )}
+                  <div className="mt-3 flex flex-1 flex-col">
+                    <h3 className="line-clamp-2 font-semibold text-slate-900">{institute.name ?? "Institute"}</h3>
+                    <p className="mt-2 line-clamp-2 text-sm text-slate-600">{institute.description ?? "Explore institution details and available courses."}</p>
+                    <p className="mt-auto pt-3 text-xs text-slate-500">
+                      {[institute.city, institute.state, institute.country].filter(Boolean).join(", ") || institute.organization_type || "Institute profile"}
+                    </p>
+                  </div>
+                </Link>
+              );
+            }),
+          }))}
+        />
       </section>
 
       <section className="mt-14 rounded-xl border bg-white p-5 sm:p-8">
