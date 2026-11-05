@@ -314,6 +314,12 @@ export default async function HomePage() {
         ))}
       </section>
 
+      <nav aria-label="Explore all listings" className="mt-10 flex flex-wrap gap-3">
+        <Link href="/courses" className="rounded-md bg-brand-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-800">View all courses</Link>
+        <Link href="/institutes" className="rounded-md border border-brand-300 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50">View all institutions</Link>
+        <Link href="/webinars" className="rounded-md border border-brand-300 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50">View all webinars</Link>
+      </nav>
+
       {featuredCourses.length > 0 ? (
         <section className="mt-14">
           <div className="flex items-end justify-between gap-3">
@@ -338,16 +344,16 @@ export default async function HomePage() {
                   <Link
                     key={course.id}
                     href={`/courses/${course.id}` as Route}
-                    className="group rounded-xl border bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
+                    className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
                   >
                     <article>
                       {courseCoverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                        <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1200} height={160} className="mb-3 h-40 w-full rounded-md border object-cover" />
+                        <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1280} height={720} className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain" />
                       ) : null}
                       <p className="text-xs text-brand-700">{course.category ?? "General"}</p>
                       <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{course.title}</h3>
-                      <p className="mt-2 line-clamp-4 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
+                      <p className="mt-2 line-clamp-3 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
                       <p className="mt-3 text-xs text-slate-600">
                         {course.duration ?? "-"} · {course.mode ?? "-"} · {course.language ?? "-"}
                       </p>
@@ -368,12 +374,13 @@ export default async function HomePage() {
             <h2 className="text-2xl font-semibold">Courses by Category</h2>
             <p className="mt-1 text-sm text-slate-600">Browse courses grouped by category.</p>
           </div>
-        </div>
+
+          <Link href="/courses" className="shrink-0 rounded-md border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50">View all courses</Link>        </div>
         <div className="mt-6 space-y-8">
           {courseCategoryGroups.map(([category, categoryCourses]) => (
             <div key={category}>
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{category}</h3>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {categoryCourses.slice(0, 4).map((course) => (
                   (() => {
                     const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
@@ -386,15 +393,15 @@ export default async function HomePage() {
                       <Link
                         key={course.id}
                         href={`/courses/${course.id}` as Route}
-                        className="group rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
+                        className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
                       >
                         <article>
                           {courseCoverUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                            <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1200} height={128} className="mb-3 h-32 w-full rounded-md border object-cover" />
+                            <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1280} height={720} className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain" />
                           ) : null}
                           <h4 className="line-clamp-2 text-base font-medium">{course.title}</h4>
-                          <p className="mt-2 line-clamp-4 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
+                          <p className="mt-2 line-clamp-3 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
                           <p className="mt-3 text-xs text-slate-500">{course.subject ?? "-"} · {course.level ?? "-"}</p>
                           <p className="mt-4 text-sm font-semibold">₹{course.fees ?? "-"}</p>
                         </article>
@@ -417,7 +424,7 @@ export default async function HomePage() {
               <p className="text-sm text-slate-600">Promoted live and upcoming sessions from approved institutes.</p>
             </div>
             <Link href="/webinars" className="text-sm text-brand-700">
-              Browse webinars
+              View all webinars
             </Link>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -425,9 +432,9 @@ export default async function HomePage() {
               <Link
                 key={webinar.id}
                 href={`/webinars/${webinar.id}`}
-                className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
+                className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
               >
-                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1200} height={160} className="h-40 w-full object-cover" /> : null}
+                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" /> : null}
                 <div className="p-4">
                   <h3 className="font-semibold">{webinar.title}</h3>
                   <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
@@ -448,7 +455,7 @@ export default async function HomePage() {
               <p className="text-sm text-slate-600">Scheduled and live sessions from approved institutes.</p>
             </div>
             <Link href="/webinars" className="text-sm text-brand-700">
-              Browse webinars
+              View all webinars
             </Link>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
@@ -456,9 +463,9 @@ export default async function HomePage() {
               <Link
                 key={webinar.id}
                 href={`/webinars/${webinar.id}`}
-                className="group overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
+                className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
               >
-                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1200} height={160} className="h-40 w-full object-cover" /> : null}
+                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" /> : null}
                 <div className="p-4">
                   <div className="flex items-center gap-2">
                     <h3 className="font-semibold">{webinar.title}</h3>
@@ -484,7 +491,7 @@ export default async function HomePage() {
               <p className="mt-1 text-sm text-slate-600">Top approved institutes currently open for students.</p>
             </div>
             <Link href="/institutes" className="text-sm text-brand-600">
-              View all institutes
+              View all institutions
             </Link>
           </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -492,7 +499,7 @@ export default async function HomePage() {
               <Link
                 key={institute.id}
                 href={`/institutes/${institute.slug ?? institute.id}` as Route}
-                className="group rounded-xl border bg-white p-5 transition hover:border-brand-300 hover:shadow-sm"
+                className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
               >
                 <article>
                   {instituteImageById.get(institute.id) ? (
@@ -500,14 +507,14 @@ export default async function HomePage() {
                     <Image
                       src={instituteImageById.get(institute.id) ?? ""}
                       alt={`${institute.name ?? "Institute"} cover`}
-                      width={1200}
-                      height={160}
-                      className="mb-3 h-40 w-full rounded-md border object-cover"
+                      width={1280}
+                      height={720}
+                      className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain"
                     />
                   ) : null}
                   <p className="text-xs text-brand-700">{institute.organization_type ?? "General"}</p>
                   <h3 className="mt-1 line-clamp-2 text-lg font-semibold">{institute.name ?? "Institute"}</h3>
-                  <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
+                  <p className="mt-2 line-clamp-3 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
                   <p className="mt-3 text-xs text-slate-600">
                     {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
                       institute.email ||
@@ -534,17 +541,18 @@ export default async function HomePage() {
             <h2 className="text-2xl font-semibold">Institutes by Category</h2>
             <p className="mt-1 text-sm text-slate-600">Explore institutes grouped by organization type.</p>
           </div>
-        </div>
+
+          <Link href="/institutes" className="shrink-0 rounded-md border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50">View all institutions</Link>        </div>
         <div className="mt-6 space-y-8">
           {instituteCategoryGroups.map(([category, institutes]) => (
             <div key={category}>
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{category}</h3>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {institutes.slice(0, 4).map((institute) => (
                   <Link
                     key={institute.id}
                   href={`/institutes/${institute.slug ?? institute.id}` as Route}
-                  className="group rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
+                  className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
                 >
                     <article>
                       {instituteImageById.get(institute.id) ? (
@@ -552,13 +560,13 @@ export default async function HomePage() {
                         <Image
                           src={instituteImageById.get(institute.id) ?? ""}
                           alt={`${institute.name ?? "Institute"} cover`}
-                          width={1200}
-                          height={128}
-                          className="mb-3 h-32 w-full rounded-md border object-cover"
+                          width={1280}
+                          height={720}
+                          className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain"
                         />
                       ) : null}
                       <h4 className="line-clamp-2 text-base font-medium">{institute.name ?? "Institute"}</h4>
-                      <p className="mt-2 line-clamp-5 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
+                      <p className="mt-2 line-clamp-3 text-sm text-slate-600">{institute.description ?? "No description available."}</p>
                       <p className="mt-3 text-xs text-slate-600">
                         {[institute.address_line_1, institute.city, institute.state, institute.country, institute.postal_code].filter(Boolean).join(", ") ||
                           institute.email ||
