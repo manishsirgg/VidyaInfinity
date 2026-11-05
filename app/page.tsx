@@ -3,6 +3,7 @@ import type { Route } from "next";
 import Link from "next/link";
 
 import { NewsletterForm } from "@/components/shared/newsletter-form";
+import { HomeCategoryBrowser } from "@/components/home/home-category-browser";
 import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
 import { getPublicFileUrl } from "@/lib/storage/uploads";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -246,7 +247,15 @@ export default async function HomePage() {
     (left, right) => Number(featuredWebinarIdSet.has(right.id)) - Number(featuredWebinarIdSet.has(left.id)),
   );
   const featuredWebinars = rankedWebinars.filter((webinar) => featuredWebinarIdSet.has(webinar.id)).slice(0, 3);
-  const homeWebinars = rankedWebinars.slice(0, 3);
+  // The webinar records currently have registration type (free/paid), not a topic category.
+  // Use the existing real classification rather than introducing unsupported labels.
+  const webinarCategoryGroups = Object.entries(
+    rankedWebinars.reduce<Record<string, typeof rankedWebinars>>((acc, webinar) => {
+      const category = webinar.webinar_mode === "paid" ? "Paid Webinars" : "Free Webinars";
+      acc[category] = [...(acc[category] ?? []), webinar];
+      return acc;
+    }, {}),
+  ).sort(([a], [b]) => a.localeCompare(b));
   const courseCategoryGroups = Object.entries(
     rankedCourses.reduce<Record<string, typeof rankedCourses>>((acc, course) => {
       const key = course.category || "General";
@@ -313,12 +322,6 @@ export default async function HomePage() {
           </Link>
         ))}
       </section>
-
-      <nav aria-label="Explore all listings" className="mt-10 flex flex-wrap gap-3">
-        <Link href="/courses" className="rounded-md bg-brand-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-800">View all courses</Link>
-        <Link href="/institutes" className="rounded-md border border-brand-300 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50">View all institutions</Link>
-        <Link href="/webinars" className="rounded-md border border-brand-300 px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50">View all webinars</Link>
-      </nav>
 
       {featuredCourses.length > 0 ? (
         <section className="mt-14">
@@ -438,42 +441,6 @@ export default async function HomePage() {
                 {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" /> : null}
                 <div className="p-4">
                   <h3 className="font-semibold">{webinar.title}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
-                  <p className="mt-1 text-sm text-slate-600">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
-                  <p className="mt-3 text-sm text-brand-700 group-hover:underline">View webinar</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {homeWebinars.length > 0 ? (
-        <section className="mt-14">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="text-2xl font-semibold">Upcoming Webinars</h2>
-              <p className="text-sm text-slate-600">Scheduled and live sessions from approved institutes.</p>
-            </div>
-            <Link href="/webinars" className="text-sm text-brand-700">
-              View all webinars
-            </Link>
-          </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {homeWebinars.map((webinar) => (
-              <Link
-                key={webinar.id}
-                href={`/webinars/${webinar.id}`}
-                className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white transition hover:border-brand-300 hover:shadow-sm"
-              >
-                {webinar.thumbnail_url ? <Image src={webinar.thumbnail_url} alt={webinar.title} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" /> : null}
-                <div className="p-4">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">{webinar.title}</h3>
-                    {featuredWebinarIdSet.has(webinar.id) ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Featured</span>
-                    ) : null}
-                  </div>
                   <p className="mt-1 text-sm text-slate-600">{new Date(webinar.starts_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</p>
                   <p className="mt-1 text-sm text-slate-600">{webinar.webinar_mode === "paid" ? `₹${Number(webinar.price ?? 0).toLocaleString("en-IN")}` : "Free"}</p>
                   <p className="mt-3 text-sm text-brand-700 group-hover:underline">View webinar</p>
