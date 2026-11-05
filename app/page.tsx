@@ -375,7 +375,8 @@ export default async function HomePage() {
             <p className="mt-1 text-sm text-slate-600">Browse courses grouped by category.</p>
           </div>
 
-          <Link href="/courses" className="shrink-0 rounded-md border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50">View all courses</Link>        </div>
+          <Link href="/courses" className="shrink-0 rounded-md border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50">View all courses</Link>
+        </div>
         <div className="mt-6 space-y-8">
           {courseCategoryGroups.map(([category, categoryCourses]) => (
             <div key={category}>
@@ -542,7 +543,8 @@ export default async function HomePage() {
             <p className="mt-1 text-sm text-slate-600">Explore institutes grouped by organization type.</p>
           </div>
 
-          <Link href="/institutes" className="shrink-0 rounded-md border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50">View all institutions</Link>        </div>
+          <Link href="/institutes" className="shrink-0 rounded-md border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50">View all institutions</Link>
+        </div>
         <div className="mt-6 space-y-8">
           {instituteCategoryGroups.map(([category, institutes]) => (
             <div key={category}>
