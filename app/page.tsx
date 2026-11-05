@@ -371,53 +371,41 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      <section className="mt-10">
-        <div className="flex items-end justify-between gap-3">
+      <section id="courses-by-category" className="mt-12 scroll-mt-24">
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-semibold">Courses by Category</h2>
-            <p className="mt-1 text-sm text-slate-600">Browse courses grouped by category.</p>
+            <h2 className="text-2xl font-semibold text-slate-900">Courses by Category</h2>
+            <p className="mt-1 text-sm text-slate-600">Choose a category to discover relevant learning opportunities.</p>
           </div>
-
-          <Link href="/courses" className="shrink-0 rounded-md border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50">View all courses</Link>
+          <Link href="/courses" className="shrink-0 rounded-lg border border-brand-200 bg-white px-4 py-2 text-sm font-semibold text-brand-700 transition hover:border-brand-400 hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">View all courses →</Link>
         </div>
-        <div className="mt-6 space-y-8">
-          {courseCategoryGroups.map(([category, categoryCourses]) => (
-            <div key={category}>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">{category}</h3>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {categoryCourses.slice(0, 4).map((course) => (
-                  (() => {
-                    const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
-                    const courseCoverUrl = courseCover
-                      ? /^https?:\/\//i.test(courseCover)
-                        ? courseCover
-                        : getPublicFileUrl({ bucket: "course-media", path: courseCover })
-                      : null;
-                    return (
-                      <Link
-                        key={course.id}
-                        href={`/courses/${course.id}` as Route}
-                        className="group flex h-full min-w-0 flex-col rounded-xl border bg-white p-4 transition hover:border-brand-300 hover:shadow-sm"
-                      >
-                        <article>
-                          {courseCoverUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                            <Image src={courseCoverUrl} alt={`${course.title} preview`} width={1280} height={720} className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain" />
-                          ) : null}
-                          <h4 className="line-clamp-2 text-base font-medium">{course.title}</h4>
-                          <p className="mt-2 line-clamp-3 text-sm text-slate-600">{course.summary ?? "No summary available."}</p>
-                          <p className="mt-3 text-xs text-slate-500">{course.subject ?? "-"} · {course.level ?? "-"}</p>
-                          <p className="mt-4 text-sm font-semibold">₹{course.fees ?? "-"}</p>
-                        </article>
-                      </Link>
-                    );
-                  })()
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        {courseCategoryGroups.length === 0 ? <p className="mt-4 text-sm text-slate-600">No course categories available yet.</p> : null}
+        <HomeCategoryBrowser
+          label="courses"
+          emptyMessage="No course categories available yet."
+          groups={courseCategoryGroups.map(([category, categoryCourses]) => ({
+            name: category,
+            cards: categoryCourses.slice(0, 4).map((course) => {
+              const cover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
+              const url = cover
+                ? /^https?:\/\//i.test(cover) ? cover : getPublicFileUrl({ bucket: "course-media", path: cover })
+                : null;
+              return (
+                <Link key={course.id} href={`/courses/${course.id}` as Route} className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-3 transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 sm:p-4">
+                  {url ? (
+                    <Image src={url} alt={`${course.title} banner`} width={1280} height={720} className="aspect-video w-full rounded-lg bg-slate-50 object-contain" />
+                  ) : (
+                    <div className="grid aspect-video w-full place-items-center rounded-lg bg-slate-100 text-xs text-slate-500">Course banner unavailable</div>
+                  )}
+                  <div className="mt-3 flex flex-1 flex-col">
+                    <h3 className="line-clamp-2 font-semibold text-slate-900">{course.title}</h3>
+                    <p className="mt-2 line-clamp-2 text-sm text-slate-600">{course.summary ?? "Explore course details and learning outcomes."}</p>
+                    <p className="mt-auto pt-3 text-sm font-semibold text-slate-900">₹{Number(course.fees ?? 0).toLocaleString("en-IN")}</p>
+                  </div>
+                </Link>
+              );
+            }),
+          }))}
+        />
       </section>
 
       {featuredWebinars.length > 0 ? (
