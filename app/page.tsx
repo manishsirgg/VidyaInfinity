@@ -325,14 +325,12 @@ export default async function HomePage() {
 
       {featuredCourses.length > 0 ? (
         <section className="mt-14">
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl font-semibold">Featured Courses</h2>
               <p className="mt-1 text-sm text-slate-600">Handpicked approved courses available now.</p>
             </div>
-            <Link href="/courses" className="text-sm text-brand-600">
-              View all courses
-            </Link>
+
           </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {featuredCourses.map((course) => (
@@ -410,14 +408,12 @@ export default async function HomePage() {
 
       {featuredWebinars.length > 0 ? (
         <section className="mt-14">
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl font-semibold">Featured Webinars</h2>
               <p className="text-sm text-slate-600">Promoted live and upcoming sessions from approved institutes.</p>
             </div>
-            <Link href="/webinars" className="text-sm text-brand-700">
-              View all webinars
-            </Link>
+
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             {featuredWebinars.map((webinar) => (
@@ -472,14 +468,12 @@ export default async function HomePage() {
 
       {featuredInstitutes.length > 0 ? (
         <section className="mt-14">
-          <div className="flex items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl font-semibold">Featured Institutes</h2>
               <p className="mt-1 text-sm text-slate-600">Top approved institutes currently open for students.</p>
             </div>
-            <Link href="/institutes" className="text-sm text-brand-600">
-              View all institutions
-            </Link>
+
           </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {featuredInstitutes.map((institute) => (
