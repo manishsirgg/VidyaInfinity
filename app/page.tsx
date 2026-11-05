@@ -263,8 +263,7 @@ export default async function HomePage() {
       return acc;
     }, {}),
   )
-    .sort(([a], [b]) => a.localeCompare(b))
-;
+    .sort(([a], [b]) => a.localeCompare(b));
 
   const instituteIds = institutesForHome.map((institute) => institute.id);
   const featuredInstituteRows = instituteIds.length
@@ -288,8 +287,7 @@ export default async function HomePage() {
       return acc;
     }, {}),
   )
-    .sort(([a], [b]) => a.localeCompare(b))
-;
+    .sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:py-14 lg:py-16">
