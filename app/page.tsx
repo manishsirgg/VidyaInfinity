@@ -263,8 +263,7 @@ export default async function HomePage() {
       return acc;
     }, {}),
   )
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(0, 4);
+    .sort(([a], [b]) => a.localeCompare(b));
 
   const instituteIds = institutesForHome.map((institute) => institute.id);
   const featuredInstituteRows = instituteIds.length
@@ -288,8 +287,7 @@ export default async function HomePage() {
       return acc;
     }, {}),
   )
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(0, 4);
+    .sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:py-14 lg:py-16">
@@ -382,7 +380,7 @@ export default async function HomePage() {
           emptyMessage="No course categories available yet."
           groups={courseCategoryGroups.map(([category, categoryCourses]) => ({
             name: category,
-            cards: categoryCourses.slice(0, 4).map((course) => {
+            cards: categoryCourses.slice(0, 6).map((course) => {
               const cover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
               const url = cover
                 ? /^https?:\/\//i.test(cover) ? cover : getPublicFileUrl({ bucket: "course-media", path: cover })
@@ -448,7 +446,7 @@ export default async function HomePage() {
           emptyMessage="No public upcoming webinars are available right now."
           groups={webinarCategoryGroups.map(([category, categoryWebinars]) => ({
             name: category,
-            cards: categoryWebinars.slice(0, 4).map((webinar) => (
+            cards: categoryWebinars.slice(0, 6).map((webinar) => (
               <Link key={webinar.id} href={`/webinars/${webinar.id}`} className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
                 {webinar.thumbnail_url ? (
                   <Image src={webinar.thumbnail_url} alt={`${webinar.title} banner`} width={1280} height={720} className="aspect-video w-full bg-slate-50 object-contain" />
@@ -526,7 +524,7 @@ export default async function HomePage() {
           emptyMessage="No institutes are available yet."
           groups={instituteCategoryGroups.map(([category, categoryInstitutes]) => ({
             name: category,
-            cards: categoryInstitutes.slice(0, 4).map((institute) => {
+            cards: categoryInstitutes.slice(0, 6).map((institute) => {
               const imageUrl = instituteImageById.get(institute.id);
               return (
                 <Link key={institute.id} href={`/institutes/${institute.slug ?? institute.id}` as Route} className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-3 transition duration-200 hover:-translate-y-1 hover:border-brand-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 sm:p-4">
