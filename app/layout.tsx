@@ -8,6 +8,7 @@ import "./globals.css";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 import { WhatsAppFloat } from "@/components/shared/whatsapp-float";
+import { BackToTop } from "@/components/shared/back-to-top";
 import { siteConfig } from "@/lib/constants/site";
 
 export const metadata: Metadata = {
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="min-h-[calc(100vh-200px)] pb-8">{children}</main>
         <SiteFooter />
         <WhatsAppFloat />
+        <BackToTop />
         <Analytics />
         <SpeedInsights />
       </body>
