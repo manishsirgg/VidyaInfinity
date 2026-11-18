@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 
+import { InstituteSocialLinks } from "@/components/institutes/institute-social-links";
 import { InstituteMediaGallery } from "@/components/institutes/institute-media-gallery";
 import { InstituteCoursesCarousel } from "@/components/institutes/institute-courses-carousel";
 import { ShareActions } from "@/components/shared/share-actions";
@@ -145,6 +146,17 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
             .eq("approval_status", "approved")
             .maybeSingle()
         ).data;
+
+  // Keep the optional column out of historical lookup queries and profile-only records.
+  const socialLinksRequest = instituteRecord
+    ? Promise.resolve(
+        admin.data.from("institutes")
+          .select("social_links")
+          .eq("id", instituteRecord.id)
+          .eq("status" in instituteRecord ? "status" : "approval_status", "approved")
+          .maybeSingle()
+      )
+    : Promise.resolve({ data: null });
 
   const ownerProfile =
     instituteRecord?.user_id
@@ -289,6 +301,8 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
       ])
     : [{ data: [] }, { data: [] }, { data: [] }];
 
+  const { data: socialLinks } = await socialLinksRequest;
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
       <article className="overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-sm">
@@ -300,6 +314,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
             <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700">{location || "Location unavailable"}</span>
             {instituteVerified ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">Verified institute</span> : null}
           </div>
+          <InstituteSocialLinks links={socialLinks?.social_links} website={instituteWebsite} />
         </div>
         <div className="p-8">
         <ShareActions title={instituteName} text={instituteDescription ?? undefined} url={shareUrl} className="mt-3" />
