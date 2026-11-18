@@ -48,7 +48,38 @@ export default async function ContactPage() {
             </Link>
           </p>
           <p>Subsidiary: Infinity Global Advisory</p>
-          <p>Address: {siteConfig.address}</p>
+          <div className="mt-4 divide-y divide-slate-200 border-t border-slate-200">
+            <div className="flex gap-3 py-3">
+              <span aria-hidden="true" className="text-brand-700">📍</span>
+              <div>
+                <h2 className="font-semibold text-slate-900">Noida Office</h2>
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(siteConfig.address)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-brand-700 hover:underline"
+                  aria-label="View Noida office directions on Google Maps"
+                >
+                  {siteConfig.address}, India
+                </a>
+              </div>
+            </div>
+            <div className="flex gap-3 py-3">
+              <span aria-hidden="true" className="text-brand-700">📍</span>
+              <div>
+                <h2 className="font-semibold text-slate-900">Indore Office</h2>
+                <a
+                  href="https://www.google.com/maps/search/?api=1&query=C.S.%20Residency%2C%20525%2C%20MR-6%2C%20Mahalaxmi%20Nagar%2C%20Indore%2C%20Madhya%20Pradesh%20452010%2C%20India"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-brand-700 hover:underline"
+                  aria-label="View Indore office directions on Google Maps"
+                >
+                  C.S. Residency, 525, MR-6, Mahalaxmi Nagar, Indore, Madhya Pradesh 452010, India
+                </a>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="rounded-xl border bg-white p-5">
