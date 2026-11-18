@@ -6,6 +6,8 @@ import { INSTITUTE_APPROVAL_DOCUMENT_OPTIONS, getInstituteApprovalSubtypeLabel }
 import { ORGANIZATION_TYPE_OPTIONS, normalizeOrganizationType } from "@/lib/constants/organization-types";
 import { SOCIAL_LINK_FIELDS, SOCIAL_LINK_MAX_LENGTH, type InstituteSocialLinks } from "@/lib/institutes/social-links";
 
+import { countInstituteDescriptionWords, INSTITUTE_DESCRIPTION_WORD_LIMIT, INSTITUTE_TAGLINE_CHARACTER_LIMIT } from "@/lib/institutes/profile-copy";
+
 type Props = {
   role: "student" | "institute" | "admin";
 };
@@ -14,7 +16,7 @@ type GenericPayload = Record<string, string | number | null | undefined>;
 type InstitutePayload = Partial<Pick<GenericPayload,
   | "name" | "status" | "rejection_reason" | "organization_type"
   | "legal_entity_name" | "registration_number" | "accreditation_affiliation_number"
-  | "website_url" | "established_year" | "total_students" | "total_staff" | "description"
+  | "brand_tagline" | "website_url" | "established_year" | "total_students" | "total_staff" | "description"
 >> & { social_links?: InstituteSocialLinks };
 
 type UserDocument = {
@@ -78,6 +80,8 @@ export function ProfileSettingsForm({ role }: Props) {
   const [profile, setProfile] = useState<GenericPayload>({});
   const [details, setDetails] = useState<GenericPayload>({});
   const [institute, setInstitute] = useState<InstitutePayload>({});
+  const [description, setDescription] = useState("");
+  const descriptionWords = countInstituteDescriptionWords(description);
   const [socialLinks, setSocialLinks] = useState<InstituteSocialLinks>({});
   const [userDocuments, setUserDocuments] = useState<UserDocument[]>([]);
   const [instituteDocuments, setInstituteDocuments] = useState<InstituteDocument[]>([]);
@@ -105,6 +109,7 @@ export function ProfileSettingsForm({ role }: Props) {
     setProfile(body?.profile ?? {});
     setDetails(body?.details ?? {});
     setInstitute(body?.institute ?? {});
+    setDescription(String(body?.institute?.description ?? ""));
     setSocialLinks(body?.institute?.social_links ?? {});
     setUserDocuments(Array.isArray(body?.userDocuments) ? body.userDocuments : []);
     setInstituteDocuments(Array.isArray(body?.instituteDocuments) ? body.instituteDocuments : []);
@@ -200,6 +205,16 @@ export function ProfileSettingsForm({ role }: Props) {
 
     try {
       const formData = new FormData(event.currentTarget);
+      if (role === "institute") {
+        if (description.trim() === String(institute.description ?? "").trim()) {
+          formData.delete("description");
+        } else if (descriptionWords > INSTITUTE_DESCRIPTION_WORD_LIMIT) {
+          throw new Error(`Institute description must not exceed ${INSTITUTE_DESCRIPTION_WORD_LIMIT} words.`);
+        }
+        if (String(formData.get("brandTagline") ?? "").trim() === String(institute.brand_tagline ?? "")) {
+          formData.delete("brandTagline");
+        }
+      }
       if (role === "institute" && institute.social_links && SOCIAL_LINK_FIELDS.some(({ key }) => (
         (socialLinks[key] ?? "") !== (institute.social_links?.[key] ?? "")
       ))) {
@@ -292,6 +307,19 @@ export function ProfileSettingsForm({ role }: Props) {
 
         <h3 className="mt-2 text-sm font-semibold text-slate-700">Basic details</h3>
         <input required name="fullName" defaultValue={String(profile.full_name ?? "")} placeholder="Full name" className="rounded border px-3 py-2" />
+        {role === "institute" ? (
+          <label className="grid gap-1 text-sm font-medium text-slate-700">
+            Brand Tagline <input
+              key={String(institute.brand_tagline ?? "")}
+              name="brandTagline"
+              defaultValue={String(institute.brand_tagline ?? "")}
+              maxLength={INSTITUTE_TAGLINE_CHARACTER_LIMIT}
+              placeholder="A short line to display below your institute name"
+              disabled={loading || institute.brand_tagline === undefined}
+              className="rounded border px-3 py-2"
+            />
+          </label>
+        ) : null}
         <input required type="email" name="email" defaultValue={String(profile.email ?? "")} placeholder="Email" className="rounded border px-3 py-2" />
         <input name="phone" defaultValue={String(profile.phone ?? "")} placeholder="Phone number" className="rounded border px-3 py-2" />
         <input name="city" defaultValue={String(profile.city ?? "")} placeholder="City" className="rounded border px-3 py-2" />
@@ -359,13 +387,20 @@ export function ProfileSettingsForm({ role }: Props) {
             />
             <input name="totalStudents" type="number" min={0} defaultValue={String(institute.total_students ?? "")} placeholder="Total students" className="rounded border px-3 py-2" />
             <input name="totalStaff" type="number" min={0} defaultValue={String(institute.total_staff ?? "")} placeholder="Total staff" className="rounded border px-3 py-2" />
-            <textarea
-              name="description"
-              defaultValue={String(institute.description ?? "")}
-              placeholder="Institute description (max 2500 words)"
-              className="min-h-24 rounded border px-3 py-2"
-            />
-            <p className="text-xs text-slate-500">Keep institute description within 2500 words.</p>
+            <label className="grid gap-1 text-sm font-medium text-slate-700">
+              Institute description
+              <textarea
+                name="description"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                aria-describedby="institute-description-limit"
+                placeholder="Tell visitors about your institute"
+                className="min-h-24 rounded border px-3 py-2"
+              />
+            </label>
+            <p id="institute-description-limit" className={`text-xs ${descriptionWords > INSTITUTE_DESCRIPTION_WORD_LIMIT ? "text-rose-700" : "text-slate-500"}`}>
+              {descriptionWords} / {INSTITUTE_DESCRIPTION_WORD_LIMIT} words. Shown in the About section.
+            </p>
 
             <fieldset className="mt-2 min-w-0 rounded-lg border border-slate-200 p-3">
               <legend className="px-1 text-sm font-semibold text-slate-700">Social Media &amp; Online Presence</legend>

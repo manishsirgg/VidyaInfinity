@@ -12,6 +12,7 @@ import { InstituteCoursesCarousel } from "@/components/institutes/institute-cour
 import { ShareActions } from "@/components/shared/share-actions";
 import { UpdateMediaViewer } from "@/components/shared/update-media-viewer";
 import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
+import { publicInstituteDescription } from "@/lib/institutes/profile-copy";
 import { normalizeInstituteWebsite, readInstituteSocialLinks } from "@/lib/institutes/social-links";
 import { siteConfig } from "@/lib/constants/site";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -150,16 +151,15 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
             .maybeSingle()
         ).data;
 
-  // Keep the optional column out of historical lookup queries and profile-only records.
-  const socialLinksRequest = instituteRecord
-    ? Promise.resolve(
-        admin.data.from("institutes")
-          .select("social_links")
-          .eq("id", instituteRecord.id)
-          .eq("status" in instituteRecord ? "status" : "approval_status", "approved")
-          .maybeSingle()
-      )
-    : Promise.resolve({ data: null });
+  // Read optional fields only after the approved institute lookup succeeds.
+  const instituteExtras = instituteRecord
+    ? Promise.all([
+        admin.data.from("institutes").select("social_links").eq("id", instituteRecord.id)
+          .eq("status" in instituteRecord ? "status" : "approval_status", "approved").maybeSingle(),
+        admin.data.from("institutes").select("brand_tagline").eq("id", instituteRecord.id)
+          .eq("status" in instituteRecord ? "status" : "approval_status", "approved").maybeSingle(),
+      ])
+    : Promise.resolve([{ data: null }, { data: null }] as const);
 
   const ownerProfile =
     instituteRecord?.user_id
@@ -304,12 +304,9 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
       ])
     : [{ data: [] }, { data: [] }, { data: [] }];
 
-  const { data: socialLinks } = await socialLinksRequest;
-
-  const description = instituteDescription?.trim();
-  const intro = description && description.length > 250
-    ? `${description.slice(0, 250).replace(/\s+\S*$/, "").trimEnd()}…`
-    : description;
+  const [{ data: socialLinks }, { data: branding }] = await instituteExtras;
+  const tagline = branding?.brand_tagline?.trim();
+  const description = publicInstituteDescription(instituteDescription);
   const cover = mediaItems.find((item) => item.mediaType === "image" && item.url);
   const hasGallery = mediaItems.some((item) => item.url);
   const courseItems = courses.data ?? [];
@@ -330,7 +327,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
     { label: "Staff", value: instituteStaff },
     { label: "Verification", value: instituteVerified === false ? "Not verified" : null },
   ].filter(({ value }) => value != null && String(value).trim());
-  const hasOverview = Boolean((description && description !== intro) || facts.length);
+  const hasOverview = Boolean(description || facts.length);
   const navigation = [
     { id: "overview", label: "Overview", show: hasOverview },
     { id: "institute-courses", label: "Courses", show: courseItems.length },
@@ -369,7 +366,7 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
                 </ul>
               ) : null}
               <h1 className="max-w-4xl break-words text-4xl font-semibold leading-[1.08] text-white sm:text-5xl lg:text-6xl">{instituteName}</h1>
-              {intro ? <p className="mt-4 max-w-2xl whitespace-pre-line break-words text-base leading-7 text-sky-50 sm:text-lg">{intro}</p> : null}
+              {tagline ? <p className="mt-4 max-w-2xl whitespace-pre-line break-words text-base leading-7 text-sky-50 sm:text-lg">{tagline}</p> : null}
               {location || instituteYear ? (
                 <dl className="mt-7 flex flex-wrap gap-x-7 gap-y-4 border-t border-white/20 pt-5">
                   {location ? (
@@ -440,9 +437,9 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
         <article className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-1">
           {hasOverview ? (
             <InstituteSection id="overview" title="About this institute" icon={<Building2 className="size-5" aria-hidden="true" />}>
-              {description && description !== intro ? <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 sm:text-base">{description}</p> : null}
+              {description ? <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 sm:text-base">{description}</p> : null}
               {facts.length ? (
-                <dl className={`grid gap-3 sm:grid-cols-2 ${description && description !== intro ? "mt-5" : ""}`}>
+                <dl className={`grid gap-3 sm:grid-cols-2 ${description ? "mt-5" : ""}`}>
                   {facts.map(({ label, value }) => (
                     <div key={label} className="min-w-0 rounded-xl bg-slate-50 px-4 py-3">
                       <dt className="text-xs font-medium text-slate-600">{label}</dt>

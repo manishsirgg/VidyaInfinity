@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-documents";
 import { normalizeOrganizationType } from "@/lib/constants/organization-types";
+import { countInstituteDescriptionWords, INSTITUTE_DESCRIPTION_WORD_LIMIT } from "@/lib/institutes/profile-copy";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   STORAGE_BUCKETS,
@@ -49,12 +50,6 @@ function mapErrorStatus(message: string) {
     return 400;
   }
   return 500;
-}
-
-function countWords(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return 0;
-  return trimmed.split(/\s+/).filter(Boolean).length;
 }
 
 async function cleanupFailure(uploadedPaths: UploadRef[], createdUserId: string | null) {
@@ -169,8 +164,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "organizationType must be one of the supported institute organization types" }, { status: 400 });
       }
 
-      if (countWords(description) > 2500) {
-        return NextResponse.json({ error: "Institute description must not exceed 2500 words" }, { status: 400 });
+      if (countInstituteDescriptionWords(description) > INSTITUTE_DESCRIPTION_WORD_LIMIT) {
+        return NextResponse.json({ error: `Institute description must not exceed ${INSTITUTE_DESCRIPTION_WORD_LIMIT} words.` }, { status: 400 });
       }
     }
 

@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { INSTITUTE_APPROVAL_DOCUMENT_OPTIONS } from "@/lib/constants/institute-documents";
 import { ORGANIZATION_TYPE_OPTIONS } from "@/lib/constants/organization-types";
 
+import { countInstituteDescriptionWords, INSTITUTE_DESCRIPTION_WORD_LIMIT } from "@/lib/institutes/profile-copy";
+
 type Role = "student" | "institute" | "admin";
 
 type RegisterValues = Record<string, string>;
@@ -85,6 +87,10 @@ export function UnifiedRegisterForm() {
       const confirmPassword = String(values.confirmPassword ?? "");
       if (!confirmPassword) nextErrors.confirmPassword = "Please confirm your password";
       if (password && confirmPassword && password !== confirmPassword) nextErrors.confirmPassword = "Passwords do not match";
+    }
+
+    if (role === "institute" && countInstituteDescriptionWords(values.description ?? "") > INSTITUTE_DESCRIPTION_WORD_LIMIT) {
+      nextErrors.description = `Institute description must not exceed ${INSTITUTE_DESCRIPTION_WORD_LIMIT} words.`;
     }
 
     setFieldErrors(nextErrors);
@@ -228,7 +234,8 @@ export function UnifiedRegisterForm() {
             <input name="establishedYear" type="number" min={1800} max={2100} value={values.establishedYear ?? ""} onChange={(event) => updateValue("establishedYear", event.target.value)} placeholder="Established year" className="rounded border px-3 py-2" />
             <input name="totalStudents" type="number" min={0} value={values.totalStudents ?? ""} onChange={(event) => updateValue("totalStudents", event.target.value)} placeholder="Total students" className="rounded border px-3 py-2" />
             <input name="totalStaff" type="number" min={0} value={values.totalStaff ?? ""} onChange={(event) => updateValue("totalStaff", event.target.value)} placeholder="Total staff" className="rounded border px-3 py-2" />
-            <textarea name="description" value={values.description ?? ""} onChange={(event) => updateValue("description", event.target.value)} placeholder="Institute description (max 2500 words)" className="min-h-24 rounded border px-3 py-2" />
+            <textarea name="description" value={values.description ?? ""} onChange={(event) => updateValue("description", event.target.value)} placeholder={`Institute description (max ${INSTITUTE_DESCRIPTION_WORD_LIMIT} words)`} className="min-h-24 rounded border px-3 py-2" />
+            {fieldErrors.description ? <p className="text-xs text-red-600">{fieldErrors.description}</p> : null}
             <label className="text-sm font-medium text-slate-700" htmlFor="instituteMedia">Institute media (images/videos)</label>
             <input id="instituteMedia" type="file" name="instituteMedia" accept="image/png,image/jpeg,image/webp,video/mp4" multiple onChange={onMultiFileChange} className="rounded border px-3 py-2" />
             <p className="text-xs text-slate-500">Optional. Upload up to 6 files (PNG, JPG, WEBP, MP4), max 20MB each. Recommended image size: 1280×720 px (16:9).</p>
