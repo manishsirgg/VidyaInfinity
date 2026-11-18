@@ -12,9 +12,11 @@ body {
   overflow-x: hidden;
 }
 
-/* Keep the viewport as the sticky scroll container on course landing pages. */
+/* Keep the viewport as the sticky scroll container on course and institute landing pages. */
 html:has([data-course-landing]),
-body:has([data-course-landing]) {
+body:has([data-course-landing]),
+html:has([data-institute-landing]),
+body:has([data-institute-landing]) {
   overflow-x: clip;
 }
 

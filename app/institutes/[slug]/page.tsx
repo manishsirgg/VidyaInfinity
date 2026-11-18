@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import { ArrowDown, ArrowLeft, BadgeCheck, Building2, CalendarDays, GraduationCap, Images, MapPin, Megaphone } from "lucide-react";
 import { makeShareMetadata, resolveShareImage } from "@/lib/seo/share-metadata";
 import { notFound } from "next/navigation";
 import Image from "next/image";
@@ -10,6 +12,7 @@ import { InstituteCoursesCarousel } from "@/components/institutes/institute-cour
 import { ShareActions } from "@/components/shared/share-actions";
 import { UpdateMediaViewer } from "@/components/shared/update-media-viewer";
 import { getOrganizationTypeLabel } from "@/lib/constants/organization-types";
+import { normalizeInstituteWebsite, readInstituteSocialLinks } from "@/lib/institutes/social-links";
 import { siteConfig } from "@/lib/constants/site";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
@@ -303,142 +306,243 @@ export default async function InstituteDetailsPage({ params }: { params: Promise
 
   const { data: socialLinks } = await socialLinksRequest;
 
+  const description = instituteDescription?.trim();
+  const intro = description && description.length > 250
+    ? `${description.slice(0, 250).replace(/\s+\S*$/, "").trimEnd()}…`
+    : description;
+  const cover = mediaItems.find((item) => item.mediaType === "image" && item.url);
+  const hasGallery = mediaItems.some((item) => item.url);
+  const courseItems = courses.data ?? [];
+  const webinarItems = webinars.data ?? [];
+  const updates = instituteUpdates.data ?? [];
+  const publicSocialLinks = readInstituteSocialLinks(socialLinks?.social_links);
+  const websiteUrl = normalizeInstituteWebsite(instituteWebsite);
+  const email = ownerProfile?.email?.trim();
+  const phone = ownerProfile?.phone?.trim();
+  const emailHref = email && /^[^\s@?#]+@[^\s@?#]+\.[^\s@?#]+$/.test(email) ? `mailto:${email.split("@").map(encodeURIComponent).join("@")}` : null;
+  const phoneHref = phone && /^\+?[0-9][0-9 ().-]{6,29}$/.test(phone) ? `tel:${phone.replace(/[^+0-9]/g, "")}` : null;
+  const hasContact = Boolean(instituteWebsite || email || phone || fullAddress || Object.keys(publicSocialLinks).length);
+  const facts = [
+    { label: "Legal entity", value: instituteLegal },
+    { label: "Registration number", value: instituteRegistration },
+    { label: "Accreditation number", value: instituteAccreditation },
+    { label: "Students", value: instituteStudents },
+    { label: "Staff", value: instituteStaff },
+    { label: "Verification", value: instituteVerified === false ? "Not verified" : null },
+  ].filter(({ value }) => value != null && String(value).trim());
+  const hasOverview = Boolean((description && description !== intro) || facts.length);
+  const navigation = [
+    { id: "overview", label: "Overview", show: hasOverview },
+    { id: "institute-courses", label: "Courses", show: courseItems.length },
+    { id: "institute-webinars", label: "Webinars", show: webinarItems.length },
+    { id: "institute-updates", label: "Updates", show: updates.length },
+    { id: "institute-gallery", label: "Gallery", show: hasGallery },
+    { id: "institute-location", label: "Location", show: mapsEmbedUrl },
+    { id: "institute-contact", label: "Contact", show: hasContact },
+  ].filter(({ show }) => show);
+  const primaryLink = courseItems.length
+    ? { href: "#institute-courses", label: "Explore courses" }
+    : webinarItems.length
+      ? { href: "#institute-webinars", label: "Explore webinars" }
+      : hasContact
+        ? { href: "#institute-contact", label: "Contact institute" }
+        : null;
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <article className="overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-sm">
-        <div className="bg-gradient-to-r from-brand-50 via-white to-brand-50 p-8">
-          <h1 className="text-3xl font-semibold">{instituteName}</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">{instituteDescription ?? "No description available."}</p>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full border border-brand-200 bg-white px-3 py-1 text-brand-700">{instituteType ?? "Institute"}</span>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-700">{location || "Location unavailable"}</span>
-            {instituteVerified ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">Verified institute</span> : null}
+    <div data-institute-landing>
+      <header className="bg-[radial-gradient(ellipse_at_top_right,_#174c78,_#072842_68%)] text-white">
+        <div className="mx-auto w-full max-w-6xl px-4 pb-8 pt-5 sm:px-6 sm:pb-10 sm:pt-6 lg:px-8">
+          <Link href="/institutes" className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-medium text-sky-100 hover:text-white hover:underline">
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            All institutes
+          </Link>
+          <div className={`mt-5 grid items-center gap-6 sm:mt-6 lg:gap-12 ${cover ? "lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]" : ""}`}>
+            <div className="min-w-0">
+              {instituteType || instituteVerified ? (
+                <ul className="mb-4 flex flex-wrap gap-2 text-xs font-medium sm:text-sm">
+                  {instituteVerified ? (
+                    <li className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-emerald-900">
+                      <BadgeCheck className="size-4" aria-hidden="true" /> Verified institute
+                    </li>
+                  ) : null}
+                  {instituteType ? <li className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-sky-50">{instituteType}</li> : null}
+                </ul>
+              ) : null}
+              <h1 className="max-w-4xl break-words text-4xl font-semibold leading-[1.08] text-white sm:text-5xl lg:text-6xl">{instituteName}</h1>
+              {intro ? <p className="mt-4 max-w-2xl whitespace-pre-line break-words text-base leading-7 text-sky-50 sm:text-lg">{intro}</p> : null}
+              {location || instituteYear ? (
+                <dl className="mt-7 flex flex-wrap gap-x-7 gap-y-4 border-t border-white/20 pt-5">
+                  {location ? (
+                    <div className="flex items-start gap-2.5">
+                      <MapPin className="mt-0.5 size-5 shrink-0 text-sky-200" aria-hidden="true" />
+                      <div><dt className="text-xs text-sky-200">Location</dt><dd className="break-words text-sm font-medium">{location}</dd></div>
+                    </div>
+                  ) : null}
+                  {instituteYear ? (
+                    <div className="flex items-start gap-2.5">
+                      <CalendarDays className="mt-0.5 size-5 shrink-0 text-sky-200" aria-hidden="true" />
+                      <div><dt className="text-xs text-sky-200">Established</dt><dd className="text-sm font-medium">{instituteYear}</dd></div>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : null}
+              {primaryLink ? (
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <a href={primaryLink.href} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-brand-900 transition hover:bg-sky-100">
+                    {primaryLink.label} <ArrowDown className="size-4" aria-hidden="true" />
+                  </a>
+                  {hasContact && primaryLink.href !== "#institute-contact" ? (
+                    <a href="#institute-contact" className="inline-flex min-h-11 items-center rounded-xl border border-white/30 px-4 py-3 text-sm font-semibold hover:bg-white/10">Contact institute</a>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {cover?.url ? (
+              <a href="#institute-gallery" aria-label="View institute gallery" className="relative block aspect-[16/10] overflow-hidden rounded-2xl border border-white/25 bg-brand-900 shadow-xl transition hover:border-white/70">
+                <Image src={cover.url} alt="" fill sizes="(min-width: 1024px) 480px, 100vw" className="object-cover" unoptimized priority />
+                <span className="absolute bottom-3 right-3 rounded-lg bg-slate-950/80 p-2 text-white"><Images className="size-4" aria-hidden="true" /></span>
+              </a>
+            ) : null}
           </div>
-          <InstituteSocialLinks links={socialLinks?.social_links} website={instituteWebsite} />
         </div>
-        <div className="p-8">
-        <ShareActions title={instituteName} text={instituteDescription ?? undefined} url={shareUrl} className="mt-3" />
-        <InstituteMediaGallery mediaItems={mediaItems} instituteName={instituteName} />
-        <div className="mt-6 grid gap-3 text-sm text-slate-700 md:grid-cols-2">
-          <p>
-            <span className="font-medium">Type:</span> {instituteType ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Location:</span> {location || "-"}
-          </p>
-          <p>
-            <span className="font-medium">Address:</span> {fullAddress || "-"}
-          </p>
-          <p>
-            <span className="font-medium">Established:</span> {instituteYear ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Website:</span> {instituteWebsite ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Email:</span> {ownerProfile?.email ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Phone:</span> {ownerProfile?.phone ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Students:</span> {instituteStudents ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Staff:</span> {instituteStaff ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Verified:</span> {instituteVerified == null ? "-" : instituteVerified ? "Yes" : "No"}
-          </p>
-          <p>
-            <span className="font-medium">Legal entity:</span> {instituteLegal ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Registration #:</span> {instituteRegistration ?? "-"}
-          </p>
-          <p>
-            <span className="font-medium">Accreditation #:</span> {instituteAccreditation ?? "-"}
-          </p>
+      </header>
+
+      {navigation.length ? (
+        <div className="border-b border-slate-200 bg-white">
+          <nav aria-label="Institute sections" className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-sm font-medium text-slate-700 sm:px-6 lg:gap-x-7 lg:px-8">
+            {navigation.map(({ id, label }) => (
+              <a key={id} href={`#${id}`} className="inline-flex min-h-10 items-center rounded-sm hover:text-brand-700 hover:underline hover:underline-offset-4">{label}</a>
+            ))}
+          </nav>
         </div>
-        <section className="mt-8">
-          {(instituteUpdates.data ?? []).length > 0 ? (
-            <section className="mt-8">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-slate-900">Latest from This Institute</h2>
+      ) : null}
+
+      <div className={`mx-auto grid w-full max-w-6xl gap-7 px-4 py-7 sm:px-6 sm:py-9 lg:px-8 ${hasContact ? "lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-9" : ""}`}>
+        {hasContact ? (
+          <aside aria-labelledby="institute-contact-heading" className="min-w-0 lg:col-start-2 lg:row-start-1">
+            <div id="institute-contact" className="scroll-mt-32 overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-sm lg:sticky lg:top-24">
+              <h2 id="institute-contact-heading" className="border-b border-brand-100 bg-brand-50 px-5 py-4 text-lg font-semibold text-brand-900 sm:px-6">Contact institute</h2>
+              <div className="p-5 sm:p-6">
+                {email || phone || instituteWebsite || fullAddress ? (
+                  <dl className="space-y-3 break-words text-sm">
+                    {email ? <div><dt className="font-medium">Email</dt><dd>{emailHref ? <a href={emailHref} className="text-brand-700 hover:underline">{email}</a> : email}</dd></div> : null}
+                    {phone ? <div><dt className="font-medium">Phone</dt><dd>{phoneHref ? <a href={phoneHref} className="text-brand-700 hover:underline">{phone}</a> : phone}</dd></div> : null}
+                    {instituteWebsite ? <div><dt className="font-medium">Website</dt><dd>{websiteUrl ? <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="text-brand-700 hover:underline">{instituteWebsite}</a> : instituteWebsite}</dd></div> : null}
+                    {fullAddress ? <div><dt className="font-medium">Address</dt><dd className="text-slate-700">{fullAddress}</dd></div> : null}
+                  </dl>
+                ) : null}
+                <InstituteSocialLinks links={publicSocialLinks} website={websiteUrl} />
               </div>
+            </div>
+          </aside>
+        ) : null}
+
+        <article className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-1">
+          {hasOverview ? (
+            <InstituteSection id="overview" title="About this institute" icon={<Building2 className="size-5" aria-hidden="true" />}>
+              {description && description !== intro ? <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 sm:text-base">{description}</p> : null}
+              {facts.length ? (
+                <dl className={`grid gap-3 sm:grid-cols-2 ${description && description !== intro ? "mt-5" : ""}`}>
+                  {facts.map(({ label, value }) => (
+                    <div key={label} className="min-w-0 rounded-xl bg-slate-50 px-4 py-3">
+                      <dt className="text-xs font-medium text-slate-600">{label}</dt>
+                      <dd className="mt-1 break-words text-sm font-semibold">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+            </InstituteSection>
+          ) : null}
+
+          {courseItems.length ? (
+            <InstituteSection id="institute-courses" title="Courses" icon={<GraduationCap className="size-5" aria-hidden="true" />}>
+              <InstituteCoursesCarousel courseCount={courseItems.length}>
+                {courseItems.map((course) => (
+                  <Link
+                    key={course.id}
+                    href={`/courses/${"slug" in course && course.slug ? course.slug : course.id}`}
+                    className="flex h-full min-w-0 snap-start flex-col rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm"
+                  >
+                    {(() => {
+                      const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
+                      const courseCoverUrl = courseCover ? (/^https?:\/\//i.test(courseCover) ? courseCover : admin.data.storage.from("course-media").getPublicUrl(courseCover.replace(/^\/+/, "")).data.publicUrl) : null;
+                      return courseCoverUrl ? <Image src={courseCoverUrl} alt={`${course.title} cover`} width={1280} height={720} className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain" /> : null;
+                    })()}
+                    <p className="line-clamp-2 font-semibold text-slate-900">{course.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{course.summary ?? "Explore this course for detailed curriculum and outcomes."}</p>
+                    <p className="mt-3 text-xs text-slate-500">₹{Number(course.fees ?? 0)} · {course.duration ?? "Flexible duration"}</p>
+                  </Link>
+                ))}
+              </InstituteCoursesCarousel>
+            </InstituteSection>
+          ) : null}
+
+          {webinarItems.length ? (
+            <InstituteSection id="institute-webinars" title="Webinars" icon={<CalendarDays className="size-5" aria-hidden="true" />}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {webinarItems.map((webinar) => (
+                  <Link key={webinar.id} href={`/webinars/${webinar.id}`} className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm">
+                    {(() => {
+                      const webinarImage = webinar.thumbnail_url ?? webinar.banner_url ?? null;
+                      return webinarImage ? <Image src={webinarImage} alt={`${webinar.title} cover`} width={1280} height={720} className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain" /> : null;
+                    })()}
+                    <p className="line-clamp-2 font-semibold text-slate-900">{webinar.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{webinar.description ?? "Join this webinar to get live expert guidance."}</p>
+                    <p className="mt-3 text-xs text-slate-500">
+                      {webinar.starts_at ? new Date(webinar.starts_at).toLocaleString("en-IN") : "Schedule TBD"} · {webinar.webinar_mode === "paid" ? `${webinar.currency ?? "INR"} ${Number(webinar.price ?? 0)}` : "Free"}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            </InstituteSection>
+          ) : null}
+
+          {updates.length ? (
+            <InstituteSection id="institute-updates" title="Latest updates" icon={<Megaphone className="size-5" aria-hidden="true" />}>
               <div className="space-y-3">
-                {(instituteUpdates.data ?? []).map((update) => (
-                  <article key={update.id} className="rounded-xl border bg-white p-4">
-                    <p className="text-sm text-slate-800">{update.content}</p>
+                {updates.map((update) => (
+                  <article key={update.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="whitespace-pre-wrap break-words text-sm text-slate-800">{update.content}</p>
                     {update.image_url ? <UpdateMediaViewer mediaType="image" src={update.image_url} alt="Institute update" /> : null}
                     {update.video_url ? <UpdateMediaViewer mediaType="video" src={update.video_url} alt="Institute update" /> : null}
                     <p className="mt-2 text-xs text-slate-500">Posted on {new Date(update.published_at ?? update.created_at).toLocaleDateString("en-IN")}</p>
                   </article>
                 ))}
               </div>
-            </section>
+            </InstituteSection>
           ) : null}
-        </section>
-        <section className="mt-8">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-900">Courses</h2>
-          </div>
-          <InstituteCoursesCarousel courseCount={(courses.data ?? []).length}>
-            {(courses.data ?? []).map((course) => (
-              <Link
-                key={course.id}
-                href={`/courses/${"slug" in course && course.slug ? course.slug : course.id}`}
-                className="flex h-full min-w-0 snap-start flex-col rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm"
-              >
-                {(() => {
-                  const courseCover = course.course_media?.find((media) => media.type === "image")?.file_url ?? null;
-                  const courseCoverUrl = courseCover ? (/^https?:\/\//i.test(courseCover) ? courseCover : admin.data.storage.from("course-media").getPublicUrl(courseCover.replace(/^\/+/, "")).data.publicUrl) : null;
-                  return courseCoverUrl ? <Image src={courseCoverUrl} alt={`${course.title} cover`} width={1280} height={720} className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain" /> : null;
-                })()}
-                <p className="line-clamp-2 font-semibold text-slate-900">{course.title}</p>
-                <p className="mt-1 line-clamp-2 text-sm text-slate-600">{course.summary ?? "Explore this course for detailed curriculum and outcomes."}</p>
-                <p className="mt-3 text-xs text-slate-500">₹{Number(course.fees ?? 0)} · {course.duration ?? "Flexible duration"}</p>
-              </Link>
-            ))}
-            {(courses.data ?? []).length === 0 ? <p className="text-sm text-slate-500">No published courses yet.</p> : null}
-          </InstituteCoursesCarousel>
-        </section>
-        <section className="mt-8">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-slate-900">Webinars</h2>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {(webinars.data ?? []).map((webinar) => (
-              <Link key={webinar.id} href={`/webinars/${webinar.id}`} className="rounded-xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-sm">
-                {(() => {
-                  const webinarImage = webinar.thumbnail_url ?? webinar.banner_url ?? null;
-                  return webinarImage ? <Image src={webinarImage} alt={`${webinar.title} cover`} width={1280} height={720} className="mb-3 aspect-video w-full rounded-md border bg-slate-50 object-contain" /> : null;
-                })()}
-                <p className="line-clamp-2 font-semibold text-slate-900">{webinar.title}</p>
-                <p className="mt-1 line-clamp-2 text-sm text-slate-600">{webinar.description ?? "Join this webinar to get live expert guidance."}</p>
-                <p className="mt-3 text-xs text-slate-500">
-                  {webinar.starts_at ? new Date(webinar.starts_at).toLocaleString("en-IN") : "Schedule TBD"} · {webinar.webinar_mode === "paid" ? `${webinar.currency ?? "INR"} ${Number(webinar.price ?? 0)}` : "Free"}
-                </p>
-              </Link>
-            ))}
-            {(webinars.data ?? []).length === 0 ? <p className="text-sm text-slate-500">No upcoming webinars yet.</p> : null}
-          </div>
-        </section>
-        {mapsEmbedUrl ? (
-          <section className="mt-6">
-            <h2 className="text-lg font-semibold">Find on Google Maps</h2>
-            <div className="mt-3 overflow-hidden rounded-lg border">
-              <iframe title={`${instituteName} map`} src={mapsEmbedUrl} className="h-72 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
-            </div>
-            {mapsOpenUrl ? (
-              <a href={mapsOpenUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm text-brand-700 hover:underline">
+
+          {hasGallery ? (
+            <InstituteSection id="institute-gallery" title="Institute gallery" icon={<Images className="size-5" aria-hidden="true" />}>
+              <InstituteMediaGallery mediaItems={mediaItems} instituteName={instituteName} />
+            </InstituteSection>
+          ) : null}
+
+          {mapsEmbedUrl && mapsOpenUrl ? (
+            <InstituteSection id="institute-location" title="Find this institute" icon={<MapPin className="size-5" aria-hidden="true" />}>
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <iframe title={`${instituteName} map`} src={mapsEmbedUrl} className="h-72 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+              </div>
+              <a href={mapsOpenUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex min-h-10 items-center rounded-sm text-sm font-semibold text-brand-700 hover:underline">
                 Open in Google Maps
               </a>
-            ) : null}
-          </section>
-        ) : null}
-        </div>
-      </article>
+            </InstituteSection>
+          ) : null}
+          <ShareActions title={instituteName} text={description || undefined} url={shareUrl} className="px-1 pt-1" />
+        </article>
+      </div>
     </div>
+  );
+}
+
+function InstituteSection({ id, title, icon, children }: { id: string; title: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-32 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">{icon}</span>
+        <h2 id={`${id}-heading`} className="text-xl font-semibold sm:text-2xl">{title}</h2>
+      </div>
+      {children}
+    </section>
   );
 }
