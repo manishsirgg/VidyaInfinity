@@ -1,5 +1,6 @@
 "use client";
 
+import { Maximize2, Play } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type MediaItem = {
@@ -29,29 +30,30 @@ export function InstituteMediaGallery({ mediaItems, instituteName }: InstituteMe
 
   return (
     <>
-      <div className="mt-6 grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {validItems.map((item, index) => (
           <button
             key={item.id}
             type="button"
             onClick={() => openAtIndex(index)}
-            className="group relative overflow-hidden rounded-md border text-left"
+            aria-label={`Open ${item.mediaType} ${index + 1}`}
+            className="group relative aspect-video overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-left"
           >
             {item.mediaType === "video" ? (
-              <video className="h-56 w-full object-cover" src={item.url ?? undefined} muted preload="metadata" />
+              <video className="h-full w-full object-cover" src={item.url ?? undefined} muted preload="metadata" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img className="h-56 w-full object-cover" src={item.url ?? ""} alt={item.fileName ?? `${instituteName} media`} />
+              <img className="h-full w-full object-cover" src={item.url ?? ""} alt="" loading="lazy" />
             )}
-            <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/50 px-3 py-2 text-xs text-white opacity-0 transition group-hover:opacity-100">
-              Click to open
+            <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-slate-950/80 p-2 text-white transition group-hover:bg-brand-700">
+              {item.mediaType === "video" ? <Play className="size-4" aria-hidden="true" /> : <Maximize2 className="size-4" aria-hidden="true" />}
             </span>
           </button>
         ))}
       </div>
 
       {activeIndex != null ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-label={`${instituteName} media gallery`}>
           <button
             type="button"
             onClick={closeModal}
