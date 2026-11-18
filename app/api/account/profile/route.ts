@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth/api-auth";
 import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-documents";
 import { normalizeOrganizationType } from "@/lib/constants/organization-types";
+import { parseInstituteSocialLinks, readInstituteSocialLinks } from "@/lib/institutes/social-links";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -95,6 +96,7 @@ export async function GET() {
     return NextResponse.json({ error: notificationsError.message }, { status: 500 });
   }
 
+  let instituteSocialLinks: ReturnType<typeof readInstituteSocialLinks> | undefined;
   let instituteDocuments: Array<{ id: string; type: string; subtype: string | null; status: string; created_at: string }> = [];
   let instituteMedia: Array<{
     id: string;
@@ -106,7 +108,7 @@ export async function GET() {
   }> = [];
 
   if (auth.profile.role === "institute" && institute?.id) {
-    const [{ data, error }, { data: media, error: mediaError }] = await Promise.all([
+    const [{ data, error }, { data: media, error: mediaError }, { data: social, error: socialError }] = await Promise.all([
       admin.data
         .from("institute_documents")
         .select("id,type,subtype,status,created_at")
@@ -118,6 +120,11 @@ export async function GET() {
         .eq("institute_id", institute.id)
         .order("created_at", { ascending: false })
         .limit(20),
+      admin.data
+        .from("institutes")
+        .select("social_links")
+        .eq("user_id", auth.user.id)
+        .maybeSingle(),
     ]);
 
     if (error) {
@@ -127,6 +134,12 @@ export async function GET() {
       return NextResponse.json({ error: mediaError.message }, { status: 500 });
     }
 
+    // Core profile settings still work while this optional column is being rolled out.
+    if (socialError && socialError.code !== "42703" && socialError.code !== "PGRST204") {
+      return NextResponse.json({ error: "Unable to load institute social links." }, { status: 500 });
+    }
+    if (!socialError) instituteSocialLinks = readInstituteSocialLinks(social?.social_links);
+
     instituteDocuments = data ?? [];
     instituteMedia = media ?? [];
   }
@@ -134,7 +147,7 @@ export async function GET() {
   return NextResponse.json({
     profile,
     details,
-    institute,
+    institute: institute ? { ...institute, social_links: instituteSocialLinks } : null,
     userDocuments: userDocuments ?? [],
     instituteDocuments,
     notifications: notificationsError ? [] : (notifications ?? []),
@@ -154,11 +167,20 @@ export async function PATCH(request: Request) {
   const auth = await requireApiUser(undefined, { requireApproved: false });
   if ("error" in auth) return auth.error;
 
+  const form = await request.formData();
+
+  if (form.has("social_links") && auth.profile.role !== "institute") {
+    return NextResponse.json({ error: "Only institute accounts can update institute social links." }, { status: 403 });
+  }
+
+  const socialLinks = parseInstituteSocialLinks(form.get("social_links"));
+  if ("error" in socialLinks) {
+    return NextResponse.json({ error: socialLinks.error }, { status: 400 });
+  }
+
   const supabase = await createClient();
   const admin = getSupabaseAdmin();
   if (!admin.ok) return NextResponse.json({ error: admin.error }, { status: 500 });
-
-  const form = await request.formData();
 
   const resubmit = val(form, "resubmit") === "true";
   let uploadedIdentityDocument = false;
@@ -440,7 +462,8 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const instituteUpdate: Record<string, string | number | null | boolean> = {
+    const instituteUpdate = {
+      ...(socialLinks.links === undefined ? {} : { social_links: socialLinks.links }),
       name: instituteName || null,
       description: val(form, "description") || null,
       legal_entity_name: val(form, "legalEntityName") || null,
@@ -452,13 +475,8 @@ export async function PATCH(request: Request) {
       total_students: totalStudents,
       total_staff: totalStaff,
       updated_at: new Date().toISOString(),
+      ...(resubmit ? { status: "pending", rejection_reason: null, verified: false } : {}),
     };
-
-    if (resubmit) {
-      instituteUpdate.status = "pending";
-      instituteUpdate.rejection_reason = null;
-      instituteUpdate.verified = false;
-    }
 
     const { error: instituteError } = await admin.data.from("institutes").update(instituteUpdate).eq("user_id", auth.user.id);
 

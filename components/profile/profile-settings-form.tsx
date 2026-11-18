@@ -4,12 +4,18 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { INSTITUTE_APPROVAL_DOCUMENT_OPTIONS, getInstituteApprovalSubtypeLabel } from "@/lib/constants/institute-documents";
 import { ORGANIZATION_TYPE_OPTIONS, normalizeOrganizationType } from "@/lib/constants/organization-types";
+import { SOCIAL_LINK_FIELDS, SOCIAL_LINK_MAX_LENGTH, type InstituteSocialLinks } from "@/lib/institutes/social-links";
 
 type Props = {
   role: "student" | "institute" | "admin";
 };
 
 type GenericPayload = Record<string, string | number | null | undefined>;
+type InstitutePayload = Partial<Pick<GenericPayload,
+  | "name" | "status" | "rejection_reason" | "organization_type"
+  | "legal_entity_name" | "registration_number" | "accreditation_affiliation_number"
+  | "website_url" | "established_year" | "total_students" | "total_staff" | "description"
+>> & { social_links?: InstituteSocialLinks };
 
 type UserDocument = {
   id: string;
@@ -71,7 +77,8 @@ export function ProfileSettingsForm({ role }: Props) {
   const [passwordError, setPasswordError] = useState("");
   const [profile, setProfile] = useState<GenericPayload>({});
   const [details, setDetails] = useState<GenericPayload>({});
-  const [institute, setInstitute] = useState<GenericPayload>({});
+  const [institute, setInstitute] = useState<InstitutePayload>({});
+  const [socialLinks, setSocialLinks] = useState<InstituteSocialLinks>({});
   const [userDocuments, setUserDocuments] = useState<UserDocument[]>([]);
   const [instituteDocuments, setInstituteDocuments] = useState<InstituteDocument[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -98,6 +105,7 @@ export function ProfileSettingsForm({ role }: Props) {
     setProfile(body?.profile ?? {});
     setDetails(body?.details ?? {});
     setInstitute(body?.institute ?? {});
+    setSocialLinks(body?.institute?.social_links ?? {});
     setUserDocuments(Array.isArray(body?.userDocuments) ? body.userDocuments : []);
     setInstituteDocuments(Array.isArray(body?.instituteDocuments) ? body.instituteDocuments : []);
     setNotifications(Array.isArray(body?.notifications) ? body.notifications : []);
@@ -192,6 +200,11 @@ export function ProfileSettingsForm({ role }: Props) {
 
     try {
       const formData = new FormData(event.currentTarget);
+      if (role === "institute" && institute.social_links && SOCIAL_LINK_FIELDS.some(({ key }) => (
+        (socialLinks[key] ?? "") !== (institute.social_links?.[key] ?? "")
+      ))) {
+        formData.set("social_links", JSON.stringify(socialLinks));
+      }
       const mediaFiles = formData.getAll("instituteMedia").filter((item): item is File => item instanceof File && item.size > 0);
       formData.delete("instituteMedia");
 
@@ -334,7 +347,6 @@ export function ProfileSettingsForm({ role }: Props) {
               placeholder="Accreditation / affiliation number"
               className="rounded border px-3 py-2"
             />
-            <input name="websiteUrl" defaultValue={String(institute.website_url ?? "")} placeholder="Website URL" className="rounded border px-3 py-2" />
             <input
               name="establishedYear"
               type="number"
@@ -353,6 +365,34 @@ export function ProfileSettingsForm({ role }: Props) {
               className="min-h-24 rounded border px-3 py-2"
             />
             <p className="text-xs text-slate-500">Keep institute description within 2500 words.</p>
+
+            <fieldset className="mt-2 min-w-0 rounded-lg border border-slate-200 p-3">
+              <legend className="px-1 text-sm font-semibold text-slate-700">Social Media &amp; Online Presence</legend>
+              <p className="mb-3 text-sm text-slate-600">Links are optional and appear on your public institute profile.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid min-w-0 gap-1 text-sm text-slate-700">
+                  Website URL
+                  <input key={String(institute.website_url ?? "")} name="websiteUrl" defaultValue={String(institute.website_url ?? "")} placeholder="https://yourinstitute.example" className="w-full rounded border px-3 py-2" />
+                </label>
+                {SOCIAL_LINK_FIELDS.map(({ key, label, example }) => (
+                  <label key={key} className="grid min-w-0 gap-1 text-sm text-slate-700">
+                    {label}
+                    <input
+                      disabled={!institute.social_links || loading || saving}
+                      type={key === "whatsapp" ? "text" : "url"}
+                      value={socialLinks[key] ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setSocialLinks((current) => ({ ...current, [key]: value }));
+                      }}
+                      maxLength={SOCIAL_LINK_MAX_LENGTH}
+                      placeholder={example}
+                      className="w-full rounded border px-3 py-2"
+                    />
+                  </label>
+                ))}
+              </div>
+            </fieldset>
 
             <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
               <p className="text-sm font-semibold text-slate-700">Institute showcase media</p>
