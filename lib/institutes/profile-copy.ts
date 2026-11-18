@@ -1,4 +1,4 @@
-export const INSTITUTE_DESCRIPTION_WORD_LIMIT = 250;
+export const INSTITUTE_DESCRIPTION_WORD_LIMIT = 100;
 export const INSTITUTE_TAGLINE_CHARACTER_LIMIT = 120;
 
 export function countInstituteDescriptionWords(value: string) {
