@@ -306,8 +306,9 @@ export function ProfileSettingsForm({ role }: Props) {
           <>
             <h3 className="mt-2 text-sm font-semibold text-slate-700">Institute identity</h3>
             <input name="organizationName" defaultValue={String(profile.organization_name ?? "")} placeholder="Institute / Organization name" className="rounded border px-3 py-2" />
-            <select name="organizationType" defaultValue={selectedOrganizationType} className="rounded border px-3 py-2">
+            <select key={selectedOrganizationType} name="organizationType" defaultValue={selectedOrganizationType} className="rounded border px-3 py-2">
               <option value="">Select organization type</option>
+              {selectedOrganizationType === "School" ? <option value="School">School</option> : null}
               {ORGANIZATION_TYPE_OPTIONS.map((organizationType) => (
                 <option key={organizationType.value} value={organizationType.value}>
                   {organizationType.label}
@@ -322,7 +323,7 @@ export function ProfileSettingsForm({ role }: Props) {
             <h3 className="mt-2 text-sm font-semibold text-slate-700">Personal details</h3>
             <input name="alternatePhone" defaultValue={String(details.alternate_phone ?? "")} placeholder="Alternate phone" className="rounded border px-3 py-2" />
             <input name="dob" type="date" defaultValue={String(details.dob ?? "")} className="rounded border px-3 py-2" />
-            <select name="gender" defaultValue={String(details.gender ?? "")} className="rounded border px-3 py-2">
+            <select key={String(details.gender ?? "")} name="gender" defaultValue={String(details.gender ?? "")} className="rounded border px-3 py-2">
               <option value="">Select gender</option>
               <option value="female">Female</option>
               <option value="male">Male</option>
