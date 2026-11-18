@@ -12,6 +12,12 @@ body {
   overflow-x: hidden;
 }
 
+/* Keep the viewport as the sticky scroll container on course landing pages. */
+html:has([data-course-landing]),
+body:has([data-course-landing]) {
+  overflow-x: clip;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
   text-rendering: optimizeLegibility;

@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowDown, ArrowLeft, BookOpen, CalendarDays, CheckCircle2, Clock3, GraduationCap, Images, Languages, MonitorPlay } from "lucide-react";
 import { makeShareMetadata, resolveShareImage } from "@/lib/seo/share-metadata";
 import { notFound } from "next/navigation";
 
@@ -189,86 +193,220 @@ export default async function CourseDetailsPage({ params }: { params: Promise<{ 
     }
   }
 
+  const summary = course.summary?.trim();
+  const description = course.description?.trim();
+  const intro = summary || (description && description.length <= 240 ? description : undefined);
+  const topics = [course.category, course.subject, course.level]
+    .map((topic) => topic?.trim())
+    .filter((topic, index, values): topic is string => Boolean(topic) && values.indexOf(topic) === index);
+  const highlights = [
+    { label: "Duration", value: course.duration, Icon: Clock3 },
+    { label: "Format", value: course.mode, Icon: MonitorPlay },
+    { label: "Language", value: course.language, Icon: Languages },
+  ].filter(({ value }) => value?.trim());
+  const batchDetails = [
+    { label: "Schedule", value: course.schedule },
+    { label: "Start date", value: course.start_date },
+    { label: "End date", value: course.end_date },
+    { label: "Admission deadline", value: course.admission_deadline },
+    { label: "Batch size", value: course.batch_size },
+  ].filter(({ value }) => value != null && String(value).trim());
+  const mediaItems = (course.course_media ?? []).flatMap((media, index) => {
+    const fileUrl = media.file_url?.trim();
+    if (!fileUrl) return [];
+    return [{
+      id: `${fileUrl}-${index}`,
+      type: media.type,
+      fileUrl: /^https?:\/\//i.test(fileUrl) ? fileUrl : resolveShareImage(fileUrl, "course-media") ?? fileUrl,
+    }];
+  });
+  const cover = mediaItems.find((item) => item.type?.toLowerCase() === "image" && /^https?:\/\//i.test(item.fileUrl));
+  const hasSyllabus = Boolean(course.syllabus_text?.trim() || course.syllabus_file_path);
+  const hasOverview = Boolean(description && description !== intro);
+  const hasLearningDetails = Boolean(course.learning_outcomes?.trim() || course.eligibility?.trim() || course.target_audience?.trim());
+  const hasFaculty = Boolean(course.faculty_name?.trim() || course.faculty_qualification?.trim());
+  const hasCertificate = Boolean(course.certificate_status?.trim() || course.certificate_details?.trim());
+  const navigation = [
+    { id: "overview", label: "Overview", show: hasOverview },
+    { id: "learning", label: "Learning & eligibility", show: hasLearningDetails },
+    { id: "syllabus", label: "Syllabus", show: hasSyllabus },
+    { id: "schedule", label: "Schedule", show: batchDetails.length > 0 },
+    { id: "gallery", label: "Gallery", show: mediaItems.length > 0 },
+    { id: "course-inquiry", label: "Ask a question", show: true },
+  ].filter(({ show }) => show);
+
   return (
-    <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:py-12 md:grid-cols-[2fr_1fr] md:gap-8">
-      <article className="space-y-6 rounded-xl border bg-white p-4 sm:p-6">
-        <div>
-          <h1 className="text-2xl font-semibold sm:text-3xl">{course.title}</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            {course.category ?? "General"} · {course.subject ?? "-"} · {course.level ?? "-"} · {course.language ?? "-"}
-          </p>
-          {isFeaturedCourse ? (
-            <p className="mt-2 inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Featured Course</p>
+    <div data-course-landing>
+      <header className="bg-[radial-gradient(ellipse_at_top_right,_#174c78,_#072842_68%)] text-white">
+        <div className="mx-auto w-full max-w-6xl px-4 pb-8 pt-5 sm:px-6 sm:pb-10 sm:pt-6 lg:px-8">
+          <Link href="/courses" className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-medium text-sky-100 hover:text-white hover:underline">
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            All courses
+          </Link>
+          <div className={`mt-5 grid items-center gap-6 sm:mt-6 lg:gap-12 ${cover ? "lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)]" : ""}`}>
+            <div className="min-w-0">
+              {topics.length || isFeaturedCourse ? (
+                <ul className="mb-4 flex flex-wrap gap-2 text-xs font-medium sm:text-sm">
+                  {isFeaturedCourse ? <li className="rounded-full bg-amber-100 px-3 py-1 text-amber-900">Featured course</li> : null}
+                  {topics.map((topic) => <li key={topic} className="max-w-full break-words rounded-full border border-white/25 bg-white/10 px-3 py-1 text-sky-50">{topic}</li>)}
+                </ul>
+              ) : null}
+              <h1 className="max-w-4xl break-words text-4xl font-semibold leading-[1.08] text-white sm:text-5xl lg:text-6xl">{course.title}</h1>
+              {intro ? <p className="mt-4 max-w-2xl whitespace-pre-line break-words text-base leading-7 text-sky-50 sm:text-lg">{intro}</p> : null}
+              {highlights.length ? (
+                <dl className="mt-7 flex flex-wrap gap-x-7 gap-y-4 border-t border-white/20 pt-5">
+                  {highlights.map(({ label, value, Icon }) => (
+                    <div className="flex max-w-full items-start gap-2.5" key={label}>
+                      <Icon className="mt-0.5 size-5 shrink-0 text-sky-200" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <dt className="text-xs text-sky-200">{label}</dt>
+                        <dd className="break-words text-sm font-medium text-white">{value}</dd>
+                      </div>
+                    </div>
+                  ))}
+                </dl>
+              ) : null}
+              <a href="#course-enrollment" className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-brand-900 transition hover:bg-sky-100">
+                {existingActiveEnrollment || !enrollmentOpen ? "View enrollment details" : "See fees & enroll"}
+                <ArrowDown className="size-4" aria-hidden="true" />
+              </a>
+            </div>
+            {cover ? (
+              <a href="#gallery" aria-label="View course media" className="relative block aspect-[16/10] overflow-hidden rounded-2xl border border-white/25 bg-brand-900 shadow-xl transition hover:border-white/70">
+                <Image
+                  src={cover.fileUrl}
+                  alt=""
+                  fill
+                  sizes="(min-width: 1024px) 480px, 100vw"
+                  className="object-cover"
+                  unoptimized
+                  priority
+                />
+                <span className="absolute bottom-3 right-3 rounded-lg bg-slate-950/80 p-2 text-white">
+                  <Images className="size-4" aria-hidden="true" />
+                </span>
+              </a>
+            ) : null}
+          </div>
+        </div>
+      </header>
+
+      <div className="border-b border-slate-200 bg-white">
+        <nav aria-label="Course sections" className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-sm font-medium text-slate-700 sm:px-6 lg:gap-x-7 lg:px-8">
+          {navigation.map(({ id, label }) => (
+            <a key={id} href={`#${id}`} className="inline-flex min-h-10 items-center rounded-sm hover:text-brand-700 hover:underline hover:underline-offset-4">{label}</a>
+          ))}
+        </nav>
+      </div>
+
+      <div className="mx-auto grid w-full max-w-6xl gap-7 px-4 py-7 sm:px-6 sm:py-9 lg:grid-cols-[minmax(0,1fr)_21rem] lg:gap-9 lg:px-8">
+        <aside aria-label="Course enrollment" className="min-w-0 lg:col-start-2 lg:row-start-1">
+          <div id="course-enrollment" className="scroll-mt-32 lg:sticky lg:top-24">
+            <CoursePurchaseCard
+              courseId={course.id}
+              courseTitle={course.title}
+              feeAmount={Number(course.fees ?? 0)}
+              enrollmentOpen={enrollmentOpen}
+              hasActiveEnrollment={existingActiveEnrollment}
+              hasExpiredEnrollment={!existingActiveEnrollment && hadExpiredEnrollment}
+              activeEnrollmentEndsAt={activeEnrollmentEndsAt}
+            />
+          </div>
+        </aside>
+
+        <article className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-1">
+          {hasOverview ? (
+            <CourseSection id="overview" title="About this course">
+              <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-700 sm:text-base">{description}</p>
+            </CourseSection>
           ) : null}
-          <p className="mt-3 text-slate-700">{course.summary}</p>
-          <ShareActions title={course.title} text={course.summary ?? undefined} url={shareUrl} className="mt-4" />
-        </div>
 
-        <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
-          <p>Mode: {course.mode ?? "-"}</p>
-          <p>Duration: {course.duration ?? "-"}</p>
-          <p>Schedule: {course.schedule ?? "-"}</p>
-          <p>Start date: {course.start_date ?? "-"}</p>
-          <p>End date: {course.end_date ?? "-"}</p>
-          <p>Admission deadline: {course.admission_deadline ?? "-"}</p>
-          <p>Batch size: {course.batch_size ?? "-"}</p>
-          <p>Faculty: {course.faculty_name ?? "-"}</p>
-        </div>
-        <p className="text-xs text-slate-500">
-          Schedule details are provided by the institute. Please contact the institute for the latest batch timing.
-        </p>
+          {hasLearningDetails ? (
+            <CourseSection id="learning" title="Learning & eligibility">
+              <div className="space-y-5">
+                {[
+                  { title: "What you’ll learn", text: course.learning_outcomes },
+                  { title: "Who this course is for", text: course.target_audience },
+                  { title: "Eligibility requirements", text: course.eligibility },
+                ].filter(({ text }) => text?.trim()).map(({ title, text }) => (
+                  <div key={title} className="flex gap-3">
+                    <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-brand-600" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <h3 className="text-base font-semibold">{title}</h3>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{text}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CourseSection>
+          ) : null}
 
-        <section>
-          <h2 className="text-lg font-semibold">Description</h2>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.description ?? "-"}</p>
-        </section>
+          {hasSyllabus ? (
+            <CourseSection id="syllabus" title="Course syllabus" icon={<BookOpen className="size-5" aria-hidden="true" />}>
+              <CourseSyllabusSection courseId={course.id} text={course.syllabus_text?.trim() || null} hasFile={Boolean(course.syllabus_file_path)} />
+            </CourseSection>
+          ) : null}
 
-        <section>
-          <h2 className="text-lg font-semibold">Eligibility</h2>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.eligibility ?? "-"}</p>
-        </section>
+          {batchDetails.length ? (
+            <CourseSection id="schedule" title="Batch schedule" icon={<CalendarDays className="size-5" aria-hidden="true" />}>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                {batchDetails.map(({ label, value }) => (
+                  <div key={label} className="min-w-0 rounded-xl bg-slate-50 px-4 py-3">
+                    <dt className="text-xs font-medium text-slate-600">{label}</dt>
+                    <dd className="mt-1 whitespace-pre-wrap break-words text-sm font-semibold text-slate-900">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-4 text-sm text-slate-600">Contact the institute for the latest batch timing.</p>
+            </CourseSection>
+          ) : null}
 
-        <section>
-          <h2 className="text-lg font-semibold">Learning Outcomes</h2>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.learning_outcomes ?? "-"}</p>
-        </section>
+          {hasFaculty || hasCertificate ? (
+            <CourseSection title="Faculty & certification" icon={<GraduationCap className="size-5" aria-hidden="true" />}>
+              <dl className="grid gap-5 text-sm text-slate-700 sm:grid-cols-2">
+                {hasFaculty ? (
+                  <div className="min-w-0">
+                    <dt className="font-semibold text-slate-900">Faculty</dt>
+                    {course.faculty_name ? <dd className="mt-1 break-words">{course.faculty_name}</dd> : null}
+                    {course.faculty_qualification ? <dd className="mt-1 whitespace-pre-wrap break-words">{course.faculty_qualification}</dd> : null}
+                  </div>
+                ) : null}
+                {hasCertificate ? (
+                  <div className="min-w-0">
+                    <dt className="font-semibold text-slate-900">Certificate</dt>
+                    {course.certificate_status ? <dd className="mt-1 break-words">{course.certificate_status}</dd> : null}
+                    {course.certificate_details ? <dd className="mt-1 whitespace-pre-wrap break-words">{course.certificate_details}</dd> : null}
+                  </div>
+                ) : null}
+              </dl>
+            </CourseSection>
+          ) : null}
 
-        <section>
-          <h2 className="text-lg font-semibold">Target Audience</h2>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700">{course.target_audience ?? "-"}</p>
-        </section>
+          {mediaItems.length ? (
+            <CourseSection id="gallery" title="Course gallery" icon={<Images className="size-5" aria-hidden="true" />}>
+              <CourseMediaGallery courseTitle={course.title} mediaItems={mediaItems} />
+            </CourseSection>
+          ) : null}
 
-        <CourseSyllabusSection courseId={course.id} text={course.syllabus_text ?? null} hasFile={Boolean(course.syllabus_file_path)} />
-        <section>
-          <h2 className="text-lg font-semibold">Media Gallery</h2>
-          <CourseMediaGallery
-            courseTitle={course.title}
-            mediaItems={(course.course_media ?? []).map((media, index) => ({
-              id: `${media.file_url ?? "media"}-${index}`,
-              type: media.type ?? null,
-              fileUrl: media.file_url ?? null,
-            }))}
-          />
-        </section>
-      </article>
-
-      <aside className="space-y-4">
-        <CoursePurchaseCard
-          courseId={course.id}
-          courseTitle={course.title}
-          feeAmount={Number(course.fees ?? 0)}
-          enrollmentOpen={enrollmentOpen}
-          hasActiveEnrollment={existingActiveEnrollment}
-          hasExpiredEnrollment={!existingActiveEnrollment && hadExpiredEnrollment}
-          activeEnrollmentEndsAt={activeEnrollmentEndsAt}
-        />
-        <div className="rounded-xl border bg-white p-4">
-          <p className="mt-2 text-sm text-slate-600">Certificate: {course.certificate_status ?? "-"}</p>
-          {course.certificate_details ? <p className="mt-1 text-sm text-slate-600">{course.certificate_details}</p> : null}
-          {course.faculty_qualification ? <p className="mt-2 text-sm text-slate-600">Faculty qualification: {course.faculty_qualification}</p> : null}
-        </div>
-        <LeadForm courseId={course.id} instituteId={institute?.id} />
-      </aside>
+          <section id="course-inquiry" aria-labelledby="course-inquiry-heading" className="scroll-mt-32 rounded-2xl bg-brand-50 p-4 ring-1 ring-inset ring-brand-100 sm:p-6">
+            <h2 id="course-inquiry-heading" className="mb-4 text-xl font-semibold sm:text-2xl">Ask about this course</h2>
+            <LeadForm courseId={course.id} instituteId={institute?.id} />
+          </section>
+          <ShareActions title={course.title} text={summary || undefined} url={shareUrl} className="px-1 pt-1" />
+        </article>
+      </div>
     </div>
+  );
+}
+
+function CourseSection({ id, title, icon, children }: { id?: string; title: string; icon?: ReactNode; children: ReactNode }) {
+  return (
+    <section id={id} className="scroll-mt-32 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+      <div className="mb-4 flex items-center gap-3">
+        {icon ? <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">{icon}</span> : null}
+        <h2 className="text-xl font-semibold sm:text-2xl">{title}</h2>
+      </div>
+      {children}
+    </section>
   );
 }
