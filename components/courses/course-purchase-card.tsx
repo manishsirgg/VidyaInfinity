@@ -1,7 +1,8 @@
 "use client";
 
+import { Bookmark } from "lucide-react";
 import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 declare global {
@@ -35,7 +36,14 @@ export function CoursePurchaseCard({
   const [savedBusy, setSavedBusy] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const router = useRouter();
+  const couponInputId = useId();
   const checkoutResolvedRef = useRef(false);
+  const formattedFee = new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: Number.isInteger(feeAmount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(feeAmount);
   const purchaseDisabled = !enrollmentOpen || hasActiveEnrollment;
   const buttonLabel = state === "loading" ? "Processing..." : hasActiveEnrollment ? "Enrollment Active" : hasExpiredEnrollment ? "Join New Batch" : "Pay & Enroll";
   const enrollmentActiveLabel = hasActiveEnrollment
@@ -193,44 +201,50 @@ export function CoursePurchaseCard({
   }
 
   return (
-    <div className="rounded-xl border bg-white p-4">
+    <div className="overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-sm">
       <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
-      <p className="text-sm text-slate-600">Course fee</p>
-      <p className="text-2xl font-semibold">₹{feeAmount}</p>
-      <div className="mt-3">
-        <label className="text-xs text-slate-600">Coupon code (optional)</label>
-        <input
-          value={couponCode}
-          onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
-          placeholder="Enter coupon code"
-          autoComplete="off"
-          className="mt-1 w-full rounded border px-3 py-2 text-sm"
-        />
+      <div className="border-b border-brand-100 bg-brand-50 px-5 py-5 sm:px-6">
+        <h2 className="text-sm font-semibold text-brand-900">Course fee</h2>
+        <p className="mt-1 break-words text-3xl font-semibold tracking-tight text-brand-900">{formattedFee}</p>
       </div>
-      <button
-        type="button"
-        onClick={enrollNow}
-        disabled={state === "loading" || purchaseDisabled}
-        className="mt-3 w-full rounded bg-brand-600 px-3 py-2 text-sm text-white disabled:opacity-60"
-      >
-        {buttonLabel}
-      </button>
-
-      <div className="mt-3">
+      <div className="p-5 sm:p-6">
+        <div>
+          <label htmlFor={couponInputId} className="text-sm font-medium text-slate-700">Coupon code <span className="font-normal text-slate-500">(optional)</span></label>
+          <input
+            id={couponInputId}
+            value={couponCode}
+            onChange={(event) => setCouponCode(event.target.value.toUpperCase())}
+            placeholder="Enter coupon code"
+            autoComplete="off"
+            className="mt-1.5 min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          />
+        </div>
         <button
           type="button"
-          onClick={toggleSaved}
-          disabled={savedBusy}
-          className="rounded border border-slate-300 px-3 py-2 text-xs font-medium text-slate-700 disabled:opacity-60"
+          onClick={enrollNow}
+          disabled={state === "loading" || purchaseDisabled}
+          className="mt-4 min-h-11 w-full rounded-xl bg-brand-700 px-4 py-2.5 text-sm font-semibold text-white transition enabled:hover:bg-brand-900 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {savedBusy ? "Updating..." : isSaved ? "Unsave" : "Save for Later"}
+          {buttonLabel}
         </button>
-      </div>
 
-      {message ? <p className={`mt-2 text-xs ${state === "error" ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
-      {hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-amber-700">{enrollmentActiveLabel} You are already enrolled. Please contact the institute for batch/session details.</p> : null}
-      {hasExpiredEnrollment && !hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-slate-600">Your previous enrollment has ended. You can enroll again for a new batch/session.</p> : null}
-      {!enrollmentOpen && !hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-rose-700">{enrollmentBlockedMessage}</p> : null}
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={toggleSaved}
+            disabled={savedBusy}
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition enabled:hover:bg-slate-50 disabled:opacity-60"
+          >
+            <Bookmark className={`size-4 ${isSaved ? "fill-current" : ""}`} aria-hidden="true" />
+            {savedBusy ? "Updating..." : isSaved ? "Unsave" : "Save for Later"}
+          </button>
+        </div>
+
+        {message ? <p role="status" className={`mt-2 text-xs ${state === "error" ? "text-rose-700" : "text-slate-600"}`}>{message}</p> : null}
+        {hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-amber-700">{enrollmentActiveLabel} You are already enrolled. Please contact the institute for batch/session details.</p> : null}
+        {hasExpiredEnrollment && !hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-slate-600">Your previous enrollment has ended. You can enroll again for a new batch/session.</p> : null}
+        {!enrollmentOpen && !hasActiveEnrollment && !message ? <p className="mt-2 text-xs text-rose-700">{enrollmentBlockedMessage}</p> : null}
+      </div>
     </div>
   );
 }

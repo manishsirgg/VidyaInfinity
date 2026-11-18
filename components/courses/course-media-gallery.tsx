@@ -1,5 +1,6 @@
 "use client";
 
+import { Maximize2, Play } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type CourseMediaItem = {
@@ -33,22 +34,23 @@ export function CourseMediaGallery({ mediaItems, courseTitle }: CourseMediaGalle
 
   return (
     <>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {validItems.map((item, index) => (
           <button
-            key={`${item.fileUrl}-${index}`}
+            key={item.id}
             type="button"
             onClick={() => setActiveIndex(index)}
-            className="group relative overflow-hidden rounded-md border text-left"
+            aria-label={`Open ${item.mediaType} ${index + 1}`}
+            className="group relative aspect-video overflow-hidden rounded-xl border border-slate-200 bg-slate-100 text-left"
           >
             {item.mediaType === "video" ? (
-              <video className="h-48 w-full object-cover" src={item.fileUrl ?? undefined} muted preload="metadata" />
+              <video className="h-full w-full object-cover" src={item.fileUrl ?? undefined} muted preload="metadata" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img className="h-48 w-full object-cover" src={item.fileUrl ?? ""} alt={courseTitle} />
+              <img className="h-full w-full object-cover" src={item.fileUrl ?? ""} alt="" loading="lazy" />
             )}
-            <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/50 px-3 py-2 text-xs text-white opacity-0 transition group-hover:opacity-100">
-              Click to open
+            <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-slate-950/80 p-2 text-white transition group-hover:bg-brand-700">
+              {item.mediaType === "video" ? <Play className="size-4" aria-hidden="true" /> : <Maximize2 className="size-4" aria-hidden="true" />}
             </span>
           </button>
         ))}
