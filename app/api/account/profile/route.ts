@@ -5,6 +5,7 @@ import { isInstituteApprovalDocumentSubtype } from "@/lib/constants/institute-do
 import { normalizeOrganizationType } from "@/lib/constants/organization-types";
 import { parseInstituteSocialLinks, readInstituteSocialLinks } from "@/lib/institutes/social-links";
 import { createAccountNotification } from "@/lib/notifications/account-notifications";
+import { countInstituteDescriptionWords, INSTITUTE_DESCRIPTION_WORD_LIMIT, INSTITUTE_TAGLINE_CHARACTER_LIMIT } from "@/lib/institutes/profile-copy";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { getPublicFileUrl, uploadAvatar, uploadInstituteDocument, uploadInstituteMedia, uploadUserDocument } from "@/lib/storage/uploads";
@@ -27,12 +28,6 @@ function parseOptionalDob(value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return value;
-}
-
-function countWords(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return 0;
-  return trimmed.split(/\s+/).filter(Boolean).length;
 }
 
 function isMissingNotificationsTableError(error: { code?: string; message?: string } | null) {
@@ -96,6 +91,7 @@ export async function GET() {
     return NextResponse.json({ error: notificationsError.message }, { status: 500 });
   }
 
+  let instituteBrandTagline: string | null | undefined;
   let instituteSocialLinks: ReturnType<typeof readInstituteSocialLinks> | undefined;
   let instituteDocuments: Array<{ id: string; type: string; subtype: string | null; status: string; created_at: string }> = [];
   let instituteMedia: Array<{
@@ -108,7 +104,7 @@ export async function GET() {
   }> = [];
 
   if (auth.profile.role === "institute" && institute?.id) {
-    const [{ data, error }, { data: media, error: mediaError }, { data: social, error: socialError }] = await Promise.all([
+    const [{ data, error }, { data: media, error: mediaError }, { data: social, error: socialError }, { data: branding, error: brandingError }] = await Promise.all([
       admin.data
         .from("institute_documents")
         .select("id,type,subtype,status,created_at")
@@ -123,6 +119,11 @@ export async function GET() {
       admin.data
         .from("institutes")
         .select("social_links")
+        .eq("user_id", auth.user.id)
+        .maybeSingle(),
+      admin.data
+        .from("institutes")
+        .select("brand_tagline")
         .eq("user_id", auth.user.id)
         .maybeSingle(),
     ]);
@@ -140,6 +141,11 @@ export async function GET() {
     }
     if (!socialError) instituteSocialLinks = readInstituteSocialLinks(social?.social_links);
 
+    if (brandingError && brandingError.code !== "42703" && brandingError.code !== "PGRST204") {
+      return NextResponse.json({ error: "Unable to load institute branding." }, { status: 500 });
+    }
+    if (!brandingError) instituteBrandTagline = branding?.brand_tagline ?? null;
+
     instituteDocuments = data ?? [];
     instituteMedia = media ?? [];
   }
@@ -147,7 +153,7 @@ export async function GET() {
   return NextResponse.json({
     profile,
     details,
-    institute: institute ? { ...institute, social_links: instituteSocialLinks } : null,
+    institute: institute ? { ...institute, social_links: instituteSocialLinks, brand_tagline: instituteBrandTagline } : null,
     userDocuments: userDocuments ?? [],
     instituteDocuments,
     notifications: notificationsError ? [] : (notifications ?? []),
@@ -171,6 +177,15 @@ export async function PATCH(request: Request) {
 
   if (form.has("social_links") && auth.profile.role !== "institute") {
     return NextResponse.json({ error: "Only institute accounts can update institute social links." }, { status: 403 });
+  }
+
+  if (form.has("brandTagline") && auth.profile.role !== "institute") {
+    return NextResponse.json({ error: "Only institute accounts can update a brand tagline." }, { status: 403 });
+  }
+
+  const brandTagline = val(form, "brandTagline");
+  if (brandTagline.length > INSTITUTE_TAGLINE_CHARACTER_LIMIT || /[\r\n\u2028\u2029]/.test(brandTagline)) {
+    return NextResponse.json({ error: `Brand tagline must be one line of up to ${INSTITUTE_TAGLINE_CHARACTER_LIMIT} characters.` }, { status: 400 });
   }
 
   const socialLinks = parseInstituteSocialLinks(form.get("social_links"));
@@ -235,8 +250,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "totalStaff must be a non-negative integer" }, { status: 400 });
     }
 
-    if (countWords(val(form, "description")) > 2500) {
-      return NextResponse.json({ error: "Institute description must not exceed 2500 words" }, { status: 400 });
+    if (countInstituteDescriptionWords(val(form, "description")) > INSTITUTE_DESCRIPTION_WORD_LIMIT) {
+      return NextResponse.json({ error: `Institute description must not exceed ${INSTITUTE_DESCRIPTION_WORD_LIMIT} words.` }, { status: 400 });
     }
   }
 
@@ -465,7 +480,8 @@ export async function PATCH(request: Request) {
     const instituteUpdate = {
       ...(socialLinks.links === undefined ? {} : { social_links: socialLinks.links }),
       name: instituteName || null,
-      description: val(form, "description") || null,
+      ...(form.has("description") ? { description: val(form, "description") || null } : {}),
+      ...(form.has("brandTagline") ? { brand_tagline: brandTagline || null } : {}),
       legal_entity_name: val(form, "legalEntityName") || null,
       organization_type: canonicalOrganizationType,
       registration_number: val(form, "registrationNumber") || null,
